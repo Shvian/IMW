@@ -1,0 +1,104 @@
+{
+  "_comment": "Phase 1 mapping config. group_rules decide the target Safe from the Delinea access groups on each secret; see script docstring.",
+  "safe_name": {
+    "max_length": 28,
+    "invalid_chars": "\\/:*?\"<>|",
+    "replacement": "-",
+    "prefix": ""
+  },
+  "group_rules": [
+    {
+      "group": "CORP\\Unix-Admins",
+      "safe": "UNIX-Admins"
+    },
+    {
+      "group_pattern": "^CORP\\\\APP-(.+)-Owners$",
+      "safe": "APP-{1}",
+      "min_permission": "Owner"
+    }
+  ],
+  "folder_rules": [],
+  "fallback_strategy": "folder_leaf",
+  "platform_map": {
+    "Active Directory Account": "WinDomain",
+    "Windows Account": "WinServerLocal",
+    "Unix Account (SSH)": "UnixSSH",
+    "Unix Account (SSH Key Rotation)": "UnixSSHKeys",
+    "SQL Server Account": "MSSql",
+    "Oracle Account": "Oracle",
+    "Web Password": "GenericWebApp",
+    "Password": "GenericWebApp"
+  },
+  "default_platform": "UNMAPPED_PLATFORM",
+  "key_templates": [
+    "Unix Account (SSH Key Rotation)",
+    "SSH Key",
+    "Unix Account (SSH Key)"
+  ],
+  "field_aliases": {
+    "secret_name": [
+      "Secret Name",
+      "SecretName",
+      "Name"
+    ],
+    "folder": [
+      "Folder Path",
+      "Folder",
+      "FolderPath"
+    ],
+    "secret_id": [
+      "Secret ID",
+      "SecretId",
+      "Id"
+    ],
+    "template": [
+      "Secret Template",
+      "Template",
+      "Template Name"
+    ],
+    "address": [
+      "Machine",
+      "Server",
+      "Host",
+      "Hostname",
+      "Host Name",
+      "Domain",
+      "URL",
+      "Address",
+      "IP Address",
+      "Resource"
+    ],
+    "username": [
+      "Username",
+      "User Name",
+      "UserName",
+      "Login",
+      "Account"
+    ],
+    "password": [
+      "Password",
+      "Secret",
+      "Passphrase"
+    ],
+    "private_key": [
+      "Private Key",
+      "PrivateKey",
+      "SSH Private Key"
+    ]
+  },
+  "header_markers": [
+    "Secret Name",
+    "SecretName"
+  ],
+  "exclude_field_patterns": [
+    "\\battach",
+    "\\bfiles?\\b",
+    "\\.(ppk|pem|key|pfx|p12|crt|cer)$"
+  ],
+  "permission_map": {
+    "Owner": "Owner",
+    "Edit": "Editor",
+    "View": "User",
+    "List": "Viewer"
+  }
+}

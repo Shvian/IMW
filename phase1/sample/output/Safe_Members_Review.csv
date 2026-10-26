@@ -1,0 +1,9 @@
+﻿Target CyberArk Safe,Member_Name,Member_Type,Delinea_Permission,CyberArk_Role,Secrets_With_Access,Review_Notes
+DB-Production-Privileged-Acc,CORP\DBA-Team,Group,Owner,Owner,1,
+DB-Production-Privileged-Acc,CORP\Helpdesk,Group,List,Viewer,1,
+IT-Backup,CORP\Backup-Operators,Group,Edit,Editor,1,
+WEB-Ops,CORP\Web-Ops,Group,View,User,1,
+UNIX-Admins,CORP\Unix-Admins,Group,Owner,Owner,2,
+APP-Storefront,CORP\APP-Storefront-Owners,Group,Owner,Owner,1,
+APP-Storefront,CORP\Unix-Admins,Group,View,User,1,
+FIN-Vendors,CORP\Finance-Admins,Group,Edit,Editor,1,

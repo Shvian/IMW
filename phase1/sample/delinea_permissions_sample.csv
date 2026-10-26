@@ -1,0 +1,9 @@
+Folder Path,Secret Name,Secret ID,Group,Permission
+\IT\Database,,,CORP\DBA-Team,Owner
+\IT\Database,,,CORP\Helpdesk,List
+\IT\Backup,,,CORP\Backup-Operators,Edit
+\Linux,,,CORP\Unix-Admins,Owner
+\Linux\Web Servers,root@web01,103,CORP\Web-Ops,View
+\Linux\Application Servers Customer Facing Tier,,,CORP\APP-Storefront-Owners,Owner
+\Linux\Application Servers Customer Facing Tier,,,CORP\Unix-Admins,View
+\Finance,,,CORP\Finance-Admins,Edit
