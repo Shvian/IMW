@@ -70,7 +70,7 @@ def write_review(plan, out_dir):
                         p.proposed_safe, "TRUE" if p.valid_safe else "FALSE",
                         "; ".join(p.safe_issues), p.safe_source, p.platform, p.platform_source,
                         p.account_name, r.address, r.username, r.secret_type,
-                        "Y" if r.secret.strip() else "N", r.source, r.source_ref, r.type,
+                        "Y" if (r.has_secret if r.has_secret is not None else r.secret.strip()) else "N", r.source, r.source_ref, r.type,
                         r.folder_path, "; ".join(f"{g.member}={g.permission}" for g in p.grants),
                         p.access_source] + [r.extra.get(c, "") for c in extra_cols])
 
@@ -164,7 +164,8 @@ def write_manifest(out_dir, inputs, files, counts, include_secrets, cfg_path):
         "host": _platform.node(),
         "includes_secrets": include_secrets,
         "config": str(cfg_path or "(defaults)"),
-        "inputs": [{"source": s, "path": str(p), "sha256": sha256(p)} for s, p in inputs],
+        "inputs": [i if isinstance(i, dict) else {"source": i[0], "path": str(i[1]), "sha256": sha256(i[1])}
+                   for i in inputs],
         "outputs": [{"path": str(Path(f).relative_to(out_dir)), "sha256": sha256(f)} for f in files],
         "counts": counts,
     }

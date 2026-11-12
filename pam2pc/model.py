@@ -27,9 +27,11 @@ class SourceRecord:
     username: str = ""
     secret: str = ""
     secret_type: str = "password"   # password | key
+    has_secret: Optional[bool] = None  # set when loaded from the database without the secret
     # None = the source has no access data for this record (use --permissions);
     # [] = the source says nobody has access.
     grants: Optional[List[Grant]] = None
+    access_source: str = ""      # where grants came from: source, record, folder, none
     # Explicit target values a spreadsheet may already carry.
     target_safe: str = ""
     target_platform: str = ""

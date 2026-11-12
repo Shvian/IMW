@@ -12,23 +12,53 @@
 
 Requirements: Python 3.8 or later, **standard library only** (Excel files included). There's nothing to `pip install` on the migration host.
 
-## Quick start
+## Two ways to run it
+
+**Recommended: the local staging database.** Load the exports once into an SQLite file on the migration host. Work on the data there with rules, edits and SQL queries, then extract upload files whenever you need them, all at once or in waves.
 
 ```
-python -m pam2pc sources                                   # list supported formats
-python -m pam2pc init-config my_config.json                # starter config to edit
+python -m pam2pc init-config my_config.json                       # starter config to edit
 
-# 1. Dry run: review files, plus upload files with an empty secret column
-python -m pam2pc convert -i export.csv -p permissions.csv -c my_config.json -o run1
-
-# 2. Fix the config, or edit review/Accounts_Review.csv and feed it back:
-python -m pam2pc convert -i export.csv -p permissions.csv -c my_config.json -o run2 \
-    --overrides run1/review/Accounts_Review.csv
-
-# 3. Upload-ready files, with secrets
-python -m pam2pc convert -i export.csv -p permissions.csv -c my_config.json -o final \
-    --overrides run1/review/Accounts_Review.csv --include-secrets
+python -m pam2pc ingest  --db migration.db -i export.csv -p permissions.csv -i vault.xml
+#   -> secrets are encrypted with Windows DPAPI as they are stored; securely delete the exports now
+python -m pam2pc map     --db migration.db -c my_config.json      # apply the rules (rerun after config changes)
+python -m pam2pc query   --db migration.db --report list          # built-in reports
+python -m pam2pc query   --db migration.db --report invalid-safes
+python -m pam2pc query   --db migration.db "SELECT target_safe, COUNT(*) FROM accounts GROUP BY 1"
+python -m pam2pc set     --db migration.db --where "folder LIKE '\Unfiled%'" --migrate N --reason "out of scope"
+python -m pam2pc set     --db migration.db -r delinea:export:1042 --safe "APP-Payments" --platform WinDomain
+python -m pam2pc set     --db migration.db --from-review edited/Accounts_Review.csv
+python -m pam2pc extract --db migration.db -o wave1 --where "target_safe LIKE 'WIN-%'"                     # dry run
+python -m pam2pc extract --db migration.db -o wave1 --where "target_safe LIKE 'WIN-%'" --include-secrets --force
 ```
+
+**One-shot: `convert`.** This does everything in memory in a single command and keeps nothing between runs. It's handy for quick looks and small jobs.
+
+```
+python -m pam2pc convert -i export.csv -p permissions.csv -c my_config.json -o run1          # dry run
+python -m pam2pc convert ... -o run2 --overrides run1/review/Accounts_Review.csv --include-secrets
+```
+
+## The staging database
+
+`ingest` creates the database on first use. Run it again to add more exports. Re-ingesting the same file replaces its records, matched by `Record_ID`, and your edits are kept. Records that are gone from the new export are not deleted.
+
+| Table / view | Holds |
+|---|---|
+| `inputs` | Every file ingested, with its SHA-256, who loaded it and when. |
+| `records`, `grants` | The common model of every record and its access grants. `secret_enc` holds the **DPAPI-encrypted** secret. |
+| `edits` | Your deliberate changes to `migrate`, `target_safe`, `platform_id` and `account_name`, with who made them, when and why. Edits survive re-ingest and re-map. |
+| `accounts` (view of `plan_accounts`), `plan_safes`, `plan_members` | The result of the last `map`: the same columns as the review CSVs. |
+| `audit` | Every ingest, map, set and extract, with the user, host and time. |
+
+- `set` re-runs the mapping straight away with the config from the last `map`.
+- `query` opens the database **read-only**: it cannot change data or attach other files, and `secret_enc` always reads as NULL.
+- `extract --where` limits the *upload* files to a wave. The review files always cover every record. Name suffixes and collisions are worked out across the whole database, so the waves never conflict with each other.
+
+**How the secrets are protected.** Each secret is encrypted with Windows DPAPI (`CryptProtectData`, called through `ctypes`, so no install is needed). Only the **same Windows account on the same machine** can decrypt it. Each value is also bound to a random salt for this database and to its own `Record_ID`, so a copied value won't decrypt in another database or another row. The database file holds no plaintext. Practical consequences:
+- Run `ingest` and `extract --include-secrets` as the same Windows account, on the migration host. A copy of the database taken elsewhere, or used by another account, exposes metadata only.
+- If that Windows account or its profile is lost, the secrets are lost too. Keep the original exports offline under your normal controls until the migration is signed off, or be ready to export again.
+- On Linux or macOS there's no DPAPI. There, `ingest` needs either `--no-secrets` (metadata only) or `--insecure-plaintext-secrets` (test data only).
 
 You can pass several `-i` files in one run, including files from different sources (for example a Delinea export plus a KeePass vault plus a spreadsheet). The tool detects the format of each file. To force one, prefix the path with the source name: `-i keepass=vault.xml`, `-i table=inventory.xlsx`.
 
@@ -47,7 +77,7 @@ To add a source, see [Adding a source adapter](#adding-a-source-adapter).
 - **Export files** (`-i`), described above.
 - **Permissions CSV** (`-p`, optional). Use it for sources whose export has no access data, such as Delinea and KeePass. It has one grant per row, with the columns `Folder Path, Secret Name, Secret ID, Group, Permission` and an optional `Member Type`. A row with an ID or name applies to that record. A row with only a folder applies to that folder and its subfolders, and the nearest folder wins. Record-level rows take precedence. Build it from a Secret Server folder and secret permissions report, or by hand.
 - **Config** (`-c`, optional). It is JSON and only needs the keys you change; everything else uses the defaults. `init-config` writes a starter file with every key; the comments in `pam2pc/config.py` explain each one. Configs from the old phase 1 still load.
-- **Overrides** (`--overrides`, optional). This is an edited copy of `review/Accounts_Review.csv`. Only the values you *changed* in `Migrate`, `Target_Safe`, `Platform_ID` and `Account_Name` are applied, matched by `Record_ID`.
+- **Overrides** (`--overrides`, `convert` only). This is an edited copy of `review/Accounts_Review.csv`. Only the values you *changed* in `Migrate`, `Target_Safe`, `Platform_ID` and `Account_Name` are applied, matched by `Record_ID`.
 
 ## How records are mapped
 
@@ -92,17 +122,17 @@ Notes for whoever writes the uploader:
 
 ## Handling secrets: the trade-off
 
-The earlier design never stored a secret: it fetched each one from Delinea just in time. With no live connections, that is no longer possible. **The source exports, and `upload/Accounts.csv` when you pass `--include-secrets`, hold secrets in plaintext.** The tool limits the exposure this way:
+The earlier design never stored a secret: it fetched each one from Delinea just in time. With no live connections, that is no longer possible. The source exports hold secrets in plaintext, and so does `upload/Accounts.csv` once you pass `--include-secrets`. The tool limits the exposure this way:
 
-- Secrets are written **only** to `upload/Accounts.csv`, and only with `--include-secrets`. The review files and the manifest never contain them, and the tests check this. Any column whose name looks like a secret (password, passphrase, private key, PIN, TOTP/OTP) is left out of the review files.
-- By default it runs dry, so you can review everything before a secret is ever written.
-- `Accounts.csv` is created as owner-only (`0600`) on Linux and macOS. On Windows, control access through the folder's ACLs.
-- `manifest.json` records SHA-256 hashes, so you can show later that the uploaded file is the one that was reviewed.
+- **Exports:** with the database workflow, `ingest` encrypts the secrets with DPAPI as it stores them. You can securely delete the plaintext exports straight away instead of keeping them for the whole project.
+- **Outputs:** secrets are written **only** to `upload/Accounts.csv`, and only with `--include-secrets`. The default is a dry run. The review files, the query results and the manifest never contain secrets, and the tests check this. Any column whose name looks like a secret (password, passphrase, private key, PIN, TOTP/OTP) is left out of the review files.
+- **File permissions:** the database and `Accounts.csv` are created as owner-only (`0600`) on Linux and macOS. On Windows, control access with the folder's ACLs.
+- **Proof:** `manifest.json` records the SHA-256 of every input and output. The database `audit` table records who did what and when.
 
 What you still need to do:
-1. Work on the migration host only, on an **encrypted volume** (BitLocker or similar), in a folder only the migration operators can read.
+1. Work only on the migration host, on an **encrypted volume** (BitLocker or similar), in a folder only the migration operators can read.
 2. Don't email, sync or copy the exports or `upload/` anywhere else. Don't open `Accounts.csv` in Excel: it can silently change values that start with `=`, `+`, `-` or `@`, and it strips leading zeros.
-3. Generate the upload files as late as possible, upload them, check the result, then **securely delete** the source exports and the `upload/` folder. You can keep `review/` and `manifest.json` as the record of the migration.
+3. Extract with `--include-secrets` as late as possible. Upload, check the result, then **securely delete** the `upload/` folder. Delete the database once the migration is signed off. You can keep `review/` and `manifest.json` as the record of the migration.
 
 ## Adding a source adapter
 
@@ -119,7 +149,7 @@ The rules, validation and writers need no changes: they only see the common mode
 
 | Path | What it is |
 |---|---|
-| `pam2pc/` | The converter: `adapters/`, `config.py`, `model.py`, `transform.py`, `writers.py`, `xlsx.py`, `cli.py` |
+| `pam2pc/` | The converter: `adapters/`, `config.py`, `model.py`, `transform.py`, `writers.py`, `store.py` (staging database), `protect.py` (DPAPI), `xlsx.py`, `cli.py` |
 | `samples/` | Sample exports for every source, with matching configs |
 | `tests/` | `python -m unittest discover -s tests` |
 | `tools/` | A synthetic Delinea data generator, for volume testing |

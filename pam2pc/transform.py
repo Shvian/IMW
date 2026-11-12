@@ -257,6 +257,7 @@ class AccountPlan:
     access_source: str = ""
     warnings: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
+    in_scope: bool = True          # False when an extract filter leaves the record out
 
     @property
     def status(self):
@@ -264,7 +265,7 @@ class AccountPlan:
 
     @property
     def uploadable(self):
-        return self.migrate == "Y" and not self.errors
+        return self.migrate == "Y" and not self.errors and self.in_scope
 
 
 @dataclass
@@ -304,7 +305,20 @@ def _changed(edited, computed):
     return True
 
 
-def build_plan(records, cfg, perms=None, overrides=None):
+def rebuild_totals(plan, cfg):
+    """Recompute Safe and member totals after in_scope or migrate changed."""
+    plan.safes = _safes(plan.accounts)
+    plan.members = _members(plan.accounts, cfg)
+    return plan
+
+
+def _explicit_changed(edited, computed):
+    return bool(edited) and edited.strip().lower() != (computed or "").strip().lower()
+
+
+def build_plan(records, cfg, perms=None, overrides=None, explicit=False):
+    """explicit=True: overrides are deliberate edits (database), not a re-fed review file."""
+    changed = _explicit_changed if explicit else _changed
     perms = perms or Permissions()
     overrides = overrides or {}
     plans = []
@@ -321,7 +335,7 @@ def build_plan(records, cfg, perms=None, overrides=None):
 
         # Access
         if rec.grants is not None:
-            p.grants, p.access_source = list(rec.grants), "source"
+            p.grants, p.access_source = list(rec.grants), rec.access_source or "source"
         elif perms.loaded:
             p.grants, p.access_source = perms.resolve(rec)
             p.grants = list(p.grants)
@@ -343,7 +357,7 @@ def build_plan(records, cfg, perms=None, overrides=None):
             safe, src = fallback_safe(rec, cfg)
         safe = safe if src == "source" else apply_prefix(safe, cfg)
         # An edited review file repeats every value; only a changed one is an override.
-        if _changed(ov.get("Target_Safe"), sanitize_safe_name(safe, cfg)[0]):
+        if changed(ov.get("Target_Safe"), sanitize_safe_name(safe, cfg)[0]):
             safe, src, fell_back = ov["Target_Safe"], "override", False
         if fell_back:
             p.warnings.append("Safe from folder fallback; no group or folder rule matched")
@@ -352,14 +366,14 @@ def build_plan(records, cfg, perms=None, overrides=None):
 
         # Platform
         p.platform, p.platform_source = resolve_platform(rec, cfg)
-        if _changed(ov.get("Platform_ID"), p.platform):
+        if changed(ov.get("Platform_ID"), p.platform):
             p.platform, p.platform_source = ov["Platform_ID"], "override"
         if not p.platform:
             p.errors.append(f"no platform for type '{rec.type}'; add it to platform_map")
 
         # Account name
         name = rec.name or f"{rec.address}-{rec.username}".strip("-")
-        if _changed(ov.get("Account_Name"), ACCOUNT_NAME_INVALID.sub("_", name).strip()):
+        if changed(ov.get("Account_Name"), ACCOUNT_NAME_INVALID.sub("_", name).strip()):
             name = ov["Account_Name"]
         clean = ACCOUNT_NAME_INVALID.sub("_", name).strip()
         if len(clean) > ACCOUNT_NAME_MAX:
@@ -410,9 +424,11 @@ def build_plan(records, cfg, perms=None, overrides=None):
                p.rec.secret_type)].append(p)
     for group in dupes.values():
         if len(group) > 1:
-            ids = ", ".join(x.rec.record_id for x in group)
             for x in group:
-                x.warnings.append(f"same username/address/type in this Safe as: {ids}")
+                others = [y.rec.record_id for y in group if y is not x]
+                more = f" and {len(others) - 3} more" if len(others) > 3 else ""
+                x.warnings.append("possible duplicate: same username/address/type in this Safe as "
+                                  + ", ".join(others[:3]) + more)
 
     return Plan(plans, _safes(plans), _members(plans, cfg))
 
