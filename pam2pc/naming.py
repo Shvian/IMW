@@ -1,14 +1,16 @@
-"""Safe naming convention: build short, layered Safe names from abbreviations.
+r"""Safe naming convention: build short, layered Safe names from abbreviations.
 
 Follows the usual CyberArk convention layers, most important first:
   Environment (P/D/T/Q) - Location - Business unit/Application - Technology (SVR, DB,
   NET, DOM...) - Flavor (WIN, LNX, SQL, ORC, CSC...) - Account type (LA, DA, LS, DS,
   RT, EN, SA)
 
-The template in config safe_convention.template decides which layers are used and
-in what order, e.g. "{env}-{folder}-{tech}-{flavor}-{acct}". {folder} is every
-folder level, each word turned into a 1-4 letter code through the abbreviation
-dictionary (or an automatic consonant abbreviation). Codes that repeat an earlier
+Existing structure comes first: when a record has folders, safe_convention.template
+(default "{folder}") names the Safe after its folder levels, in order, each level
+abbreviated (\Applications\Storefront\Prod -> APP-SF-P). Only records with no
+folders use template_no_folders (default "{env}-{tech}-{flavor}-{acct}", the CyberArk
+example layers). Folder names and words become 1-4 letter codes through the
+abbreviation dictionary, whole folder names first (or an automatic abbreviation). Codes that repeat an earlier
 code are dropped, and when the name is over the limit it is shortened step by step
 (see fit()) instead of simply being cut off.
 """
@@ -28,7 +30,7 @@ DEFAULT_ABBREVIATIONS = {
     "europe": "EU", "united states": "US", "boston": "BOS", "new york": "NYC", "california": "CA",
     # Business unit / application (category 3)
     "security": "SEC", "engineering": "ENG", "support": "SUP", "support desk": "SUP", "helpdesk": "SUP",
-    "finance": "FIN", "human resources": "HR", "payments": "PAY", "payroll": "PAY", "storefront": "SHOP",
+    "finance": "FIN", "human resources": "HR", "payments": "PAY", "payroll": "PAY", "storefront": "SF",
     "marketing": "MKT", "sales": "SLS", "operations": "OPS", "ops": "OPS", "self service": "SS",
     "vendor": "VND", "vendors": "VND", "portal": "PRT", "portals": "PRT", "reporting": "RPT",
     "replica": "RPL", "replicas": "RPL", "batch": "BAT", "jobs": "JOB", "nightly": "NGT", "weekly": "WKL",
@@ -50,6 +52,15 @@ DEFAULT_ABBREVIATIONS = {
     # Account type (category 6)
     "local": "LA", "service": "SVC", "service accounts": "SVC", "admin": "ADM", "admins": "ADM",
     "administrators": "ADM", "root": "RT",
+}
+# Word parts recognised inside compound folder names (Storefront -> Store+front -> SF).
+COMPOUND_PARTS = {
+    "store", "front", "back", "end", "pay", "roll", "net", "work", "share", "point", "data", "base",
+    "web", "mail", "time", "sheet", "book", "desk", "help", "cash", "gate", "way", "key", "vault",
+    "fire", "wall", "out", "look", "box", "drop", "cloud", "hub", "line", "sales", "force", "power",
+    "shell", "file", "ware", "soft", "user", "check", "card", "bank", "pass", "word", "site", "core",
+    "edge", "home", "page", "app", "apps", "ops", "dev", "sec", "log", "logs", "stream", "flow",
+    "market", "place", "self", "service", "client", "server", "admin", "main", "frame", "net",
 }
 STOPWORDS = {"and", "of", "the", "for", "a", "an", "to", "in", "on", "at", "with"}
 
@@ -85,16 +96,23 @@ ENV_WORDS = {"production", "prod", "prd", "development", "dev", "test", "testing
              "quality assurance", "staging", "stage"}
 
 
+def norm(text):
+    """Folder name or phrase -> lookup key ("Batch: Nightly/Weekly" -> "batch nightly weekly")."""
+    return " ".join(w for w in WORD_SPLIT.split(str(text).lower()) if w)
+
+
 class Namer:
     def __init__(self, cfg):
         conv = cfg.get("safe_convention", {})
         self.cfg = conv
-        self.template = conv.get("template") or "{env}-{folder}-{tech}-{flavor}-{acct}"
+        self.template = conv.get("template") or "{folder}"
+        self.template_flat = conv.get("template_no_folders") or "{env}-{tech}-{flavor}-{acct}"
         self.sep = conv.get("separator", "-")
         self.max_len = cfg["safe_name"]["max_length"]
-        self.abbr = {k.lower(): v for k, v in DEFAULT_ABBREVIATIONS.items()}
-        self.abbr.update({k.lower(): v for k, v in (conv.get("abbreviations") or {}).items()})
-        self.skip_levels = {s.lower() for s in conv.get("skip_folder_levels") or []}
+        self.abbr = {norm(k): v for k, v in DEFAULT_ABBREVIATIONS.items()}
+        self.user_abbr = {norm(k): str(v).strip() for k, v in (conv.get("abbreviations") or {}).items()}
+        self.abbr.update(self.user_abbr)
+        self.skip_levels = {norm(s) for s in conv.get("skip_folder_levels") or []}
         self.platform_codes = dict(DEFAULT_PLATFORM_CODES)
         self.platform_codes.update(conv.get("platform_codes") or {})
         self.pc_lower = {k.lower(): v for k, v in self.platform_codes.items()}
@@ -110,6 +128,17 @@ class Namer:
         w = word.upper()
         if len(w) <= 4 or w.isdigit() or (w.isalnum() and word.isupper()):
             return w[:4]
+        # CamelCase (SharePoint -> SP, HRApp -> HRA) or a known compound (Storefront -> SF).
+        parts = re.findall(r"[A-Z]+(?![a-z])|[A-Z][a-z]+|[a-z]+|\d+", word)
+        if len(parts) == 1:
+            low = word.lower()
+            known = COMPOUND_PARTS | {k for k in self.abbr if " " not in k and len(k) >= 3}
+            for i in range(3, len(low) - 2):
+                if low[:i] in known and low[i:] in known:
+                    parts = [low[:i], low[i:]]
+                    break
+        if 1 < len(parts) <= 4:
+            return "".join(p if (p.isupper() or p.isdigit()) else p[0].upper() for p in parts)[:4]
         out = w[0]
         for ch in w[1:]:
             if ch not in VOWELS and ch.isalnum() and ch != out[-1]:
@@ -120,6 +149,9 @@ class Namer:
 
     def level_codes(self, text):
         """['SQL Production Reporting'] -> [('SQL', 'SQL'), ('Production', 'P'), ...] (source, code)."""
+        whole = norm(text)
+        if whole in self.abbr and " " in whole:      # a whole multi-word folder name
+            return [(text, self.abbr[whole])] if self.abbr[whole] else []
         words = [w for w in WORD_SPLIT.split(text) if w]
         out, i = [], 0
         while i < len(words):
@@ -140,17 +172,19 @@ class Namer:
         return out
 
     # -- layers ---------------------------------------------------------------
-    def layers(self, rec, platform, with_type=False):
+    def levels(self, rec):
+        return [lvl for lvl in rec.folder if norm(lvl) not in self.skip_levels]
+
+    def layers(self, rec, platform, with_type=False, env_in_place=False):
         folder = []          # list of levels, each a list of codes
         env = ""
-        for level in rec.folder:
-            if level.lower() in self.skip_levels:
-                continue
+        for level in self.levels(rec):
             codes = []
             for src, code in self.level_codes(level):
-                if src.lower() in self.env_words:
+                if norm(src) in self.env_words:
                     env = env or code
-                    continue
+                    if not env_in_place:
+                        continue
                 codes.append(code)
             if codes:
                 folder.append(codes)
@@ -168,11 +202,35 @@ class Namer:
                 "flavor": pc.get("flavor", ""), "acct": acct,
                 "type": [c for _, c in self.level_codes(rec.type)] if (with_type and rec.type) else []}
 
+    def folder_code(self, level):
+        """(code, automatic) for one whole folder name as it would appear in a Safe name."""
+        pairs = self.level_codes(level)
+        auto = any(norm(src) not in self.abbr for src, _ in pairs)
+        return self.sep.join(c for _, c in pairs), auto
+
+    def suggest(self, folder_counts):
+        """Distinct folder names -> suggested codes, so a table can be filled from the data.
+        folder_counts: {folder name: accounts}. Codes another name already uses are flagged."""
+        rows, by_code = [], {}
+        for name, count in sorted(folder_counts.items(), key=lambda kv: (-kv[1], kv[0].lower())):
+            if norm(name) in self.skip_levels:
+                continue
+            code, auto = self.folder_code(name)
+            row = {"folder": name, "code": code, "accounts": count, "automatic": auto,
+                   "yours": norm(name) in self.user_abbr, "clash": ""}
+            other = by_code.get(code.upper())
+            if other and auto and norm(other) != norm(name):
+                row["clash"] = other
+            by_code.setdefault(code.upper(), name)
+            rows.append(row)
+        return rows
+
     # -- assemble -------------------------------------------------------------
     def build(self, rec, platform, template=None):
         """Return (name, notes). The name already fits max_length when possible."""
-        template = template or self.template
-        lay = self.layers(rec, platform, with_type="{type}" in template)
+        if not template:
+            template = self.template if self.levels(rec) else self.template_flat
+        lay = self.layers(rec, platform, with_type="{type}" in template, env_in_place="{env}" not in template)
         tokens = re.findall(r"\{(\w+)\}|([^{}]+)", template)
         # Each part: (kind, levels) where levels is a list of lists of codes.
         parts = []

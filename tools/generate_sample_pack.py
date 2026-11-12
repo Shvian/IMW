@@ -262,16 +262,17 @@ def spreadsheet(out, rnd, count):
 
 CONFIG = {
     "_comment": "Starter rules for the sample pack. Edit them on the Mapping rules page.",
-    "group_rules": [],
+    "config_version": 2,
     "folder_rules": [
-        {"folder_prefix": "Cloud", "safe": "{env}-CLD-BG-{flavor}-{acct}"},
+        {"folder_prefix": "\\Cloud", "safe": "CLD-BG-{flavor}-{acct}"},
     ],
-    "fallback_strategy": "convention",
     "safe_convention": {
-        "template": "{env}-{folder}-{tech}-{flavor}-{acct}",
         "default_environment": "P",
-        "skip_folder_levels": ["Infrastructure", "Applications"],
         "abbreviations": {"Self-Service": "SS", "HR Portal": "HR", "Unfiled": "UNF"},
+    },
+    "custom_roles": {
+        "List only": ["listAccounts"],
+        "Helpdesk": ["listAccounts", "useAccounts", "retrieveAccounts", "viewAuditLog"],
     },
     "platform_map": {
         "Active Directory Account": "WinDomain", "Windows Account": "WinServerLocal",

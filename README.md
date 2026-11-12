@@ -99,28 +99,30 @@ To add a source, see [Adding a source adapter](#adding-a-source-adapter).
 
 | Step | Rule |
 |---|---|
-| Safe | The tool checks these in order: an override, then a `Target Safe` column in the source, then `group_rules` (group-based, the first rule matching one of the record's groups wins, `min_role` ignores weak grants, `{1}` inserts regex captures, `{folder_leaf}` and `{folder_path}` insert the folder), then `folder_rules` (the longest prefix wins), then `fallback_strategy` (`convention`, the default, which is described below; `folder_leaf`; `folder_path`; or `unmapped`). |
+| Safe | Safes are **object oriented by default: they follow the folders**. The tool checks an override, then a `Target Safe` column in the source, then `folder_rules` (exceptions; the longest folder prefix wins), then `group_rules`, then `fallback_strategy`, which names the Safe from the folders (`convention`, the default and described below; `folder_leaf`; `folder_path`; or `unmapped`). `group_rules` are optional and empty to start with, because role-oriented Safes don't scale as well. Each rule maps an access group to a Safe: the first rule matching one of the record's groups wins, `min_role` ignores weak grants, `{1}` inserts regex captures, and `{folder_leaf}` and `{folder_path}` insert the folder. Set `group_rules_first` to check them before the folder rules. |
 | Safe name | At most **28 characters**. The forbidden characters `\ / : * ? " < > \|` become **`-`**, repeated `-` are collapsed, and an optional `prefix` is added. `Valid_Safe_Name=FALSE` means the name had to change. When two different names end up identical, the later one gets a `-2` style suffix that still fits in 28 characters. |
 | Platform | The tool checks an override, then a `Platform ID` column, then `platform_rules` (a regex on type, folder, name, address, username or any source column), then `platform_map` (record type to platform), then `default_platform`. A record with no platform is an **ERROR**. |
-| Members | Each source permission is mapped to a role through `permission_map` (for example Owner/Full to Owner, Edit/Write to Editor, View/Read to User, List to Viewer). Each Safe gets every group seen on its accounts, at the strongest role seen. `directory_map` turns `CORP\Group` into memberName `Group` and searchIn `corp.example.com`. `role_permissions` sets the permission flags for each role. |
+| Members | Each source permission is mapped through `permission_map` to a role: one of the Privilege Cloud **permission presets** (Connect only, Read only, Approver, Accounts manager, Full) or one of your named `custom_roles`, where you choose every permission flag. The defaults are Owner/Full to Full, Edit/Write to Accounts manager, View/Read to Read only, Use/Connect to Connect only, Approve to Approver, and List to the custom role List only. Each Safe gets every group seen on its accounts, at the strongest role seen (the role with the most permissions). `directory_map` turns `CORP\Group` into memberName `Group` and searchIn `corp.example.com`. |
 | Accounts | The name comes from the source name, otherwise `address-username`. Invalid characters become `_`, and the name is made unique within the Safe. URL addresses are reduced to the host name. Mapped source columns go into `platformAccountProperties` (`account_property_map`). |
 | Not migrated | File attachments and file fields (`exclude_field_patterns`). Each record that loses one says so in its Notes. |
 
 ### Safe naming convention (abbreviations)
 
-By default, a record that no group or folder rule places gets a **convention name**. The name is built from abbreviated layers, in the order CyberArk recommends, and always fits in 28 characters:
+Existing structure comes first. A record with folders gets a Safe named after its folder levels, **in order, each level abbreviated**, and always within 28 characters:
+- `\Applications\Storefront\Prod` becomes `APP-SF-P`.
+- `\Databases\Oracle Finance` becomes `DB-ORC-FIN`.
 
-| Layer | Placeholder | Comes from | Codes |
-|---|---|---|---|
-| 1. Environment | `{env}` | A folder word such as Production, Dev, Test or QA, otherwise `default_environment` | P, D, T, Q |
-| 2-3. Location, business unit, application | `{folder}` | Every folder level. Each word becomes a 1-4 letter code from the dictionary, or an automatic consonant code. | BOS, HR, FIN, RPT |
-| 4. Technology | `{tech}` | The platform | SVR, DB, NET, DOM, WKS, WEB, CLD |
-| 5. Flavor | `{flavor}` | The platform | WIN, UNX, SQL, ORC, CSC, AZ |
-| 6. Account type | `{acct}` | The platform, refined by username (root, sa, svc_*, enable) | LA, DA, LS, DS, RT, SA, EN |
+Only records with no folders, such as flat KeePass files or spreadsheets, get the CyberArk example layers from `template_no_folders` (default `{env}-{tech}-{flavor}-{acct}`). For example, a local Windows service account with no folder becomes `P-SVR-WIN-LS` when `default_environment` is P.
 
-The default template is `{env}-{folder}-{tech}-{flavor}-{acct}`. Some examples:
-- `\Boston DC\Production\Windows Servers\HR App` with platform WinServerLocal and user `svc_hr` becomes `P-BOS-DC-WIN-SVR-HR-APP-LS`.
-- `\Databases\SQL Production Reporting Replicas EU West` with platform MSSql and user `sa` becomes `P-DB-SQL-RPT-RPL-EU-W-SA`.
+| Placeholder | Comes from | Codes |
+|---|---|---|
+| `{folder}` | Every folder level, in order. A whole folder name in `abbreviations` wins; otherwise each word gets a code from the dictionary, or an automatic code (compound words and CamelCase become initials, e.g. Storefront becomes SF and SharePoint becomes SP, and other words become consonants). `{folder_leaf}` is the last level only. | APP, SF, BOS, HR, FIN |
+| `{env}` | A folder word such as Production, Dev, Test or QA, otherwise `default_environment`. With `{env}` in the template the code moves to that spot; without it, the code stays where the folder is. | P, D, T, Q |
+| `{tech}` | The platform | SVR, DB, NET, DOM, WKS, WEB, CLD |
+| `{flavor}` | The platform | WIN, UNX, SQL, ORC, CSC, AZ |
+| `{acct}` | The platform, refined by username (root, sa, svc_*, enable) | LA, DA, LS, DS, RT, SA, EN |
+
+To split a folder's accounts further (least privilege), add layers to `template`, for example `{folder}-{flavor}` or `{folder}-{acct}`. The full CyberArk style is `{env}-{folder}-{tech}-{flavor}-{acct}`, which gives `P-BOS-DC-WIN-SVR-HR-APP-LS` for `\Boston DC\Production\Windows Servers\HR App` with a `svc_hr` account.
 
 A code that already appears earlier in the name is not repeated. When a name is too long, it is shortened in this order, so as many folder levels as possible survive:
 1. Long upper folder names become their initials (`Customer Facing` becomes `CF`).
@@ -128,16 +130,20 @@ A code that already appears earlier in the name is not repeated. When a name is 
 3. The most generic top levels are left out.
 
 All of this is set under `safe_convention`:
-- `template`
+- `template` and `template_no_folders`
 - `default_environment`
-- `abbreviations`: your own words, which win over the built-in list in `pam2pc/naming.py`
+- `abbreviations`: folder names or words with your code, which win over the built-in list in `pam2pc/naming.py`
 - `skip_folder_levels`
 - `environment_words`
 - `platform_codes`
 
-In the Workbench, the **Mapping rules** page has the same settings, plus a live preview and a list of folder words that have no code yet. Rules can use the layers too. For example, `{"group_pattern": "^CORP\\APP-(.+)-Owners$", "safe": "{env}-{1}-{tech}-{flavor}-{acct}"}` gives `P-PAY-SVR-WIN-LS`, and `{convention}` inserts the whole name.
+In the Workbench, the **Mapping rules** page lists every folder name found in the loaded exports with the code it gets. You can type over any code, or keep all the suggested codes so they stay fixed. The page also flags two folders that end up with the same automatic code, and has a live preview. Rules can use the layers too. For example, `{"group_pattern": "^CORP\\APP-(.+)-Owners$", "safe": "{env}-{1}-{tech}-{flavor}-{acct}"}` gives `P-PAY-SVR-WIN-LS`, and `{convention}` inserts the whole name.
 
-Including `{acct}` gives each account type its own Safe (least privilege). Remove it from the template if you'd rather keep account types together. Safes with more than `safe_max_accounts` accounts (default 3,000) are flagged, because CyberArk recommends 3,000 to 5,000 accounts per Safe within its 20,000-object limit.
+Two things are flagged for review:
+- A Safe built from more than one source folder (the abbreviations collided, or levels were skipped).
+- A Safe with more than `safe_max_accounts` accounts (default 3,000). CyberArk recommends 3,000 to 5,000 accounts per Safe within its 20,000-object limit.
+
+The Workbench saves only the settings you changed into `config.json`, so later updates to the defaults still reach you. A config saved by an older version is upgraded on load: settings that still equal the old defaults move to the new defaults (for example the role names Owner/Editor/User/Viewer become Full/Accounts manager/Read only/List only), and anything you changed is kept.
 
 Each record gets a Status:
 - **OK**: nothing to report.

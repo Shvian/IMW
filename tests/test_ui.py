@@ -87,6 +87,13 @@ class UiServer(Base):
         user = {"group_rules": [{"group": "CORP\\DBA-Team", "safe": "DB-Prod"}], "fallback_strategy": "folder_path"}
         self.assertEqual(self.req("POST", "/api/config", {"config": user})[0], 200)
         self.assertEqual(self.req("POST", "/api/config", {"config": {"group_rules": [{"safe": "X"}]}})[0], 400)
+        saved = json.loads((self.ws / "config.json").read_text())
+        self.assertEqual(set(saved), {"group_rules", "fallback_strategy"})        # only the changes are kept
+        for bad in ({"custom_roles": {"Full": ["listAccounts"]}},
+                    {"custom_roles": {"X": ["listAccounts", "requestsAuthorizationLevel1", "requestsAuthorizationLevel2"]}},
+                    {"permission_map": {"View": "Nobody"}}):
+            self.assertEqual(self.req("POST", "/api/config", {"config": dict(user, **bad)})[0], 400, bad)
+        self.assertEqual(self.req("POST", "/api/config", {"config": user})[0], 200)
 
         st, d = self.req("POST", "/api/accounts", {"view": "all", "filters": {"search": "svc_sql"}})
         self.assertEqual(d["total"], 1)

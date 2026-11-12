@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import __version__
-from .config import ALL_PERMISSIONS
+from .config import ALL_PERMISSIONS, all_roles
 
 SAFE_FIELDS = ["safeName", "description", "location", "managingCPM",
                "numberOfVersionsRetention", "numberOfDaysRetention", "olacEnabled", "autoPurgeEnabled"]
@@ -113,7 +113,7 @@ def write_upload(plan, cfg, out_dir, include_secrets):
 
     members = out / "SafeMembers.csv"
     skipped_members = 0
-    roles = cfg["role_permissions"]
+    roles = all_roles(cfg)
     with _open(members) as fh:
         w = csv.writer(fh)
         w.writerow(["safeName", "memberName", "memberType", "searchIn", "role"] +

@@ -206,7 +206,7 @@ class Table(Base):
         self.assertEqual(safes, ["DB-SQL Production Reportin-2", "DB-SQL Production Reporting"])
         members = read_csv(out / "upload" / "SafeMembers.csv")
         helpdesk = [m for m in members if m["memberName"] == "Helpdesk"][0]
-        self.assertEqual(helpdesk["role"], "User")                       # "Read" -> User
+        self.assertEqual(helpdesk["role"], "Read only")                  # "Read" -> Read only preset
         self.assertEqual(helpdesk["searchIn"], "corp.example.com")
         self.assertEqual(helpdesk["permissions.retrieveAccounts"], "true")
         self.assertEqual(helpdesk["permissions.manageSafe"], "false")

@@ -15,9 +15,43 @@ def rec(folder, username="admin", type_=""):
                         folder=split_folder(folder), username=username, type=type_, address="h", secret="x")
 
 
-class Naming(unittest.TestCase):
+LAYERED = {"safe_convention": {"template": "{env}-{folder}-{tech}-{flavor}-{acct}"}}
+
+
+class FolderFirst(unittest.TestCase):
+    """Defaults: the folder structure names the Safe; CyberArk layers only without folders."""
     def setUp(self):
         self.n = Namer(load_config())
+
+    def test_folder_levels_in_order(self):
+        self.assertEqual(self.n.build(rec("\\Applications\\Storefront\\Prod"), "UnixSSH")[0], "APP-SF-P")
+        self.assertEqual(self.n.build(rec("\\Applications\\Payments\\Prod"), "WinServerLocal")[0], "APP-PAY-P")
+
+    def test_no_folders_uses_cyberark_layers(self):
+        self.assertEqual(self.n.build(rec("", "svc_web"), "WinServerLocal")[0], "SVR-WIN-LS")
+        cfg = config_from_dict({"safe_convention": {"default_environment": "P"}})
+        self.assertEqual(Namer(cfg).build(rec("", "root"), "UnixSSH")[0], "P-SVR-UNX-RT")
+
+    def test_compound_and_camel_case_words(self):
+        self.assertEqual(self.n.auto("Webportal"), "WP")
+        self.assertEqual(self.n.auto("SharePoint"), "SP")
+
+    def test_whole_folder_abbreviation_wins(self):
+        cfg = config_from_dict({"safe_convention": {"abbreviations": {"Batch: Nightly/Weekly Jobs": "BNW"}}})
+        self.assertEqual(Namer(cfg).build(rec("\\Linux\\Batch: Nightly/Weekly Jobs"), "UnixSSH")[0], "LNX-BNW")
+
+    def test_suggestions_from_folder_names(self):
+        rows = {r["folder"]: r for r in self.n.suggest({"Storefront": 4, "Prod": 9, "Zebra": 1, "Zbr": 1})}
+        self.assertEqual(rows["Storefront"]["code"], "SF")
+        self.assertFalse(rows["Storefront"]["automatic"])
+        self.assertTrue(rows["Zebra"]["automatic"])
+        self.assertEqual(rows["Zbr"]["clash"] or rows["Zebra"]["clash"], "Zebra" if rows["Zbr"]["clash"] else "Zbr")
+
+
+class Naming(unittest.TestCase):
+    """The CyberArk layered template from the cheat sheet."""
+    def setUp(self):
+        self.n = Namer(config_from_dict(LAYERED))
 
     def name(self, folder, platform, user="admin"):
         return self.n.build(rec(folder, user), platform)[0]
@@ -66,13 +100,28 @@ class Naming(unittest.TestCase):
 
 class ConventionInPlan(Base):
     def test_default_fallback_uses_convention(self):
-        cfg = load_config()
         recs = [rec("\\Production\\Windows\\Member Servers", "Administrator", "Windows Account"),
                 rec("\\Production\\Windows\\Member Servers", "svc_app", "Windows Account")]
-        plan = build_plan(recs, cfg)
-        self.assertEqual([p.safe for p in plan.accounts], ["P-WIN-SVR-LA", "P-WIN-SVR-LS"])
+        plan = build_plan(recs, load_config())
+        self.assertEqual([p.safe for p in plan.accounts], ["P-WIN-SVR", "P-WIN-SVR"])
         self.assertEqual(plan.accounts[0].safe_source, "fallback:convention")
         self.assertTrue(all(p.valid_safe for p in plan.accounts))
+        self.assertFalse(any("fallback" in w for w in plan.accounts[0].warnings))
+        plan = build_plan(recs, config_from_dict(LAYERED))
+        self.assertEqual([p.safe for p in plan.accounts], ["P-WIN-SVR-LA", "P-WIN-SVR-LS"])
+
+    def test_folder_rules_beat_group_rules_by_default(self):
+        from pam2pc.model import Grant
+        r = rec("\\Applications\\Payments", "svc_pay", "Windows Account")
+        r.grants = [Grant("CORP\\Payments-Team", "Owner")]
+        user = {"group_rules": [{"group": "CORP\\Payments-Team", "safe": "ROLE-PAY"}],
+                "folder_rules": [{"folder_prefix": "\\Applications\\Payments", "safe": "APP-PAYMENTS"}]}
+        self.assertEqual(build_plan([r], config_from_dict(user)).accounts[0].safe, "APP-PAYMENTS")
+        user["group_rules_first"] = True
+        self.assertEqual(build_plan([r], config_from_dict(user)).accounts[0].safe, "ROLE-PAY")
+        user.pop("folder_rules")
+        user["group_rules_first"] = False
+        self.assertEqual(build_plan([r], config_from_dict(user)).accounts[0].safe, "ROLE-PAY")
 
     def test_rule_placeholders(self):
         cfg = config_from_dict({"group_rules": [

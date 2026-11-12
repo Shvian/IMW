@@ -11,12 +11,12 @@ from dataclasses import dataclass, field
 from typing import List
 
 from .adapters.base import address_from_url
+from .config import all_roles, resolve_role
 from .model import Grant, split_folder
 from .naming import Namer
 
 log = logging.getLogger("pam2pc.transform")
 
-ROLE_RANK = {"viewer": 1, "user": 2, "editor": 3, "owner": 4}
 ACCOUNT_NAME_INVALID = re.compile(r'[\\/:*?"<>|\t\r\n]')
 ACCOUNT_NAME_MAX = 128
 
@@ -145,15 +145,22 @@ def resolve_collisions(proposed_to_clean, cfg):
 # Rules
 # --------------------------------------------------------------------------- #
 def role_for(permission, cfg):
+    """Source permission word -> role name (a preset or custom role; unknown names kept as is)."""
     pmap = {k.lower(): v for k, v in cfg["permission_map"].items()}
-    return pmap.get((permission or "").strip().lower(), "")
+    mapped = pmap.get((permission or "").strip().lower(), "")
+    return resolve_role(mapped, cfg) or mapped
+
+
+def role_rank(role, cfg):
+    """How strong a role is: the number of permissions it grants (0 if undefined)."""
+    return len(all_roles(cfg).get(role, ()))
 
 
 def _min_rank(rule, cfg):
     if rule.get("min_role"):
-        return ROLE_RANK.get(str(rule["min_role"]).lower(), 0)
+        return role_rank(resolve_role(rule["min_role"], cfg), cfg)
     if rule.get("min_permission"):  # old phase 1 configs used source wording
-        return ROLE_RANK.get(role_for(rule["min_permission"], cfg).lower(), 0)
+        return role_rank(role_for(rule["min_permission"], cfg), cfg)
     return 0
 
 
@@ -161,7 +168,7 @@ def match_group_rules(grants, cfg, rec=None, ctx=None):
     for rule in cfg["group_rules"]:
         min_rank = _min_rank(rule, cfg)
         for g in grants:
-            if ROLE_RANK.get(role_for(g.permission, cfg).lower(), 0) < min_rank:
+            if min_rank and role_rank(role_for(g.permission, cfg), cfg) < min_rank:
                 continue
             if "group" in rule and g.member.lower() == rule["group"].lower():
                 return _fill(rule["safe"], rec, ctx), f"group_rule:{rule['group']}"
@@ -378,10 +385,12 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False):
         safe, src = None, None
         if rec.target_safe:
             safe, src = rec.target_safe, "source"
-        if not safe:
-            safe, src = match_group_rules(p.grants, cfg, rec, ctx)
-        if not safe:
-            safe, src = match_folder_rules(rec, cfg, ctx)
+        rules = [lambda: match_folder_rules(rec, cfg, ctx), lambda: match_group_rules(p.grants, cfg, rec, ctx)]
+        if cfg.get("group_rules_first"):
+            rules.reverse()
+        for rule in rules:
+            if not safe:
+                safe, src = rule()
         fell_back = not safe
         if not safe:
             safe, src = fallback_safe(rec, cfg, ctx)
@@ -389,13 +398,13 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False):
         # An edited review file repeats every value; only a changed one is an override.
         if changed(ov.get("Target_Safe"), sanitize_safe_name(safe, cfg)[0]):
             safe, src, fell_back = ov["Target_Safe"], "override", False
-        if fell_back and src != "fallback:convention":
-            p.warnings.append("Safe from folder fallback; no group or folder rule matched")
+        if fell_back and src == "fallback:unmapped":
+            p.warnings.append("no Safe: no rule matched and no folder to name it from")
         p.proposed_safe = safe
         p.safe_source = src
         if src != "override" and namer.last_notes:
             p.warnings.extend("Safe name: " + n for n in namer.last_notes)
-        p.by_convention = namer.used and src != "override"
+        p.by_convention = (namer.used or src.startswith("fallback:folder")) and src != "override"
         if p.by_convention:
             convention_folders[safe.lower()].add(rec.folder_path)
 
@@ -499,7 +508,7 @@ def _members(plans, cfg):
                                          "accounts": 0, "seen": set()})
             m["accounts"] += 1
             m["seen"].add(g.permission or "(blank)")
-            if ROLE_RANK.get(role.lower(), 0) > ROLE_RANK.get(m["role"].lower(), 0):
+            if role_rank(role, cfg) > role_rank(m["role"], cfg):
                 m["role"], m["permission"] = role, g.permission
     for m in members.values():
         notes = []
@@ -508,8 +517,8 @@ def _members(plans, cfg):
                          "; strongest used, Safe-level access widens it")
         if not m["role"]:
             notes.append(f"no role for permission '{m['permission']}'; add it to permission_map")
-        elif m["role"] not in cfg["role_permissions"]:
-            notes.append(f"role '{m['role']}' has no role_permissions entry")
+        elif m["role"] not in all_roles(cfg):
+            notes.append(f"role '{m['role']}' is not a preset or custom role")
         m["notes"] = notes
         m["member_name"], m["search_in"] = member_target(m["source_name"], cfg)
         m["member_type"] = m["type"] or cfg["default_member_type"]

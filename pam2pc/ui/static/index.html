@@ -73,6 +73,9 @@ code { background: #f0f2f6; padding: 1px 5px; border-radius: 4px; font-size: 12p
 .drawer dd { margin: 0; word-break: break-word; }
 .editor td input, .editor td select { width: 100%; }
 .editor td.x { width: 40px; }
+.roles td.c { text-align: center; }
+.roles .tick { color: var(--ok); font-weight: 700; }
+.roles th input { width: auto; }
 .hidden { display: none !important; }
 .actionbar { position: sticky; bottom: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
   padding: 10px; margin-top: 10px; }
@@ -222,14 +225,34 @@ PAGES.load = async () => {
 };
 
 /* ---------------- 2. Rules ---------------- */
-const ROLES = ["", "Viewer", "User", "Editor", "Owner"];
+const PERM_GROUPS = [
+  ["Access", [["useAccounts", "Use accounts"], ["retrieveAccounts", "Retrieve accounts"], ["listAccounts", "List accounts"]]],
+  ["Account management", [["addAccounts", "Add accounts"], ["updateAccountContent", "Update account content"],
+    ["updateAccountProperties", "Update account properties"], ["initiateCPMAccountManagementOperations", "Initiate CPM account management operations"],
+    ["specifyNextAccountContent", "Specify next account content"], ["renameAccounts", "Rename accounts"],
+    ["deleteAccounts", "Delete accounts"], ["unlockAccounts", "Unlock accounts"]]],
+  ["Safe management", [["manageSafe", "Manage Safe"], ["manageSafeMembers", "Manage Safe members"], ["backupSafe", "Backup Safe"]]],
+  ["Monitoring", [["viewAuditLog", "View audit log"], ["viewSafeMembers", "View Safe members"]]],
+  ["Workflow", [["requestsAuthorizationLevel1", "Authorize account requests, level 1"],
+    ["requestsAuthorizationLevel2", "Authorize account requests, level 2"], ["accessWithoutConfirmation", "Access Safe without confirmation"]]],
+  ["Advanced", [["createFolders", "Create folders"], ["deleteFolders", "Delete folders"], ["moveAccountsAndFolders", "Move accounts and folders"]]],
+];
+let ROLE_NAMES = () => [];
 function editorTable(id, cols, rows) {
   return `<table class="editor" id="${id}"><tr>${cols.map(c => `<th>${esc(c.label)}</th>`).join("")}<th></th></tr>
     ${rows.map(r => editorRow(cols, r)).join("")}</table>
     <button class="btn small" data-add="${id}">+ Add row</button>`;
 }
+function roleOptions(value, blank) {
+  const names = ROLE_NAMES();
+  const opts = (blank ? [""] : []).concat(names);
+  if (value && !names.includes(value)) opts.push(value);
+  return opts.map(o => `<option ${o === (value || "") ? "selected" : ""}>${esc(o)}</option>`).join("");
+}
 function editorRow(cols, r = {}) {
-  return `<tr>${cols.map(c => c.options
+  return `<tr>${cols.map(c => c.roles
+    ? `<td><select class="role-select" data-blank="${c.blank ? 1 : ""}" data-k="${c.key}">${roleOptions(r[c.key] || "", c.blank)}</select></td>`
+    : c.options
     ? `<td><select data-k="${c.key}">${c.options.map(o => `<option ${o === (r[c.key] || "") ? "selected" : ""}>${esc(o)}</option>`).join("")}</select></td>`
     : `<td><input type="text" data-k="${c.key}" value="${esc(r[c.key] || "")}" placeholder="${esc(c.ph || "")}"${c.list ? ` list="${c.list}"` : ""}></td>`).join("")}
     <td class="x"><button class="btn small" title="Remove" onclick="this.closest('tr').remove()">✕</button></td></tr>`;
@@ -239,65 +262,90 @@ function readTable(id) {
     const o = {}; tr.querySelectorAll("[data-k]").forEach(i => { if (i.value.trim()) o[i.dataset.k] = i.value.trim(); }); return o;
   }).filter(o => Object.keys(o).length);
 }
+const normName = (t) => String(t).toLowerCase().split(/[\s\-_/\\:;,.()\[\]{}"'&+]+/).filter(Boolean).join(" ");
 PAGES.rules = async () => {
-  const { config: cfg, hints } = await api("/api/config");
+  const { config: cfg, hints, presets } = await api("/api/config");
+  const LEGACY = { owner: "Full", editor: "Accounts manager", user: "Read only", viewer: "List only" };
   const GR = [{ key: "group", label: "Group (exact name)", ph: "CORP\\Unix-Admins", list: "dl-groups" },
               { key: "group_pattern", label: "…or pattern (advanced)", ph: "^CORP\\\\APP-(.+)-Owners$" },
               { key: "safe", label: "Target Safe", ph: "UNIX-Admins or APP-{1}" },
-              { key: "min_role", label: "Only if role at least", options: ROLES }];
+              { key: "min_role", label: "Only if role at least", roles: true, blank: true }];
   const FR = [{ key: "folder_prefix", label: "Folder (and everything under it)", ph: "\\IT\\Network", list: "dl-folders" },
-              { key: "safe", label: "Target Safe", ph: "NET-Devices" }];
+              { key: "safe", label: "Target Safe", ph: "NET-Devices or {convention}" }];
   const PM = [{ key: "type", label: "Record type / template", list: "dl-types" }, { key: "platform", label: "Platform ID", ph: "WinDomain" }];
   const DM = [{ key: "domain", label: "Domain prefix in group names", ph: "CORP (* = everything else)" }, { key: "dir", label: "Directory (searchIn)", ph: "corp.example.com" }];
-  const AB = [{ key: "word", label: "Word or phrase in folder names" }, { key: "code", label: "Code (1-4 letters)", ph: "e.g. BOS" }];
-  const PR = [{ key: "role", label: "Source permission word" }, { key: "to", label: "Privilege Cloud role", options: ["Owner", "Editor", "User", "Viewer"] }];
+  const AB = [{ key: "word", label: "Word or phrase" }, { key: "code", label: "Code (1-4 letters)", ph: "e.g. BOS" }];
+  const PR = [{ key: "role", label: "Source permission word" }, { key: "to", label: "Privilege Cloud role", roles: true }];
   const platRows = Object.entries(cfg.platform_map).map(([type, platform]) => ({ type, platform }));
   hints.types_without_platform.forEach(t => { if (t && !platRows.some(r => r.type.toLowerCase() === t.toLowerCase())) platRows.unshift({ type: t, platform: "" }); });
-  const migrateRules = (rules) => rules.map(r => ({ ...r, min_role: r.min_role || (r.min_permission ? ({owner:"Owner",edit:"Editor",view:"User",list:"Viewer"})[String(r.min_permission).toLowerCase()] || "" : "") }));
+  const fixRole = (r) => r ? (LEGACY[String(r).toLowerCase()] && !(cfg.custom_roles || {})[r] ? LEGACY[String(r).toLowerCase()] : r) : "";
+  const migrateRules = (rules) => rules.map(r => ({ ...r, min_role: fixRole(r.min_role || (r.min_permission ? ({owner:"Owner",edit:"Editor",view:"User",list:"Viewer"})[String(r.min_permission).toLowerCase()] || "" : "")) }));
+  const folderNames = new Set((hints.folders || []).flatMap(f => f.name.split("\\").filter(Boolean)).map(normName));
+  const abbr = cfg.safe_convention.abbreviations || {};
+  let folderAbbr = Object.fromEntries(Object.entries(abbr).filter(([w]) => folderNames.has(normName(w))));
+  const otherAbbr = Object.entries(abbr).filter(([w]) => !folderNames.has(normName(w))).map(([word, code]) => ({ word, code }));
+  let customRoles = Object.entries({ ...(cfg.role_permissions || {}), ...(cfg.custom_roles || {}) }).filter(([n]) => !presets[n]).map(([name, perms]) => ({ name, perms: new Set(perms) }));
+  ROLE_NAMES = () => Object.keys(presets).concat(customRoles.map(r => r.name.trim()).filter(Boolean));
+  const fb = [["convention", "the folder structure, abbreviated (\\Applications\\Storefront\\Prod → APP-SF-P)"],
+              ["folder_leaf", "the last folder only (Prod)"], ["folder_path", "the whole folder path (Applications-Storefront-Prod)"],
+              ["unmapped", "nothing: use UNMAPPED so I decide"]];
   $("#main").innerHTML = `<h2>2. Mapping rules</h2>
     <p class="lead">These rules decide each account's Safe, platform and Safe members. Click <b>Save &amp; apply</b> to re-run them on everything loaded; your manual changes in step 3 always win over these rules.</p>
     <datalist id="dl-groups">${(hints.groups || []).map(g => `<option value="${esc(g.name)}">${g.accounts} accounts</option>`).join("")}</datalist>
     <datalist id="dl-folders">${(hints.folders || []).map(g => `<option value="${esc(g.name)}">${g.accounts} accounts</option>`).join("")}</datalist>
     <datalist id="dl-types">${(hints.types || []).map(g => `<option value="${esc(g.name)}">${g.accounts} accounts</option>`).join("")}</datalist>
-    <div class="card"><h3>Safe from access groups <span class="muted small">(checked top to bottom; the first match wins)</span></h3>
-      ${editorTable("t-gr", GR, migrateRules(cfg.group_rules))}
-      <p class="muted small">In the Safe name you can use {1} for the pattern's first ( ) part, {folder_leaf} or {folder_path} for the record's folder,
-        {convention} for the full naming-convention name, or single layers such as <code>{env}-APP-{1}-{flavor}-{acct}</code>.</p></div>
-    <div class="card"><h3>Safe from folder <span class="muted small">(used when no group rule matched; the most specific folder wins)</span></h3>
-      ${editorTable("t-fr", FR, cfg.folder_rules)}
-      <div class="row" style="margin-top:10px"><label class="inline">If nothing matched, name the Safe after
-        <select id="fallback">${[["convention","the naming convention below (P-WIN-SVR-LA)"],["folder_leaf","the last folder (Servers)"],["folder_path","the whole folder path (IT-Windows-Servers)"],["unmapped","nothing: use UNMAPPED so I decide"]].map(([v,l]) => `<option value="${v}" ${cfg.fallback_strategy === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+    <div class="card"><h3>Safe from folder <span class="muted small">(the default: object-oriented Safes that follow your existing folders)</span></h3>
+      <div class="row"><label class="inline">Name each Safe after
+        <select id="fallback">${fb.map(([v, l]) => `<option value="${v}" ${cfg.fallback_strategy === v ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>
         <label class="inline">Prefix every Safe with <input type="text" id="prefix" value="${esc(cfg.safe_name.prefix || "")}" size="8" placeholder="MIG-"></label></div>
+      <h4 style="margin:12px 0 6px">Exceptions: send a folder somewhere else <span class="muted small">(the most specific folder wins)</span></h4>
+      ${editorTable("t-fr", FR, cfg.folder_rules)}
       <p class="muted small">Safe names are always cut to ${cfg.safe_name.max_length} characters, and the characters <code>${esc(cfg.safe_name.invalid_chars)}</code> become "${esc(cfg.safe_name.replacement)}".</p></div>
     <div class="card"><h3>Safe naming convention</h3>
-      <p class="muted small">Builds short, layered Safe names from abbreviations, following the CyberArk convention and the 28-character limit.
-        Used when no rule above matched (if "naming convention" is chosen) or wherever a rule uses {convention}.</p>
-      <table class="small" style="margin-bottom:10px"><tr><th>Layer</th><th>Placeholder</th><th>Comes from</th><th>Examples</th></tr>
-        <tr><td>1. Environment</td><td><code>{env}</code></td><td>a folder word like Production, Dev, Test, QA (else the default below)</td><td>P, D, T, Q</td></tr>
-        <tr><td>2-3. Location, business unit, application</td><td><code>{folder}</code></td><td>every folder level, each word as a 1-4 letter code (<code>{folder_leaf}</code> = last level only)</td><td>BOS, HR, FIN, RPT</td></tr>
-        <tr><td>4. Technology</td><td><code>{tech}</code></td><td>the platform</td><td>SVR, DB, NET, DOM, WKS</td></tr>
-        <tr><td>5. Flavor</td><td><code>{flavor}</code></td><td>the platform</td><td>WIN, UNX, SQL, ORC, CSC</td></tr>
-        <tr><td>6. Account type</td><td><code>{acct}</code></td><td>the platform, refined by username (root, sa, svc_*, enable)</td><td>LA, DA, LS, DS, RT, SA, EN</td></tr></table>
-      <div class="row"><label class="inline">Template <input type="text" id="conv-template" size="44" value="${esc(cfg.safe_convention.template)}"></label>
-        <label class="inline">Default environment <input type="text" id="conv-env" size="3" value="${esc(cfg.safe_convention.default_environment || "")}" placeholder="P"></label>
-        <label class="inline">Leave out folder levels <input type="text" id="conv-skip" size="30" value="${esc((cfg.safe_convention.skip_folder_levels || []).join(", "))}" placeholder="Infrastructure, Applications"></label></div>
-      <p class="muted small">A code that already appears earlier in the name is not repeated. If a name is too long, long folder names become initials first, then the most generic (top) folder levels are left out.</p>
-      <h4 style="margin:12px 0 6px">Your abbreviations <span class="muted small">(added to the built-in list; yours win)</span></h4>
-      ${editorTable("t-ab", AB, Object.entries(cfg.safe_convention.abbreviations || {}).map(([word, code]) => ({ word, code })))}
-      <div id="conv-unknown" class="small" style="margin-top:10px"></div>
+      <p class="muted small">Your existing structure comes first: an account with folders gets a Safe named after its folder levels, in order, each one abbreviated.
+        Only accounts with no folders (flat KeePass files, spreadsheets) get the CyberArk example layers instead.</p>
+      <div class="row"><label class="inline">Accounts with folders <input type="text" id="conv-template" size="34" value="${esc(cfg.safe_convention.template)}"></label>
+        <label class="inline">Accounts with no folders <input type="text" id="conv-flat" size="34" value="${esc(cfg.safe_convention.template_no_folders || "")}"></label></div>
+      <div class="row"><label class="inline">Default environment <input type="text" id="conv-env" size="3" value="${esc(cfg.safe_convention.default_environment || "")}" placeholder="P"></label>
+        <label class="inline">Leave out folder levels <input type="text" id="conv-skip" size="30" value="${esc((cfg.safe_convention.skip_folder_levels || []).join(", "))}" placeholder="e.g. Root"></label></div>
+      <details style="margin:8px 0"><summary class="small">What can go in a template</summary>
+      <table class="small" style="margin:8px 0"><tr><th>Placeholder</th><th>Comes from</th><th>Examples</th></tr>
+        <tr><td><code>{folder}</code></td><td>every folder level, abbreviated, in order (<code>{folder_leaf}</code> = last level only)</td><td>APP-SF-P, BOS-HR</td></tr>
+        <tr><td><code>{env}</code></td><td>a folder word like Production, Dev, Test, QA (else the default environment). With <code>{env}</code> in the template the code moves to that spot; without it, it stays in place in the folder part</td><td>P, D, T, Q</td></tr>
+        <tr><td><code>{tech}</code></td><td>the platform</td><td>SVR, DB, NET, DOM, WKS</td></tr>
+        <tr><td><code>{flavor}</code></td><td>the platform</td><td>WIN, UNX, SQL, ORC, CSC</td></tr>
+        <tr><td><code>{acct}</code></td><td>the platform, refined by username (root, sa, svc_*, enable)</td><td>LA, DA, LS, DS, RT, SA, EN</td></tr></table>
+      <p class="muted small">Add <code>-{flavor}</code> or <code>-{acct}</code> to the folder template to split a folder's accounts into separate Safes by technology or account type.
+        A code already used earlier in the name is not repeated. If a name is too long, long folder names become initials first, then the top folder levels are left out.</p></details>
+      <h4 style="margin:12px 0 6px">Folder abbreviations <span class="muted small">(taken from the folders you loaded; type a code to change one)</span></h4>
+      <div id="conv-folders"><p class="muted small">${STATE.has_db ? "Loading…" : "Load some exports to see your folder names here."}</p></div>
+      <details style="margin-top:10px" ${otherAbbr.length ? "open" : ""}><summary class="small">Other words and phrases</summary>
+      ${editorTable("t-ab", AB, otherAbbr)}</details>
       <div class="row" style="margin-top:10px"><button class="btn" id="conv-preview">Preview names</button><span class="muted small">uses the settings on this page, nothing is saved</span></div>
       <div id="conv-out"></div></div>
+    <div class="card"><h3>Optional: Safe from access groups <span class="muted small">(role-oriented; empty unless you add rules)</span></h3>
+      <p class="muted small">Role-oriented Safes don't scale as well as folder (object) Safes, so these rules only apply to the groups you list.
+        Checked top to bottom; the first match wins.</p>
+      ${editorTable("t-gr", GR, migrateRules(cfg.group_rules))}
+      <p><label class="inline"><input type="checkbox" id="gr-first" ${cfg.group_rules_first ? "checked" : ""}> Check these before the folder exceptions above</label></p>
+      <p class="muted small">In the Safe name you can use {1} for the pattern's first ( ) part, {folder_leaf} or {folder_path} for the record's folder,
+        {convention} for the full naming-convention name, or single layers such as <code>{env}-APP-{1}-{flavor}</code>.</p></div>
     <div class="card"><h3>Platforms</h3>
       ${hints.types_without_platform.length ? `<div class="msg warn">These record types have no platform yet, so their accounts can't be uploaded: ${hints.types_without_platform.map(esc).join(", ")}. Fill in the Platform ID below.</div>` : ""}
       ${editorTable("t-pm", PM, platRows)}
       <p><label class="inline">Platform for anything not listed <input type="text" id="defplat" value="${esc(cfg.default_platform || "")}" placeholder="leave empty to flag as error"></label></p></div>
     <div class="card"><h3>Safe members</h3>
-      <p class="muted small">How source permissions turn into Privilege Cloud roles, and where to find the groups.</p>
+      <p class="muted small">How source permissions turn into Privilege Cloud permission presets or your own custom roles, and where to find the groups.</p>
       <div class="row" style="align-items:flex-start;gap:24px">
-        <div style="flex:1;min-width:300px">${editorTable("t-pr", PR, Object.entries(cfg.permission_map).map(([role, to]) => ({ role, to })))}</div>
+        <div style="flex:1;min-width:300px">${editorTable("t-pr", PR, Object.entries(cfg.permission_map).map(([role, to]) => ({ role, to: fixRole(to) })))}</div>
         <div style="flex:1;min-width:300px">${editorTable("t-dm", DM, Object.entries(cfg.directory_map).map(([domain, dir]) => ({ domain, dir })))}
           <p><label class="inline"><input type="checkbox" id="strip" ${cfg.strip_domain_prefix ? "checked" : ""}> Drop "CORP\\" from member names</label></p></div>
-      </div></div>
+      </div>
+      <h4 style="margin:14px 0 6px">Roles and their permissions</h4>
+      <p class="muted small">The five Privilege Cloud presets are fixed. Make a custom role to choose every permission yourself; give it a name and pick it in the table above.</p>
+      <div class="row"><label class="inline">New custom role starting from <select id="role-from">${["(nothing ticked)"].concat(Object.keys(presets)).map(n => `<option>${esc(n)}</option>`).join("")}</select></label>
+        <button class="btn small" id="role-add">+ New custom role</button></div>
+      <div class="tablewrap" style="margin-top:8px" id="roles"></div></div>
     <details class="card"><summary><b>Advanced: edit the full settings as JSON</b></summary>
       <p class="muted small">Only change these if you know what you need. Anything you set here is kept unless the forms above change the same setting.</p>
       <textarea id="json" rows="16">${esc(JSON.stringify(cfg, null, 2))}</textarea></details>
@@ -305,20 +353,75 @@ PAGES.rules = async () => {
   const tables = { "t-gr": GR, "t-fr": FR, "t-pm": PM, "t-dm": DM, "t-pr": PR, "t-ab": AB };
   document.querySelectorAll("[data-add]").forEach(b => b.onclick = () =>
     $(`#${b.dataset.add}`).insertAdjacentHTML("beforeend", editorRow(tables[b.dataset.add])));
+
+  // ---- roles matrix
+  const refreshRoleSelects = () => document.querySelectorAll("select.role-select").forEach(sel => {
+    const v = sel.value; sel.innerHTML = roleOptions(v, !!sel.dataset.blank); });
+  const renderRoles = () => {
+    const presetNames = Object.keys(presets);
+    $("#roles").innerHTML = `<table class="small roles"><tr><th>Permission</th>
+      ${presetNames.map(n => `<th title="Privilege Cloud preset">${esc(n)}</th>`).join("")}
+      ${customRoles.map((r, i) => `<th><input type="text" class="role-name" data-i="${i}" value="${esc(r.name)}" placeholder="Role name" size="12">
+        <button class="btn small" data-del="${i}" title="Delete this custom role">✕</button></th>`).join("")}</tr>
+      ${PERM_GROUPS.map(([group, perms]) => `<tr><td colspan="${1 + presetNames.length + customRoles.length}" class="muted"><b>${esc(group)}</b></td></tr>` +
+        perms.map(([key, label]) => `<tr><td>${esc(label)}</td>
+          ${presetNames.map(n => `<td class="c">${presets[n].includes(key) ? '<span class="tick" title="Granted by this preset">✓</span>' : ""}</td>`).join("")}
+          ${customRoles.map((r, i) => `<td class="c"><input type="checkbox" class="role-perm" data-i="${i}" data-p="${key}" ${r.perms.has(key) ? "checked" : ""}></td>`).join("")}</tr>`).join("")).join("")}
+    </table>`;
+    document.querySelectorAll(".role-name").forEach(inp => inp.oninput = () => { customRoles[+inp.dataset.i].name = inp.value; refreshRoleSelects(); });
+    document.querySelectorAll(".role-perm").forEach(cb => cb.onchange = () => {
+      const s = customRoles[+cb.dataset.i].perms; cb.checked ? s.add(cb.dataset.p) : s.delete(cb.dataset.p); });
+    document.querySelectorAll("[data-del]").forEach(b => b.onclick = () => { customRoles.splice(+b.dataset.del, 1); renderRoles(); refreshRoleSelects(); });
+  };
+  $("#role-add").onclick = () => {
+    const from = $("#role-from").value;
+    let name = "Custom role", n = 1;
+    while (ROLE_NAMES().includes(name)) name = `Custom role ${++n}`;
+    customRoles.push({ name, perms: new Set(presets[from] || []) });
+    renderRoles(); refreshRoleSelects();
+    const inputs = document.querySelectorAll(".role-name"); inputs[inputs.length - 1].select();
+  };
+  renderRoles();
+
+  // ---- folder abbreviations
+  const readFolderCodes = () => {
+    document.querySelectorAll("#conv-folders input[data-folder]").forEach(i => {
+      const code = i.value.trim(); if (code) folderAbbr[i.dataset.folder] = code; else delete folderAbbr[i.dataset.folder]; });
+    return folderAbbr;
+  };
+  const renderFolderCodes = (rows) => {
+    if (!rows.length) return;
+    const yours = {}; Object.entries(folderAbbr).forEach(([w, c]) => yours[normName(w)] = [w, c]);
+    $("#conv-folders").innerHTML = `<div class="tablewrap" style="max-height:40vh"><table class="small editor"><tr><th>Folder name</th><th>Accounts</th><th>Code</th><th></th></tr>
+      ${rows.map(r => { const mine = yours[normName(r.folder)];
+        return `<tr><td>${esc(r.folder)}</td><td>${r.accounts}</td>
+        <td><input type="text" data-folder="${esc(mine ? mine[0] : r.folder)}" value="${esc(mine ? mine[1] : "")}" placeholder="${esc(mine ? "" : r.code)}"></td>
+        <td class="small">${r.clash ? `<span class="pill ERROR">same code as ${esc(r.clash)}</span>` : r.automatic && !mine ? '<span class="muted">automatic</span>' : ""}</td></tr>`; }).join("")}</table></div>
+      <div class="row" style="margin-top:6px"><button class="btn small" id="conv-keep">Keep all the suggested codes</button>
+        <span class="muted small">writes them into your settings so they stay the same later</span></div>`;
+    $("#conv-keep").onclick = () => document.querySelectorAll("#conv-folders input[data-folder]").forEach(i => { if (!i.value) i.value = i.placeholder; });
+  };
+
   const collect = () => {
     let base;
     try { base = JSON.parse($("#json").value); } catch (e) { throw new Error("The advanced JSON is not valid: " + e.message); }
+    const abbrOut = { ...readFolderCodes() };
+    readTable("t-ab").filter(r => r.word && r.code).forEach(r => abbrOut[r.word] = r.code);
     base.safe_convention = { ...(base.safe_convention || {}), template: $("#conv-template").value.trim(),
+      template_no_folders: $("#conv-flat").value.trim(),
       default_environment: $("#conv-env").value.trim(),
       skip_folder_levels: $("#conv-skip").value.split(",").map(x => x.trim()).filter(Boolean),
-      abbreviations: Object.fromEntries(readTable("t-ab").filter(r => r.word && r.code).map(r => [r.word, r.code])) };
+      abbreviations: abbrOut };
     base.group_rules = readTable("t-gr").map(r => { const o = { safe: r.safe }; if (r.group) o.group = r.group; else if (r.group_pattern) o.group_pattern = r.group_pattern; if (r.min_role) o.min_role = r.min_role; return o; });
+    base.group_rules_first = $("#gr-first").checked;
     base.folder_rules = readTable("t-fr");
     base.fallback_strategy = $("#fallback").value;
     base.safe_name = { ...(base.safe_name || {}), prefix: $("#prefix").value.trim() };
     base.platform_map = Object.fromEntries(readTable("t-pm").filter(r => r.type && r.platform).map(r => [r.type, r.platform]));
     base.default_platform = $("#defplat").value.trim();
     base.permission_map = Object.fromEntries(readTable("t-pr").filter(r => r.role && r.to).map(r => [r.role, r.to]));
+    base.custom_roles = Object.fromEntries(customRoles.map(r => [r.name.trim(), PERM_GROUPS.flatMap(g => g[1].map(p => p[0])).filter(p => r.perms.has(p))]));
+    delete base.role_permissions;
     base.directory_map = Object.fromEntries(readTable("t-dm").filter(r => r.domain && r.dir).map(r => [r.domain, r.dir]));
     base.strip_domain_prefix = $("#strip").checked;
     delete base.min_permission;
@@ -328,12 +431,9 @@ PAGES.rules = async () => {
     let base;
     try { base = collect(); } catch (e) { return msg($("#conv-out"), "err", e.message); }
     const r = await api("/api/naming/preview", { config: base });
-    $("#conv-unknown").innerHTML = r.unknown.length ? `<b>Words in your folders with no code yet</b> (automatic code shown):
-      ${r.unknown.map(u => `<code>${esc(u.word)} → ${esc(u.code)}</code>`).join(" ")}
-      <button class="btn small" id="conv-addall">Add these to my abbreviations to edit</button>` : "";
-    if ($("#conv-addall")) $("#conv-addall").onclick = () => r.unknown.forEach(u => $("#t-ab").insertAdjacentHTML("beforeend", editorRow(AB, u)));
+    renderFolderCodes(r.folder_codes || []);
     $("#conv-out").innerHTML = r.samples.length ? `<div class="tablewrap" style="margin-top:10px;max-height:40vh"><table>
-      <tr><th>Source folder</th><th>Platform</th><th>Convention name</th><th>Length</th><th>Notes</th></tr>
+      <tr><th>Source folder</th><th>Platform</th><th>Safe name</th><th>Length</th><th>Notes</th></tr>
       ${r.samples.map(x => `<tr><td class="small">${esc(x.folder)}</td><td>${esc(x.platform)}</td><td><b>${esc(x.name)}</b></td><td>${x.length}</td><td class="notes">${esc(x.notes)}</td></tr>`).join("")}</table></div>`
       : '<p class="muted">Load some exports to see a preview.</p>';
   };

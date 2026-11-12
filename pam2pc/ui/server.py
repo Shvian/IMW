@@ -26,7 +26,8 @@ from urllib.parse import parse_qs, urlparse
 
 from .. import __version__
 from ..adapters import ADAPTERS, AdapterError, detect_adapter, get_adapter
-from ..config import DEFAULT_CONFIG, config_from_dict, load_config
+from ..config import (ALL_PERMISSIONS, DEFAULT_CONFIG, PERMISSION_PRESETS, config_diff,
+                      config_from_dict, load_config, resolve_role)
 from ..model import SourceRecord
 from ..naming import Namer
 from ..protect import ProtectError
@@ -83,6 +84,25 @@ def build_where(body):
                      "OR record_id LIKE ? OR target_safe LIKE ?)")
         params += [like] * 6
     return " AND ".join(parts), params
+
+
+def check_roles(cfg):
+    """Custom roles and the permission map must make sense before they are saved."""
+    for name, perms in (cfg.get("custom_roles") or {}).items():
+        if not str(name).strip():
+            raise UiError("Every custom role needs a name.")
+        if any(name.lower() == p.lower() for p in PERMISSION_PRESETS):
+            raise UiError(f"'{name}' is a built-in preset name; give your custom role another name.")
+        bad = [p for p in perms if p not in ALL_PERMISSIONS]
+        if bad:
+            raise UiError(f"Custom role '{name}' has unknown permissions: {', '.join(bad)}")
+        if not perms:
+            raise UiError(f"Custom role '{name}' has no permissions ticked.")
+        if "requestsAuthorizationLevel1" in perms and "requestsAuthorizationLevel2" in perms:
+            raise UiError(f"Custom role '{name}': pick authorization level 1 or level 2, not both.")
+    for word, role in cfg["permission_map"].items():
+        if not resolve_role(role, cfg):
+            raise UiError(f"Source permission '{word}' maps to '{role}', which is not a preset or custom role.")
 
 
 def looks_like_permissions(path):
@@ -249,7 +269,8 @@ class App:
                     "SELECT type, COUNT(*) FROM records GROUP BY type ORDER BY 2 DESC")]
             finally:
                 st.close()
-        return {"config": cfg, "defaults": DEFAULT_CONFIG, "hints": hints, "saved": self.config_path.exists()}
+        return {"config": cfg, "defaults": DEFAULT_CONFIG, "hints": hints, "saved": self.config_path.exists(),
+                "presets": PERMISSION_PRESETS, "permissions": ALL_PERMISSIONS}
 
     def _naming_samples(self, st, cfg, limit=400):
         """Generated convention names for the distinct folder/platform/username combinations."""
@@ -263,7 +284,7 @@ class App:
             rec = SourceRecord(source="", source_file="", source_id="", source_ref="",
                                folder=tuple(json.loads(r["folder_json"])), type=r["type"], username=r["username"])
             name, notes = namer.build(rec, r["platform_id"])
-            key = (r["folder"], r["platform_id"], name)
+            key = (r["folder"], name)
             if key in seen:
                 continue
             seen.add(key)
@@ -271,6 +292,14 @@ class App:
                         "length": len(name), "notes": "; ".join(notes)})
         unknown = [{"word": w, "code": c} for w, c in sorted(namer.unknown.items(), key=lambda x: x[0].lower())]
         return out, unknown
+
+    def _folder_codes(self, st, cfg):
+        """Every distinct folder name in the loaded data with the code it gets."""
+        counts = {}
+        for folder_json, n in st.db.execute("SELECT folder_json, COUNT(*) FROM records GROUP BY folder_json"):
+            for level in set(json.loads(folder_json)):
+                counts[level] = counts.get(level, 0) + n
+        return Namer(cfg).suggest(counts)
 
     def api_naming_preview(self, body):
         user = body.get("config")
@@ -281,13 +310,14 @@ class App:
         except Exception as exc:  # noqa: BLE001
             raise UiError(f"config is not valid: {exc}")
         if not self.db_path.exists():
-            return {"samples": [], "unknown": []}
+            return {"samples": [], "unknown": [], "folder_codes": []}
         st = self.store()
         try:
             samples, unknown = self._naming_samples(st, cfg)
+            folder_codes = self._folder_codes(st, cfg)
         finally:
             st.close()
-        return {"samples": samples, "unknown": unknown}
+        return {"samples": samples, "unknown": unknown, "folder_codes": folder_codes}
 
     def api_config_save(self, body):
         user = body.get("config")
@@ -303,12 +333,15 @@ class App:
             for rule in cfg["folder_rules"]:
                 if not rule.get("safe") or not rule.get("folder_prefix"):
                     raise UiError("Every folder rule needs a folder and a Safe.")
+            check_roles(cfg)
         except UiError:
             tmp.unlink()
             raise
         except Exception as exc:  # noqa: BLE001
             tmp.unlink()
             raise UiError(f"config is not valid: {exc}")
+        # Keep only what differs from the built-in defaults, so later default updates apply.
+        tmp.write_text(json.dumps(config_diff(cfg), indent=2), encoding="utf-8")
         tmp.replace(self.config_path)
         if not self.db_path.exists():
             return {"saved": True, "mapped": False}

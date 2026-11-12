@@ -51,7 +51,18 @@ const fs = require('fs');
   rows = await page.$$('#t-fr tr');
   await (await rows[rows.length - 1].$('[data-k=folder_prefix]')).fill('\\Linux');
   await (await rows[rows.length - 1].$('[data-k=safe]')).fill('UNIX-Servers');
-  await page.selectOption('#fallback', 'folder_path');
+  if (await page.inputValue('#fallback') !== 'convention') throw new Error('folder naming is not the default');
+  await page.waitForSelector('#conv-folders input[data-folder]');
+  console.log('FOLDER CODES:', (await page.$$('#conv-folders input[data-folder]')).length);
+  // custom permission role, used for the source "View" permission
+  await page.selectOption('#role-from', 'Read only');
+  await page.click('#role-add');
+  await page.fill('.role-name >> nth=-1', 'Helpdesk');
+  await page.check('.role-perm[data-p="viewAuditLog"] >> nth=-1');
+  for (const r of await page.$$('#t-pr tr')) {
+    const k = await r.$('[data-k=role]');
+    if (k && (await k.inputValue()) === 'View') await (await r.$('[data-k=to]')).selectOption('Helpdesk');
+  }
   await shot(page, '02_rules');
   await page.click('#save');
   await page.waitForSelector('#rules-msg .msg.ok');
@@ -89,6 +100,7 @@ const fs = require('fs');
   // 4. Safes
   await page.click('nav >> text=Safes & members');
   await page.waitForSelector('text=Members (');
+  if (!(await page.content()).includes('Helpdesk')) throw new Error('custom role not used for any member');
   await shot(page, '05_safes');
 
   // 5. Output
