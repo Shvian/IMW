@@ -18,3 +18,4 @@ run.lock
 *.db
 *.db-journal
 /pam2pc_workspace/
+/sample_workspace/
