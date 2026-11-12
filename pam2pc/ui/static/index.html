@@ -185,13 +185,13 @@ PAGES.load = async () => {
     <p class="lead">Copy export files into the inbox folder, tick the ones to load, then click Load. ${STATE.protector === "plain" ? "" : "Secrets are encrypted as they are stored, so you can securely delete each export straight after loading it."} Loading a file again replaces its earlier records and keeps your changes.</p>
     <div class="card"><h3>Inbox: <code>${esc(STATE.inbox)}</code></h3>
     ${files.length ? `<table><tr><th></th><th>File</th><th>Size</th><th>Type</th><th>Use as permissions file</th><th></th></tr>
-      ${files.map((f, i) => `<tr><td><input type="checkbox" class="pick" data-i="${i}" ${f.guess ? "checked" : ""}></td>
+      ${files.map((f, i) => `<tr><td><input type="checkbox" class="pick" data-i="${i}" ${f.guess && !f.permissions ? "checked" : ""}></td>
         <td>${esc(f.name)}</td><td>${(f.size / 1024).toFixed(1)} KB</td>
         <td><select class="src" data-i="${i}">${srcOpts(f.guess)}</select></td>
-        <td><input type="radio" name="perm" value="${esc(f.name)}"></td>
+        <td><input type="radio" name="perm" value="${esc(f.name)}" ${f.permissions && files.filter(x => x.permissions).length === 1 ? "checked" : ""}>${f.permissions ? ' <span class="muted small">looks like one</span>' : ""}</td>
         <td><button class="btn danger del" data-name="${esc(f.name)}">Securely delete</button></td></tr>`).join("")}
       <tr><td></td><td colspan="3" class="muted small">A permissions file lists groups per folder or record (columns: Folder Path, Secret Name, Secret ID, Group, Permission). Use one when the export itself has no access data, as with Delinea and KeePass.</td>
-      <td><input type="radio" name="perm" value="" checked> none</td><td></td></tr></table>
+      <td><input type="radio" name="perm" value="" ${files.filter(x => x.permissions).length === 1 ? "" : "checked"}> none</td><td></td></tr></table>
       <div class="row" style="margin-top:12px"><button class="btn primary" id="go-load">Load selected files</button>
       <button class="btn" id="re">Refresh list</button></div>`
       : `<p class="muted">The inbox is empty. Copy your export files into the folder above, then <button class="btn" id="re">Refresh</button></p>`}
@@ -249,6 +249,7 @@ PAGES.rules = async () => {
               { key: "safe", label: "Target Safe", ph: "NET-Devices" }];
   const PM = [{ key: "type", label: "Record type / template", list: "dl-types" }, { key: "platform", label: "Platform ID", ph: "WinDomain" }];
   const DM = [{ key: "domain", label: "Domain prefix in group names", ph: "CORP (* = everything else)" }, { key: "dir", label: "Directory (searchIn)", ph: "corp.example.com" }];
+  const AB = [{ key: "word", label: "Word or phrase in folder names" }, { key: "code", label: "Code (1-4 letters)", ph: "e.g. BOS" }];
   const PR = [{ key: "role", label: "Source permission word" }, { key: "to", label: "Privilege Cloud role", options: ["Owner", "Editor", "User", "Viewer"] }];
   const platRows = Object.entries(cfg.platform_map).map(([type, platform]) => ({ type, platform }));
   hints.types_without_platform.forEach(t => { if (t && !platRows.some(r => r.type.toLowerCase() === t.toLowerCase())) platRows.unshift({ type: t, platform: "" }); });
@@ -260,13 +261,32 @@ PAGES.rules = async () => {
     <datalist id="dl-types">${(hints.types || []).map(g => `<option value="${esc(g.name)}">${g.accounts} accounts</option>`).join("")}</datalist>
     <div class="card"><h3>Safe from access groups <span class="muted small">(checked top to bottom; the first match wins)</span></h3>
       ${editorTable("t-gr", GR, migrateRules(cfg.group_rules))}
-      <p class="muted small">In the Safe name you can use {1} for the pattern's first ( ) part, and {folder_leaf} or {folder_path} for the record's folder.</p></div>
+      <p class="muted small">In the Safe name you can use {1} for the pattern's first ( ) part, {folder_leaf} or {folder_path} for the record's folder,
+        {convention} for the full naming-convention name, or single layers such as <code>{env}-APP-{1}-{flavor}-{acct}</code>.</p></div>
     <div class="card"><h3>Safe from folder <span class="muted small">(used when no group rule matched; the most specific folder wins)</span></h3>
       ${editorTable("t-fr", FR, cfg.folder_rules)}
       <div class="row" style="margin-top:10px"><label class="inline">If nothing matched, name the Safe after
-        <select id="fallback">${[["folder_leaf","the last folder (Servers)"],["folder_path","the whole folder path (IT-Windows-Servers)"],["unmapped","nothing: use UNMAPPED so I decide"]].map(([v,l]) => `<option value="${v}" ${cfg.fallback_strategy === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+        <select id="fallback">${[["convention","the naming convention below (P-WIN-SVR-LA)"],["folder_leaf","the last folder (Servers)"],["folder_path","the whole folder path (IT-Windows-Servers)"],["unmapped","nothing: use UNMAPPED so I decide"]].map(([v,l]) => `<option value="${v}" ${cfg.fallback_strategy === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
         <label class="inline">Prefix every Safe with <input type="text" id="prefix" value="${esc(cfg.safe_name.prefix || "")}" size="8" placeholder="MIG-"></label></div>
       <p class="muted small">Safe names are always cut to ${cfg.safe_name.max_length} characters, and the characters <code>${esc(cfg.safe_name.invalid_chars)}</code> become "${esc(cfg.safe_name.replacement)}".</p></div>
+    <div class="card"><h3>Safe naming convention</h3>
+      <p class="muted small">Builds short, layered Safe names from abbreviations, following the CyberArk convention and the 28-character limit.
+        Used when no rule above matched (if "naming convention" is chosen) or wherever a rule uses {convention}.</p>
+      <table class="small" style="margin-bottom:10px"><tr><th>Layer</th><th>Placeholder</th><th>Comes from</th><th>Examples</th></tr>
+        <tr><td>1. Environment</td><td><code>{env}</code></td><td>a folder word like Production, Dev, Test, QA (else the default below)</td><td>P, D, T, Q</td></tr>
+        <tr><td>2-3. Location, business unit, application</td><td><code>{folder}</code></td><td>every folder level, each word as a 1-4 letter code (<code>{folder_leaf}</code> = last level only)</td><td>BOS, HR, FIN, RPT</td></tr>
+        <tr><td>4. Technology</td><td><code>{tech}</code></td><td>the platform</td><td>SVR, DB, NET, DOM, WKS</td></tr>
+        <tr><td>5. Flavor</td><td><code>{flavor}</code></td><td>the platform</td><td>WIN, UNX, SQL, ORC, CSC</td></tr>
+        <tr><td>6. Account type</td><td><code>{acct}</code></td><td>the platform, refined by username (root, sa, svc_*, enable)</td><td>LA, DA, LS, DS, RT, SA, EN</td></tr></table>
+      <div class="row"><label class="inline">Template <input type="text" id="conv-template" size="44" value="${esc(cfg.safe_convention.template)}"></label>
+        <label class="inline">Default environment <input type="text" id="conv-env" size="3" value="${esc(cfg.safe_convention.default_environment || "")}" placeholder="P"></label>
+        <label class="inline">Leave out folder levels <input type="text" id="conv-skip" size="30" value="${esc((cfg.safe_convention.skip_folder_levels || []).join(", "))}" placeholder="Infrastructure, Applications"></label></div>
+      <p class="muted small">A code that already appears earlier in the name is not repeated. If a name is too long, long folder names become initials first, then the most generic (top) folder levels are left out.</p>
+      <h4 style="margin:12px 0 6px">Your abbreviations <span class="muted small">(added to the built-in list; yours win)</span></h4>
+      ${editorTable("t-ab", AB, Object.entries(cfg.safe_convention.abbreviations || {}).map(([word, code]) => ({ word, code })))}
+      <div id="conv-unknown" class="small" style="margin-top:10px"></div>
+      <div class="row" style="margin-top:10px"><button class="btn" id="conv-preview">Preview names</button><span class="muted small">uses the settings on this page, nothing is saved</span></div>
+      <div id="conv-out"></div></div>
     <div class="card"><h3>Platforms</h3>
       ${hints.types_without_platform.length ? `<div class="msg warn">These record types have no platform yet, so their accounts can't be uploaded: ${hints.types_without_platform.map(esc).join(", ")}. Fill in the Platform ID below.</div>` : ""}
       ${editorTable("t-pm", PM, platRows)}
@@ -282,12 +302,16 @@ PAGES.rules = async () => {
       <p class="muted small">Only change these if you know what you need. Anything you set here is kept unless the forms above change the same setting.</p>
       <textarea id="json" rows="16">${esc(JSON.stringify(cfg, null, 2))}</textarea></details>
     <div class="actionbar row"><button class="btn primary" id="save">Save &amp; apply rules</button><span id="rules-msg"></span></div>`;
-  const tables = { "t-gr": GR, "t-fr": FR, "t-pm": PM, "t-dm": DM, "t-pr": PR };
+  const tables = { "t-gr": GR, "t-fr": FR, "t-pm": PM, "t-dm": DM, "t-pr": PR, "t-ab": AB };
   document.querySelectorAll("[data-add]").forEach(b => b.onclick = () =>
     $(`#${b.dataset.add}`).insertAdjacentHTML("beforeend", editorRow(tables[b.dataset.add])));
-  $("#save").onclick = async () => {
+  const collect = () => {
     let base;
-    try { base = JSON.parse($("#json").value); } catch (e) { return msg($("#rules-msg"), "err", "The advanced JSON is not valid: " + e.message); }
+    try { base = JSON.parse($("#json").value); } catch (e) { throw new Error("The advanced JSON is not valid: " + e.message); }
+    base.safe_convention = { ...(base.safe_convention || {}), template: $("#conv-template").value.trim(),
+      default_environment: $("#conv-env").value.trim(),
+      skip_folder_levels: $("#conv-skip").value.split(",").map(x => x.trim()).filter(Boolean),
+      abbreviations: Object.fromEntries(readTable("t-ab").filter(r => r.word && r.code).map(r => [r.word, r.code])) };
     base.group_rules = readTable("t-gr").map(r => { const o = { safe: r.safe }; if (r.group) o.group = r.group; else if (r.group_pattern) o.group_pattern = r.group_pattern; if (r.min_role) o.min_role = r.min_role; return o; });
     base.folder_rules = readTable("t-fr");
     base.fallback_strategy = $("#fallback").value;
@@ -298,6 +322,26 @@ PAGES.rules = async () => {
     base.directory_map = Object.fromEntries(readTable("t-dm").filter(r => r.domain && r.dir).map(r => [r.domain, r.dir]));
     base.strip_domain_prefix = $("#strip").checked;
     delete base.min_permission;
+    return base;
+  };
+  const preview = async () => {
+    let base;
+    try { base = collect(); } catch (e) { return msg($("#conv-out"), "err", e.message); }
+    const r = await api("/api/naming/preview", { config: base });
+    $("#conv-unknown").innerHTML = r.unknown.length ? `<b>Words in your folders with no code yet</b> (automatic code shown):
+      ${r.unknown.map(u => `<code>${esc(u.word)} → ${esc(u.code)}</code>`).join(" ")}
+      <button class="btn small" id="conv-addall">Add these to my abbreviations to edit</button>` : "";
+    if ($("#conv-addall")) $("#conv-addall").onclick = () => r.unknown.forEach(u => $("#t-ab").insertAdjacentHTML("beforeend", editorRow(AB, u)));
+    $("#conv-out").innerHTML = r.samples.length ? `<div class="tablewrap" style="margin-top:10px;max-height:40vh"><table>
+      <tr><th>Source folder</th><th>Platform</th><th>Convention name</th><th>Length</th><th>Notes</th></tr>
+      ${r.samples.map(x => `<tr><td class="small">${esc(x.folder)}</td><td>${esc(x.platform)}</td><td><b>${esc(x.name)}</b></td><td>${x.length}</td><td class="notes">${esc(x.notes)}</td></tr>`).join("")}</table></div>`
+      : '<p class="muted">Load some exports to see a preview.</p>';
+  };
+  $("#conv-preview").onclick = () => preview().catch(e => msg($("#conv-out"), "err", e.message));
+  if (STATE.has_db) preview().catch(() => {});
+  $("#save").onclick = async () => {
+    let base;
+    try { base = collect(); } catch (e) { return msg($("#rules-msg"), "err", e.message); }
     try {
       const r = await api("/api/config", { config: base });
       await refresh();

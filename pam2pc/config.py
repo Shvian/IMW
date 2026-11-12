@@ -41,7 +41,27 @@ DEFAULT_CONFIG = {
     #   folder_leaf  -> last folder level        (\IT\Windows\Servers -> Servers)
     #   folder_path  -> all levels joined by "-" (\IT\Windows\Servers -> IT-Windows-Servers)
     #   unmapped     -> literal "UNMAPPED", which forces a decision
-    "fallback_strategy": "folder_leaf",
+    #   convention   -> naming convention built from abbreviations (see safe_convention)
+    #                   \Prod\Windows\Member Servers + WinServerLocal -> P-WIN-SVR-LA
+    "fallback_strategy": "convention",
+    # Naming convention (fallback_strategy "convention", or {convention} / {env} /
+    # {folder_abbrev} / {tech} / {flavor} / {acct} in a rule's Safe name). Layers follow
+    # the CyberArk convention: environment, location/BU/app (from the folders),
+    # technology, flavor, account type. See pam2pc/naming.py for the built-in codes.
+    "safe_convention": {
+        "template": "{env}-{folder}-{tech}-{flavor}-{acct}",
+        "separator": "-",
+        "default_environment": "",
+        # Extra or replacement word -> code entries, e.g. {"Boston": "BOS", "Payroll": "PAY"}.
+        "abbreviations": {},
+        # Folder levels to leave out entirely, e.g. ["Infrastructure", "Applications"].
+        "skip_folder_levels": [],
+        "environment_words": [],
+        # Platform ID -> {"tech": ..., "flavor": ..., "acct": ...}; adds to/overrides the built-ins.
+        "platform_codes": {},
+    },
+    # Recommended maximum accounts per Safe (CyberArk: 3,000-5,000; hard limit 20,000 objects).
+    "safe_max_accounts": 3000,
     # Platform rules are checked first, in order. "field" is one of: type, folder,
     # name, address, username, or a source column name. "pattern" is a regex.
     "platform_rules": [],
@@ -172,6 +192,13 @@ def _merge(base, user, path=""):
             _merge(base[key], value, path + key + ".")
         else:
             base[key] = value
+
+
+def config_from_dict(user):
+    """Defaults merged with a user config given as a dict."""
+    cfg = copy.deepcopy(DEFAULT_CONFIG)
+    _merge(cfg, copy.deepcopy(user or {}))
+    return cfg
 
 
 def load_config(path=None):

@@ -100,7 +100,12 @@ def delinea(out, rnd, count):
             user = rnd.choice(["ap_team", "ops", "admin", "billing"])
             address = f"https://{rnd.choice(['portal', 'billing', 'support'])}.vendor{rnd.randint(1, 9)}.example.com/login"
         else:
-            user = rnd.choice(["root", "oracle", "sa", "admin", "Administrator", "deploy", "svc_app"])
+            user = rnd.choice({"Windows Account": ["Administrator", "Administrator", "svc_app", "localadmin"],
+                               "Unix Account (SSH)": ["root", "root", "svc_app", "deploy"],
+                               "Unix Account (SSH Key Rotation)": ["deploy", "ansible", "root"],
+                               "SQL Server Account": ["sa", "svc_sql", "dbadmin"],
+                               "Oracle Account": ["system", "oracle", "svc_ora"],
+                               "Cisco Account (SSH)": ["admin", "enable"]}.get(tmpl_name, ["admin"]))
             address = host
         name = f"{user}@{address.split('/')[2] if address.startswith('http') else address.split('.')[0]}"
         if n % 53 == 7 and names_used:
@@ -257,20 +262,22 @@ def spreadsheet(out, rnd, count):
 
 CONFIG = {
     "_comment": "Starter rules for the sample pack. Edit them on the Mapping rules page.",
-    "group_rules": [
-        {"group_pattern": "^CORP\\\\APP-(.+)-Owners$", "safe": "APP-{1}", "min_role": "Owner"},
-        {"group": "CORP\\PAM-Windows-Admins", "safe": "WIN-{folder_leaf}", "min_role": "Owner"},
-        {"group": "CORP\\PAM-Unix-Admins", "safe": "UNIX-{folder_leaf}", "min_role": "Owner"},
-        {"group": "CORP\\PAM-DBA", "safe": "DB-{folder_leaf}", "min_role": "Owner"},
-        {"group": "CORP\\PAM-Network", "safe": "NET-Devices", "min_role": "Owner"},
-        {"group": "CORP\\PAM-Web-Ops", "safe": "WEB-Vendor-Portals", "min_role": "Owner"},
-    ],
+    "group_rules": [],
     "folder_rules": [
-        {"folder_prefix": "Network", "safe": "NET-Devices"},
-        {"folder_prefix": "Linux", "safe": "UNIX-Lab"},
-        {"folder_prefix": "Cloud", "safe": "CLOUD-BreakGlass"},
+        {"folder_prefix": "Cloud", "safe": "{env}-CLD-BG-{flavor}-{acct}"},
     ],
-    "fallback_strategy": "folder_path",
+    "fallback_strategy": "convention",
+    "safe_convention": {
+        "template": "{env}-{folder}-{tech}-{flavor}-{acct}",
+        "default_environment": "P",
+        "skip_folder_levels": ["Infrastructure", "Applications"],
+        "abbreviations": {"Self-Service": "SS", "HR Portal": "HR", "Unfiled": "UNF"},
+    },
+    "platform_map": {
+        "Active Directory Account": "WinDomain", "Windows Account": "WinServerLocal",
+        "Unix Account (SSH)": "UnixSSH", "Unix Account (SSH Key Rotation)": "UnixSSHKeys",
+        "SQL Server Account": "MSSql", "Oracle Account": "Oracle", "Web Password": "GenericWebApp",
+    },
     "platform_rules": [
         {"field": "folder", "pattern": "(?i)^\\\\Linux", "platform": "UnixSSH"},
         {"field": "folder", "pattern": "(?i)^\\\\(Network|Vendors)", "platform": "GenericWebApp"},

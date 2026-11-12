@@ -12,6 +12,7 @@ from typing import List
 
 from .adapters.base import address_from_url
 from .model import Grant, split_folder
+from .naming import Namer
 
 log = logging.getLogger("pam2pc.transform")
 
@@ -156,33 +157,48 @@ def _min_rank(rule, cfg):
     return 0
 
 
-def match_group_rules(grants, cfg, rec=None):
+def match_group_rules(grants, cfg, rec=None, ctx=None):
     for rule in cfg["group_rules"]:
         min_rank = _min_rank(rule, cfg)
         for g in grants:
             if ROLE_RANK.get(role_for(g.permission, cfg).lower(), 0) < min_rank:
                 continue
             if "group" in rule and g.member.lower() == rule["group"].lower():
-                return _fill(rule["safe"], rec), f"group_rule:{rule['group']}"
+                return _fill(rule["safe"], rec, ctx), f"group_rule:{rule['group']}"
             if "group_pattern" in rule:
                 m = re.search(rule["group_pattern"], g.member, re.IGNORECASE)
                 if m:
                     safe = rule["safe"]
                     for i, val in enumerate(m.groups(), start=1):
                         safe = safe.replace("{%d}" % i, val or "")
-                    return _fill(safe, rec), f"group_pattern:{rule['group_pattern']}"
+                    return _fill(safe, rec, ctx), f"group_pattern:{rule['group_pattern']}"
     return None, None
 
 
-def _fill(safe, rec):
-    """Expand {folder_leaf} and {folder_path} in a rule's Safe name."""
+CONVENTION_KEYS = ("{convention}", "{folder_abbrev}", "{env}", "{tech}", "{flavor}", "{acct}", "{type}")
+
+
+def _fill(safe, rec, ctx=None):
+    """Expand placeholders in a rule's Safe name.
+    {folder_leaf} {folder_path}: raw folder text.
+    {convention}: the full naming-convention name. {folder_abbrev} {env} {tech} {flavor}
+    {acct} {type}: single convention layers, e.g. "APP-{1}-{env}-{flavor}"."""
     if rec is None or "{" not in safe:
         return safe
+    if ctx and any(k in safe for k in CONVENTION_KEYS):
+        namer, platform = ctx
+        if safe.strip() == "{convention}":
+            name, notes = namer.build(rec, platform)
+        else:
+            name, notes = namer.build(rec, platform, template=safe.replace("{folder_abbrev}", "{folder}"))
+        namer.last_notes = notes
+        namer.used = True
+        return name
     leaf = rec.folder[-1] if rec.folder else ""
     return safe.replace("{folder_leaf}", leaf).replace("{folder_path}", "-".join(rec.folder))
 
 
-def match_folder_rules(rec, cfg):
+def match_folder_rules(rec, cfg, ctx=None):
     folder = [f.lower() for f in rec.folder]
     best = None
     for rule in cfg["folder_rules"]:
@@ -190,12 +206,15 @@ def match_folder_rules(rec, cfg):
         if folder[: len(prefix)] == prefix and (best is None or len(prefix) > len(best[0])):
             best = (prefix, rule["safe"], rule["folder_prefix"])
     if best:
-        return _fill(best[1], rec), "folder_rule:" + best[2]
+        return _fill(best[1], rec, ctx), "folder_rule:" + best[2]
     return None, None
 
 
-def fallback_safe(rec, cfg):
+def fallback_safe(rec, cfg, ctx=None):
     strategy = cfg["fallback_strategy"]
+    if strategy == "convention" and ctx:
+        name = _fill("{convention}", rec, ctx)
+        return (name or "UNMAPPED"), "fallback:convention"
     if strategy == "unmapped" or not rec.folder:
         return "UNMAPPED", "fallback:unmapped"
     if strategy == "folder_path":
@@ -307,7 +326,7 @@ def _changed(edited, computed):
 
 def rebuild_totals(plan, cfg):
     """Recompute Safe and member totals after in_scope or migrate changed."""
-    plan.safes = _safes(plan.accounts)
+    plan.safes = _safes(plan.accounts, cfg)
     plan.members = _members(plan.accounts, cfg)
     return plan
 
@@ -323,6 +342,8 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False):
     overrides = overrides or {}
     plans = []
     seen_ids = defaultdict(int)
+    namer = Namer(cfg)
+    convention_folders = defaultdict(set)
 
     for rec in records:
         p = AccountPlan(rec=rec)
@@ -344,32 +365,39 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False):
         if not p.grants:
             p.warnings.append("no access groups found; Safe gets no members from the source")
 
-        # Safe
-        safe, src = None, None
-        if rec.target_safe:
-            safe, src = rec.target_safe, "source"
-        if not safe:
-            safe, src = match_group_rules(p.grants, cfg, rec)
-        if not safe:
-            safe, src = match_folder_rules(rec, cfg)
-        fell_back = not safe
-        if not safe:
-            safe, src = fallback_safe(rec, cfg)
-        safe = safe if src == "source" else apply_prefix(safe, cfg)
-        # An edited review file repeats every value; only a changed one is an override.
-        if changed(ov.get("Target_Safe"), sanitize_safe_name(safe, cfg)[0]):
-            safe, src, fell_back = ov["Target_Safe"], "override", False
-        if fell_back:
-            p.warnings.append("Safe from folder fallback; no group or folder rule matched")
-        p.proposed_safe = safe
-        p.safe_source = src
-
         # Platform
         p.platform, p.platform_source = resolve_platform(rec, cfg)
         if changed(ov.get("Platform_ID"), p.platform):
             p.platform, p.platform_source = ov["Platform_ID"], "override"
         if not p.platform:
             p.errors.append(f"no platform for type '{rec.type}'; add it to platform_map")
+
+        # Safe
+        ctx = (namer, p.platform)
+        namer.last_notes, namer.used = [], False
+        safe, src = None, None
+        if rec.target_safe:
+            safe, src = rec.target_safe, "source"
+        if not safe:
+            safe, src = match_group_rules(p.grants, cfg, rec, ctx)
+        if not safe:
+            safe, src = match_folder_rules(rec, cfg, ctx)
+        fell_back = not safe
+        if not safe:
+            safe, src = fallback_safe(rec, cfg, ctx)
+        safe = safe if src == "source" else apply_prefix(safe, cfg)
+        # An edited review file repeats every value; only a changed one is an override.
+        if changed(ov.get("Target_Safe"), sanitize_safe_name(safe, cfg)[0]):
+            safe, src, fell_back = ov["Target_Safe"], "override", False
+        if fell_back and src != "fallback:convention":
+            p.warnings.append("Safe from folder fallback; no group or folder rule matched")
+        p.proposed_safe = safe
+        p.safe_source = src
+        if src != "override" and namer.last_notes:
+            p.warnings.extend("Safe name: " + n for n in namer.last_notes)
+        p.by_convention = namer.used and src != "override"
+        if p.by_convention:
+            convention_folders[safe.lower()].add(rec.folder_path)
 
         # Account name
         name = rec.name or f"{rec.address}-{rec.username}".strip("-")
@@ -393,6 +421,11 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False):
         mig = (ov.get("Migrate") or "Y").upper()
         p.migrate = "N" if mig in ("N", "NO", "FALSE", "0") else "Y"
         plans.append(p)
+
+    for p in plans:
+        folders = convention_folders.get(p.proposed_safe.lower(), set())
+        if getattr(p, "by_convention", False) and len(folders) > 1:
+            p.warnings.append(f"Safe shared by {len(folders)} source folders; check least privilege")
 
     # Clean Safe names and resolve collisions across the whole run.
     cleaned = {}
@@ -430,11 +463,12 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False):
                 x.warnings.append("possible duplicate: same username/address/type in this Safe as "
                                   + ", ".join(others[:3]) + more)
 
-    return Plan(plans, _safes(plans), _members(plans, cfg))
+    return Plan(plans, _safes(plans, cfg), _members(plans, cfg))
 
 
-def _safes(plans):
+def _safes(plans, cfg=None):
     safes = OrderedDict()
+    limit = (cfg or {}).get("safe_max_accounts") or 0
     for p in plans:
         s = safes.setdefault(p.safe, {"proposed": set(), "valid": True, "issues": set(),
                                       "sources": set(), "accounts": 0, "migrating": 0})
@@ -444,6 +478,10 @@ def _safes(plans):
         s["sources"].add(p.safe_source)
         s["accounts"] += 1
         s["migrating"] += 1 if p.uploadable else 0
+    if limit:
+        for s in safes.values():
+            if s["accounts"] > limit:
+                s["issues"].add(f"{s['accounts']} accounts; over the {limit} recommended per Safe")
     return safes
 
 

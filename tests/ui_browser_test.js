@@ -25,16 +25,20 @@ const fs = require('fs');
 
   // 1. Load
   await page.click('nav >> text=Load exports');
-  await page.waitForSelector('text=Inbox');
+  await page.waitForSelector('#go-load');
   for (const r of await page.$$('table tr')) {
     const t = await r.innerText();
     if (t.includes('accounts_by_group.xlsx')) { const cb = await r.$('.pick'); if (await cb.isChecked()) await cb.uncheck(); }
-    if (t.includes('delinea_permissions.csv')) await (await r.$('input[name=perm]')).check();
+    if (t.includes('delinea_permissions.csv')) {
+      if (!(await (await r.$('input[name=perm]')).isChecked())) throw new Error('permissions file not pre-selected');
+      if (await (await r.$('.pick')).isChecked()) throw new Error('permissions file ticked as an export');
+    }
   }
   await shot(page, '01_load');
   await page.click('#go-load');
   await page.waitForSelector('#load-msg .msg.ok', { timeout: 10000 });
   console.log('LOAD:', (await page.innerText('#load-msg')).replace(/\n/g, ' | '));
+  if (!(await page.innerText('#load-msg')).includes('delinea_export.csv: 8 records')) throw new Error('load failed');
 
   // 2. Rules
   await page.click('text=Next: mapping rules');
@@ -98,7 +102,9 @@ const fs = require('fs');
   await page.fill('#confirm', 'INCLUDE SECRETS');
   await page.click('#extract');
   await page.waitForSelector('#out-msg .msg.ok');
-  console.log('EXTRACT:', (await page.innerText('#out-msg')).replace(/\n/g, ' | '));
+  const extractMsg = await page.innerText('#out-msg');
+  console.log('EXTRACT:', extractMsg.replace(/\n/g, ' | '));
+  if (/ 0 members/.test(extractMsg)) throw new Error('no Safe members: permissions were not applied');
   await shot(page, '06_output');
 
   await page.click('nav >> text=Overview');

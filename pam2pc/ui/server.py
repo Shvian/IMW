@@ -26,7 +26,9 @@ from urllib.parse import parse_qs, urlparse
 
 from .. import __version__
 from ..adapters import ADAPTERS, AdapterError, detect_adapter, get_adapter
-from ..config import DEFAULT_CONFIG, load_config
+from ..config import DEFAULT_CONFIG, config_from_dict, load_config
+from ..model import SourceRecord
+from ..naming import Namer
 from ..protect import ProtectError
 from ..store import Store, StoreError, run_extract
 from ..transform import Permissions
@@ -81,6 +83,20 @@ def build_where(body):
                      "OR record_id LIKE ? OR target_safe LIKE ?)")
         params += [like] * 6
     return " AND ".join(parts), params
+
+
+def looks_like_permissions(path):
+    """A CSV whose header has a group/principal column and a permission column, and no password column."""
+    if path.suffix.lower() != ".csv":
+        return False
+    try:
+        with open(path, encoding="utf-8-sig", errors="replace") as fh:
+            header = [h.strip().lower() for h in fh.readline().split(",")]
+    except OSError:
+        return False
+    return (any(h in ("group", "principal", "member", "group name") for h in header)
+            and any(h in ("permission", "role", "access") for h in header)
+            and not any("password" in h for h in header))
 
 
 def secure_delete(path):
@@ -143,7 +159,8 @@ class App:
                     guess = detect_adapter(f).name
                 except AdapterError:
                     guess = ""
-                state["inbox_files"].append({"name": f.name, "size": f.stat().st_size, "guess": guess})
+                state["inbox_files"].append({"name": f.name, "size": f.stat().st_size, "guess": guess,
+                                             "permissions": looks_like_permissions(f)})
         for d in sorted(self.output.iterdir(), reverse=True):
             if d.is_dir():
                 man = d / "manifest.json"
@@ -233,6 +250,44 @@ class App:
             finally:
                 st.close()
         return {"config": cfg, "defaults": DEFAULT_CONFIG, "hints": hints, "saved": self.config_path.exists()}
+
+    def _naming_samples(self, st, cfg, limit=400):
+        """Generated convention names for the distinct folder/platform/username combinations."""
+        namer = Namer(cfg)
+        rows = st.db.execute(
+            "SELECT r.folder_json, r.folder, r.type, r.username, p.platform_id, COUNT(*) AS n "
+            "FROM records r JOIN plan_accounts p USING (record_id) "
+            "GROUP BY r.folder_json, p.platform_id, r.username ORDER BY r.folder LIMIT ?", (limit,)).fetchall()
+        out, seen = [], set()
+        for r in rows:
+            rec = SourceRecord(source="", source_file="", source_id="", source_ref="",
+                               folder=tuple(json.loads(r["folder_json"])), type=r["type"], username=r["username"])
+            name, notes = namer.build(rec, r["platform_id"])
+            key = (r["folder"], r["platform_id"], name)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append({"folder": r["folder"], "platform": r["platform_id"], "name": name,
+                        "length": len(name), "notes": "; ".join(notes)})
+        unknown = [{"word": w, "code": c} for w, c in sorted(namer.unknown.items(), key=lambda x: x[0].lower())]
+        return out, unknown
+
+    def api_naming_preview(self, body):
+        user = body.get("config")
+        if not isinstance(user, dict):
+            raise UiError("config must be a JSON object")
+        try:
+            cfg = config_from_dict(user)
+        except Exception as exc:  # noqa: BLE001
+            raise UiError(f"config is not valid: {exc}")
+        if not self.db_path.exists():
+            return {"samples": [], "unknown": []}
+        st = self.store()
+        try:
+            samples, unknown = self._naming_samples(st, cfg)
+        finally:
+            st.close()
+        return {"samples": samples, "unknown": unknown}
 
     def api_config_save(self, body):
         user = body.get("config")
@@ -398,6 +453,7 @@ class App:
         ("POST", "/api/record"): "api_record", ("POST", "/api/edit"): "api_edit",
         ("GET", "/api/safes"): "api_safes", ("POST", "/api/extract"): "api_extract",
         ("POST", "/api/output/delete"): "api_output_delete", ("GET", "/api/audit"): "api_audit",
+        ("POST", "/api/naming/preview"): "api_naming_preview",
     }
 
 
