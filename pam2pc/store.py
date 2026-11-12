@@ -29,6 +29,7 @@ from pathlib import Path
 from .model import Grant, SourceRecord
 from .protect import ProtectError, get_protector, new_salt
 from .transform import _changed, build_plan, rebuild_totals
+from .writers import write_manifest, write_review, write_upload
 
 log = logging.getLogger("pam2pc.store")
 SCHEMA_VERSION = "1"
@@ -269,11 +270,11 @@ class Store:
         return plan
 
     # -- edits ------------------------------------------------------------
-    def select_ids(self, where):
+    def select_ids(self, where, params=()):
         """Record ids from the accounts view matching a WHERE clause, read-only."""
         ro = self.readonly()
         try:
-            return [r[0] for r in ro.execute(f"SELECT record_id FROM accounts WHERE {where}")]
+            return [r[0] for r in ro.execute(f"SELECT record_id FROM accounts WHERE {where}", params)]
         except sqlite3.Error as exc:
             raise StoreError(f"bad --where clause: {exc}")
         finally:
@@ -338,10 +339,10 @@ class Store:
         con.set_authorizer(deny_secret)
         return con
 
-    def query(self, sql):
+    def query(self, sql, params=()):
         con = self.readonly()
         try:
-            cur = con.execute(sql)
+            cur = con.execute(sql, params)
             cols = [d[0] for d in cur.description or []]
             return cols, cur.fetchall()
         except sqlite3.Error as exc:
@@ -357,7 +358,7 @@ class Store:
         self.db.close()
 
 
-def extract_plan(store, where=None, include_secrets=False):
+def extract_plan(store, where=None, include_secrets=False, params=()):
     cfg = store.stored_config()
     if include_secrets and store.meta("protector") == "none":
         raise StoreError("this database was created with --no-secrets, so it has no secrets to "
@@ -370,11 +371,29 @@ def extract_plan(store, where=None, include_secrets=False):
     else:
         plan = store.plan(cfg)
     if where:
-        keep = set(store.select_ids(where))
+        keep = set(store.select_ids(where, params))
         for p in plan.accounts:
             p.in_scope = p.rec.record_id in keep
         rebuild_totals(plan, cfg)
     return plan, cfg
+
+
+def run_extract(store, out_dir, where=None, include_secrets=False, params=(), label=""):
+    """Write review + upload files and the manifest. Returns (plan, counts, files)."""
+    plan, cfg = extract_plan(store, where, include_secrets, params)
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    files = write_review(plan, out_dir)
+    upload_files, counts = write_upload(plan, cfg, out_dir, include_secrets)
+    files += upload_files
+    counts.update(records=len(plan.accounts), filter=label or where or "",
+                  database=str(store.path.resolve()))
+    write_manifest(out_dir, store.inputs_for_manifest(), files, counts, include_secrets,
+                   store.meta("config_path"))
+    store.audit("extract", output=str(out_dir.resolve()), where=label or where or "",
+                include_secrets=include_secrets, accounts=counts["accounts"])
+    store.db.commit()
+    return plan, counts, files
 
 
 def print_table(cols, rows, out=sys.stdout, max_width=60):

@@ -17,3 +17,4 @@ run.lock
 # Staging databases hold encrypted secrets and all metadata: never commit them
 *.db
 *.db-journal
+/pam2pc_workspace/

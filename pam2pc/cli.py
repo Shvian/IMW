@@ -10,7 +10,7 @@ from . import __version__
 from .adapters import ADAPTERS, AdapterError, detect_adapter, get_adapter
 from .config import load_config, write_default_config
 from .protect import ProtectError
-from .store import REPORTS, Store, StoreError, extract_plan, print_table
+from .store import REPORTS, Store, StoreError, print_table, run_extract
 from .transform import Permissions, build_plan, load_overrides
 from .writers import write_manifest, write_review, write_upload
 
@@ -205,24 +205,15 @@ def cmd_query(args):
 
 
 def cmd_extract(args):
-    try:
-        store = open_store(args)
-        plan, cfg = extract_plan(store, args.where, args.include_secrets)
-    except StoreError as exc:
-        log.error("%s", exc)
-        return 2
     out_dir = prepare_output(args.output_dir, args.force)
     if out_dir is None:
         return 2
-    files = write_review(plan, out_dir)
-    upload_files, counts = write_upload(plan, cfg, out_dir, args.include_secrets)
-    files += upload_files
-    counts.update(records=len(plan.accounts), filter=args.where or "", database=str(Path(args.db).resolve()))
-    write_manifest(out_dir, store.inputs_for_manifest(), files, counts, args.include_secrets,
-                   store.meta("config_path"))
-    store.audit("extract", output=str(out_dir.resolve()), where=args.where or "",
-                include_secrets=args.include_secrets, accounts=counts["accounts"])
-    store.db.commit()
+    try:
+        store = open_store(args)
+        plan, counts, _ = run_extract(store, out_dir, args.where, args.include_secrets)
+    except StoreError as exc:
+        log.error("%s", exc)
+        return 2
     store.close()
     print_summary(plan, counts)
     print(f"Output: {out_dir.resolve()}")
@@ -230,6 +221,12 @@ def cmd_extract(args):
     print(SECRETS_WARNING if args.include_secrets else
           "Accounts.csv has an empty 'secret' column. Add --include-secrets for the upload-ready version.")
     return 0
+
+
+def cmd_ui(args):
+    from .ui.server import serve
+    flag = "none" if args.no_secrets else ("plain" if args.insecure_plaintext_secrets else None)
+    return serve(args.workspace, args.port, not args.no_browser, flag)
 
 
 def cmd_sources(_args):
@@ -362,6 +359,16 @@ def main(argv=None):
                    help="Decrypt secrets into upload/Accounts.csv (default: left empty)")
     p.add_argument("--force", action="store_true", help="Replace an existing output folder")
     p.set_defaults(func=cmd_extract)
+
+    p = sub.add_parser("ui", help="Start the local web UI (menus for load, rules, review, output)")
+    p.add_argument("--workspace", "-w", default="pam2pc_workspace",
+                   help="Folder for the database, config, inbox and outputs (default: pam2pc_workspace)")
+    p.add_argument("--port", type=int, default=0, help="Port on 127.0.0.1 (default: any free port)")
+    p.add_argument("--no-browser", action="store_true", help="Print the link instead of opening a browser")
+    p.add_argument("--no-secrets", action="store_true", help="New database only: metadata, no secrets")
+    p.add_argument("--insecure-plaintext-secrets", action="store_true",
+                   help="New database only: secrets UNENCRYPTED (test data on non-Windows only)")
+    p.set_defaults(func=cmd_ui)
 
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,

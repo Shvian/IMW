@@ -12,9 +12,25 @@
 
 Requirements: Python 3.8 or later, **standard library only** (Excel files included). There's nothing to `pip install` on the migration host.
 
-## Two ways to run it
+## Easiest: the Migration Workbench (menus, no SQL)
 
-**Recommended: the local staging database.** Load the exports once into an SQLite file on the migration host. Work on the data there with rules, edits and SQL queries, then extract upload files whenever you need them, all at once or in waves.
+Double-click `start-ui.cmd`, or run `python -m pam2pc ui`. A page opens in your browser and walks through five steps:
+
+1. **Load exports.** Copy the export files into `pam2pc_workspace\inbox`, tick them and click Load. Secrets are encrypted as they load, and you can securely delete each export straight from this page.
+2. **Mapping rules.** Fill in simple tables: which group goes to which Safe, which folder goes to which Safe, which record type uses which platform, and how permissions turn into roles. Group, folder and type names already loaded are suggested as you type. Record types with no platform yet are highlighted.
+3. **Review & change.** Pick a list from the menu (Needs a look, Errors, Safe name was changed, No access groups, Possible duplicates, Changed by you...), narrow it with filters or search, tick accounts and use the buttons: Exclude, Include, Move to Safe, Set platform, Rename or Undo. You can add a reason, which goes into the log. Click a row to see everything about that account.
+4. **Safes & members.** See the Safes and members the upload will create.
+5. **Create upload files.** Choose everything or one wave (by Safe, platform or source), and a dry run or upload-ready. Upload-ready needs you to type a confirmation. Old upload files can be securely deleted from the same page.
+
+An **Activity log** page lists every action and change.
+
+![Review page](docs/ui/03_review.png)
+
+The page is served only to this computer (`127.0.0.1`), through a one-time link that becomes a session cookie, and the session ends after 30 minutes idle. No page ever shows a secret. The UI runs as you, so DPAPI works the same as on the command line. Everything lives in the workspace folder: `migration.db`, `config.json`, `inbox\` and `output\`. More screenshots are in [docs/ui](docs/ui).
+
+## Command line
+
+**The staging database.** Load the exports once into an SQLite file on the migration host. Work on the data there with rules, edits and SQL queries, then extract upload files whenever you need them, all at once or in waves.
 
 ```
 python -m pam2pc init-config my_config.json                       # starter config to edit
@@ -149,8 +165,10 @@ The rules, validation and writers need no changes: they only see the common mode
 
 | Path | What it is |
 |---|---|
-| `pam2pc/` | The converter: `adapters/`, `config.py`, `model.py`, `transform.py`, `writers.py`, `store.py` (staging database), `protect.py` (DPAPI), `xlsx.py`, `cli.py` |
+| `pam2pc/` | The converter: `adapters/`, `config.py`, `model.py`, `transform.py`, `writers.py`, `store.py` (staging database), `protect.py` (DPAPI), `ui/` (Workbench), `xlsx.py`, `cli.py` |
 | `samples/` | Sample exports for every source, with matching configs |
-| `tests/` | `python -m unittest discover -s tests` |
+| `tests/` | `python -m unittest discover -s tests`, plus `tests/ui_browser_test.js` (Playwright) for the UI |
+| `docs/ui/` | UI screenshots |
+| `start-ui.cmd` | Double-click launcher for the Workbench on Windows |
 | `tools/` | A synthetic Delinea data generator, for volume testing |
 | `legacy/` | The earlier live-API suite (phase 1 and 2, the readiness checker, the Migration Console UI). It is kept for reference and is not maintained. See [legacy/README.md](legacy/README.md). |
