@@ -1,0 +1,4 @@
+"Group","Title","Username","Password","URL","Notes","TOTP","Icon","Last Modified","Created"
+"Root/Databases/Oracle","oracle@db02","oracle","0ra!db02","db02.example.com","","","0","2026-01-10T10:00:00Z","2025-06-01T10:00:00Z"
+"Root/Databases/SQL","sa@sql01","sa","Sql!01sa","sql01.example.com","primary instance","otpauth://totp/x?secret=ABC","0","2026-01-10T10:00:00Z","2025-06-01T10:00:00Z"
+"Root/Recycle Bin","old","old","old","old.example.com","","","0","2026-01-10T10:00:00Z","2025-06-01T10:00:00Z"
