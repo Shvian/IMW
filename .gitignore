@@ -19,3 +19,5 @@ run.lock
 *.db-journal
 /pam2pc_workspace/
 /sample_workspace/
+# Workbench HTTPS key (DPAPI-encrypted) and certificate
+workbench.key.*

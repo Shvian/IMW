@@ -17,6 +17,10 @@ from .naming import Namer
 
 log = logging.getLogger("pam2pc.transform")
 
+NO_PLATFORM = "(none)"          # an edit that removes the platform on purpose
+PLATFORM_INVALID = re.compile(r"[^A-Za-z0-9_.\-]")
+# Characters removed from every stored text value: control characters, zero-width and BOM.
+UNSAFE_TEXT = re.compile("[\x00-\x08\x0b-\x1f\x7f\u200b-\u200f\u2028\u2029\u2060\ufeff]")
 ACCOUNT_NAME_INVALID = re.compile(r'[\\/:*?"<>|\t\r\n]')
 ACCOUNT_NAME_MAX = 128
 
@@ -34,12 +38,25 @@ class Permissions:
     """
 
     def __init__(self, path=None, encoding="utf-8-sig"):
+        """path: one file or a list of files; grants from several files are merged."""
         self.by_id = defaultdict(list)
         self.by_name = defaultdict(list)
         self.by_folder = defaultdict(list)
-        self.loaded = bool(path)
-        if not path:
-            return
+        paths = [p for p in (path if isinstance(path, (list, tuple)) else [path]) if p]
+        self.loaded = bool(paths)
+        self.paths = paths
+        for one in paths:
+            self._read(one, encoding)
+        if paths:
+            self.log_summary()
+
+    @staticmethod
+    def _add(lst, g):
+        key = (g.member.lower(), g.permission.lower())
+        if all((x.member.lower(), x.permission.lower()) != key for x in lst):
+            lst.append(g)
+
+    def _read(self, path, encoding):
         with open(path, newline="", encoding=encoding) as fh:
             reader = csv.DictReader(fh)
             cols = {c.lower().strip(): c for c in reader.fieldnames or []}
@@ -61,11 +78,13 @@ class Permissions:
                 name = col(row, "Secret Name", "SecretName", "Name", "Title")
                 folder = "\\".join(split_folder(col(row, "Folder Path", "Folder", "Path"), "auto")).lower()
                 if rid:
-                    self.by_id[rid].append(g)
+                    self._add(self.by_id[rid], g)
                 elif name:
-                    self.by_name[(folder, name.lower())].append(g)
+                    self._add(self.by_name[(folder, name.lower())], g)
                 else:
-                    self.by_folder[folder].append(g)
+                    self._add(self.by_folder[folder], g)
+
+    def log_summary(self):
         log.info("permissions: %d record-level, %d folder-level entries",
                  len(self.by_id) + len(self.by_name), len(self.by_folder))
 
@@ -252,16 +271,50 @@ def resolve_platform(rec, cfg):
     return cfg.get("default_platform") or "", "default"
 
 
-def member_target(name, cfg):
-    """'CORP\\Group' -> (memberName, searchIn) using directory_map."""
-    dmap = {k.lower(): v for k, v in cfg["directory_map"].items()}
+def _split_member(name):
     domain, _, short = name.rpartition("\\")
     if not domain and "@" in name:
         short, _, domain = name.partition("@")
+    return domain, short
+
+
+def _source_matches(src, name, domain, member_type):
+    kind = (src.get("members") or "both").lower()
+    mt = (member_type or "").lower()
+    if kind == "groups" and mt == "user" or kind == "users" and mt != "user":
+        return False
+    match = (src.get("match") or "*").strip()
+    if match == "*":
+        return True
+    if match.lower().startswith("re:"):
+        return bool(re.search(match[3:], name, re.IGNORECASE))
+    m = match.lower()
+    d = domain.lower()
+    return bool(d) and (d == m or d.split(".")[0] == m or m.split(".")[0] == d)
+
+
+def convert_member_name(src, name, domain, short):
+    out = short if (domain and src.get("strip_domain", True)) else name
+    if src.get("find"):
+        out = re.sub(src["find"], src.get("replace", ""), out, flags=re.IGNORECASE)
+    out = f"{src.get('add_prefix', '')}{out}{src.get('add_suffix', '')}"
+    case = (src.get("case") or "keep").lower()
+    return out.lower() if case == "lower" else out.upper() if case == "upper" else out
+
+
+def member_target(name, cfg, member_type=""):
+    """'CORP\\Group' -> (memberName, searchIn, source name) using directory_sources, then directory_map."""
+    domain, short = _split_member(name)
+    member_type = member_type or cfg.get("default_member_type", "Group")
+    for src in cfg.get("directory_sources") or []:
+        if _source_matches(src, name, domain, member_type):
+            return convert_member_name(src, name, domain, short), src.get("search_in") or "Vault", \
+                src.get("name") or src.get("match") or ""
+    dmap = {k.lower(): v for k, v in cfg["directory_map"].items()}
     search_in = (dmap.get(domain.lower()) or dmap.get(domain.split(".")[0].lower())
                  or dmap.get("*", "Vault")) if domain else dmap.get("*", "Vault")
     member = short if (domain and cfg["strip_domain_prefix"]) else name
-    return member, search_in
+    return member, search_in, ""
 
 
 # --------------------------------------------------------------------------- #
@@ -299,6 +352,7 @@ class Plan:
     accounts: List[AccountPlan]
     safes: "OrderedDict"
     members: "OrderedDict"
+    member_edits: list = field(default_factory=list)
 
 
 def load_overrides(path, encoding="utf-8-sig"):
@@ -334,7 +388,7 @@ def _changed(edited, computed):
 def rebuild_totals(plan, cfg):
     """Recompute Safe and member totals after in_scope or migrate changed."""
     plan.safes = _safes(plan.accounts, cfg)
-    plan.members = _members(plan.accounts, cfg)
+    plan.members = _members(plan.accounts, cfg, plan.member_edits)
     return plan
 
 
@@ -342,7 +396,7 @@ def _explicit_changed(edited, computed):
     return bool(edited) and edited.strip().lower() != (computed or "").strip().lower()
 
 
-def build_plan(records, cfg, perms=None, overrides=None, explicit=False):
+def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_edits=None):
     """explicit=True: overrides are deliberate edits (database), not a re-fed review file."""
     changed = _explicit_changed if explicit else _changed
     perms = perms or Permissions()
@@ -374,9 +428,18 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False):
 
         # Platform
         p.platform, p.platform_source = resolve_platform(rec, cfg)
-        if changed(ov.get("Platform_ID"), p.platform):
+        if ov.get("Platform_ID") == NO_PLATFORM:
+            p.platform, p.platform_source = "", "override"
+            p.errors.append("no platform: removed by you")
+        elif changed(ov.get("Platform_ID"), p.platform):
             p.platform, p.platform_source = ov["Platform_ID"], "override"
-        if not p.platform:
+        if p.platform and PLATFORM_INVALID.search(p.platform):
+            bad = " ".join(sorted({repr(c)[1:-1] if c != " " else "space" for c in PLATFORM_INVALID.findall(p.platform)}))
+            clean = PLATFORM_INVALID.sub("_", p.platform)
+            p.warnings.append(f"forbidden characters in platform ID '{p.platform}' ({bad}); changed to "
+                              f"'{clean}', check that platform exists")
+            p.platform = clean
+        if not p.platform and p.platform_source != "override":
             p.errors.append(f"no platform for type '{rec.type}'; add it to platform_map")
 
         # Safe
@@ -409,7 +472,7 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False):
             convention_folders[safe.lower()].add(rec.folder_path)
 
         # Account name
-        name = rec.name or f"{rec.address}-{rec.username}".strip("-")
+        name = account_name_for(rec, p, cfg)
         if changed(ov.get("Account_Name"), ACCOUNT_NAME_INVALID.sub("_", name).strip()):
             name = ov["Account_Name"]
         clean = ACCOUNT_NAME_INVALID.sub("_", name).strip()
@@ -417,7 +480,8 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False):
             clean = clean[:ACCOUNT_NAME_MAX]
             p.warnings.append(f"account name cut to {ACCOUNT_NAME_MAX} characters")
         if clean != name and len(name) <= ACCOUNT_NAME_MAX:
-            p.warnings.append("invalid characters in account name replaced with _")
+            bad = " ".join(sorted({repr(c)[1:-1] for c in ACCOUNT_NAME_INVALID.findall(name)}))
+            p.warnings.append(f"forbidden characters in account name ({bad}) replaced with _")
         p.account_name = clean
 
         if cfg.get("url_address_to_host") and "://" in rec.address:
@@ -472,7 +536,102 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False):
                 x.warnings.append("possible duplicate: same username/address/type in this Safe as "
                                   + ", ".join(others[:3]) + more)
 
-    return Plan(plans, _safes(plans, cfg), _members(plans, cfg))
+    return Plan(plans, _safes(plans, cfg), _members(plans, cfg, member_edits), list(member_edits or []))
+
+
+def account_name_for(rec, p, cfg):
+    """Account name from account_name.template, else account_name.fallback."""
+    an = cfg.get("account_name") or {}
+    vals = {"name": rec.name, "address": rec.address, "username": rec.username, "platform": p.platform,
+            "safe": p.proposed_safe, "folder_leaf": rec.folder[-1] if rec.folder else "",
+            "type": rec.type, "source_id": rec.source_id}
+
+    def fill(t):
+        return re.sub(r"\{(\w+)\}", lambda m: str(vals.get(m.group(1), "") or ""), t or "").strip("-_. ")
+    return fill(an.get("template") or "{name}") or fill(an.get("fallback") or "{address}-{username}")
+
+
+def safe_settings(name, info, cfg):
+    """Body fields for one Safe: safe_defaults, then the first matching safe_rules entry."""
+    body = dict(cfg["safe_defaults"])
+    for rule in cfg.get("safe_rules") or []:
+        pat = rule.get("safe_pattern") or ""
+        if pat and re.search(pat, name, re.IGNORECASE):
+            for k in ("managingCPM", "description", "numberOfVersionsRetention", "numberOfDaysRetention"):
+                if str(rule.get(k, "")).strip() != "":
+                    body[k] = rule[k]
+            if str(rule.get("numberOfVersionsRetention", "")).strip():
+                body["numberOfDaysRetention"] = ""
+            elif str(rule.get("numberOfDaysRetention", "")).strip():
+                body["numberOfVersionsRetention"] = ""
+            break
+    folders = sorted((info or {}).get("folders") or [])
+    if body.get("description") and "{" in str(body["description"]):
+        body["description"] = str(body["description"]).replace("{folder}", folders[0] if folders else "") \
+            .replace("{safe}", name)[:100]
+    body["safeName"] = name
+    return body
+
+
+def apply_member_edits(members, plans, edits):
+    """Your member changes on the Safes page: remove a member from a Safe, or add one."""
+    if not edits:
+        return members
+    uploading = defaultdict(int)
+    names = {}
+    for p in plans:
+        if p.uploadable:
+            uploading[p.safe.lower()] += 1
+            names[p.safe.lower()] = p.safe
+    for e in edits:
+        safe_l, name_l = e["safe_name"].lower(), e["member_name"].lower()
+        for key in [k for k, m in members.items() if k[0].lower() == safe_l and
+                    name_l in (m["member_name"].lower(), m["source_name"].lower())]:
+            del members[key]
+        if e["action"] == "add" and safe_l in uploading:
+            members[(names[safe_l], "edit:" + name_l)] = {
+                "source_name": e["member_name"], "type": e.get("member_type") or "Group",
+                "member_type": e.get("member_type") or "Group", "role": e.get("role") or "",
+                "permission": "(added by you)", "accounts": uploading[safe_l], "seen": set(),
+                "member_name": e["member_name"], "search_in": e.get("search_in") or "Vault",
+                "directory_source": "added by you",
+                "notes": ["added by you" + (f": {e['reason']}" if e.get("reason") else "")]}
+    return members
+
+
+def sanitize_record(rec):
+    """Remove control and invisible characters from every text value (not the secret).
+    Returns the names of the fields that changed and notes them on the record."""
+    changed = []
+
+    def clean(v):
+        if not isinstance(v, str):
+            return v
+        out = UNSAFE_TEXT.sub("", v.replace("\u00a0", " "))
+        return out.strip() if out != v else v
+    for f in ("name", "type", "address", "username", "source_ref"):
+        v = getattr(rec, f)
+        c = clean(v)
+        if c != v:
+            setattr(rec, f, c)
+            changed.append(f)
+    folder = tuple(x for x in (clean(x) for x in rec.folder) if x)
+    if folder != tuple(rec.folder):
+        rec.folder = folder
+        changed.append("folder")
+    for k in list(rec.extra):
+        c = clean(rec.extra[k])
+        if c != rec.extra[k]:
+            rec.extra[k] = c
+            changed.append(k)
+    for g in rec.grants or []:
+        c = clean(g.member)
+        if c != g.member:
+            g.member = c
+            changed.append("access group")
+    if changed:
+        rec.notes.append("forbidden characters (control or invisible) removed from: " + ", ".join(changed))
+    return changed
 
 
 def _safes(plans, cfg=None):
@@ -480,7 +639,8 @@ def _safes(plans, cfg=None):
     limit = (cfg or {}).get("safe_max_accounts") or 0
     for p in plans:
         s = safes.setdefault(p.safe, {"proposed": set(), "valid": True, "issues": set(),
-                                      "sources": set(), "accounts": 0, "migrating": 0})
+                                      "sources": set(), "accounts": 0, "migrating": 0, "folders": set()})
+        s["folders"].add(p.rec.folder_path)
         s["proposed"].add(p.proposed_safe)
         s["valid"] &= p.valid_safe
         s["issues"].update(p.safe_issues)
@@ -494,8 +654,8 @@ def _safes(plans, cfg=None):
     return safes
 
 
-def _members(plans, cfg):
-    """Strongest role per (Safe, member) over the accounts that migrate."""
+def _members(plans, cfg, edits=None):
+    """Strongest role per (Safe, member) over the accounts that migrate, then your member edits."""
     members = OrderedDict()
     for p in plans:
         if not p.uploadable:
@@ -520,6 +680,8 @@ def _members(plans, cfg):
         elif m["role"] not in all_roles(cfg):
             notes.append(f"role '{m['role']}' is not a preset or custom role")
         m["notes"] = notes
-        m["member_name"], m["search_in"] = member_target(m["source_name"], cfg)
         m["member_type"] = m["type"] or cfg["default_member_type"]
+        m["member_name"], m["search_in"], m["directory_source"] = member_target(
+            m["source_name"], cfg, m["member_type"])
+    apply_member_edits(members, plans, edits)
     return members

@@ -18,7 +18,6 @@ import getpass
 import hashlib
 import json
 import logging
-import os
 import platform as _platform
 import sqlite3
 import sys
@@ -27,8 +26,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .model import Grant, SourceRecord
+from .owner import OwnerError, current_identity, restrict
 from .protect import ProtectError, get_protector, new_salt
-from .transform import _changed, build_plan, rebuild_totals
+from .transform import _changed, build_plan, rebuild_totals, safe_settings, sanitize_record
 from .writers import write_manifest, write_review, write_upload
 
 log = logging.getLogger("pam2pc.store")
@@ -57,10 +57,14 @@ CREATE TABLE IF NOT EXISTS plan_accounts (
   access_groups TEXT, access_source TEXT);
 CREATE TABLE IF NOT EXISTS plan_safes (
   safe_name TEXT PRIMARY KEY, length INTEGER, valid_safe_name TEXT, proposed_names TEXT,
-  issues TEXT, mapping_sources TEXT, accounts INTEGER, accounts_to_upload INTEGER);
+  issues TEXT, mapping_sources TEXT, accounts INTEGER, accounts_to_upload INTEGER,
+  managing_cpm TEXT, description TEXT, retention TEXT);
 CREATE TABLE IF NOT EXISTS plan_members (
   safe_name TEXT, source_member TEXT, member_name TEXT, search_in TEXT, member_type TEXT,
-  source_permission TEXT, role TEXT, accounts INTEGER, notes TEXT);
+  source_permission TEXT, role TEXT, accounts INTEGER, notes TEXT, directory_source TEXT);
+CREATE TABLE IF NOT EXISTS member_edits (
+  safe_name TEXT, member_name TEXT, action TEXT, search_in TEXT, member_type TEXT, role TEXT,
+  changed_utc TEXT, changed_by TEXT, reason TEXT, PRIMARY KEY (safe_name, member_name));
 CREATE TABLE IF NOT EXISTS audit (
   id INTEGER PRIMARY KEY, ts TEXT, user TEXT, host TEXT, action TEXT, detail TEXT);
 CREATE VIEW IF NOT EXISTS accounts AS SELECT * FROM plan_accounts;
@@ -118,20 +122,63 @@ class Store:
         if not self.path.exists() and not create:
             raise StoreError(f"database {self.path} does not exist; run 'ingest' first")
         new = not self.path.exists()
-        self.db = sqlite3.connect(str(self.path))
+        try:
+            me = current_identity()
+        except OwnerError as exc:
+            raise StoreError(str(exc))
+        try:
+            self.db = sqlite3.connect(str(self.path))
+            self.db.execute("SELECT 1 FROM sqlite_master LIMIT 1")
+        except sqlite3.OperationalError as exc:
+            if not new:
+                raise StoreError(f"Can't open {self.path} ({exc}). It probably belongs to another Windows user: "
+                                 "only the user who created a database can open it.")
+            raise
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA foreign_keys = ON")
+        # Plan tables are rebuilt by every map, so an older layout is simply recreated.
+        for table, column in (("plan_safes", "managing_cpm"), ("plan_members", "directory_source")):
+            cols = [r[1] for r in self.db.execute(f"PRAGMA table_info({table})")]
+            if cols and column not in cols:
+                self.db.execute(f"DROP TABLE {table}")
         self.db.executescript(SCHEMA)
         if new:
-            if os.name == "posix":
-                os.chmod(self.path, 0o600)
             self._set_meta("schema_version", SCHEMA_VERSION)
             self._set_meta("created_utc", _now())
             self._set_meta("created_by", f"{_user()}@{_platform.node()}")
             self._set_meta("salt", base64.b64encode(new_salt()).decode())
             self._set_meta("protector", protector or "dpapi")
+            self._set_meta("owner_sid", me["sid"])
+            self._set_meta("owner_name", me["display"])
             self.db.commit()
+            try:
+                restrict(self.path, me["sid"])
+            except OwnerError as exc:
+                self.db.close()
+                self.path.unlink()
+                raise StoreError(str(exc))
+        else:
+            self._check_owner(me)
         self._protector = None
+
+    def _check_owner(self, me):
+        """Only the Windows user who created the database may open it (see owner.py)."""
+        owner = self.meta("owner_sid")
+        if owner is None:      # made before owners were recorded: the creator's name decides
+            creator = (self.meta("created_by") or "").rsplit("@", 1)[0]
+            if creator.lower() != (me["user"] or "").lower():
+                self.db.close()
+                raise StoreError(f"This database was created by {creator}. You are signed in to Windows as "
+                                 f"{me['display']}, so it stays closed.")
+            self._set_meta("owner_sid", me["sid"])
+            self._set_meta("owner_name", me["display"])
+            self.db.commit()
+            restrict(self.path, me["sid"])
+        elif owner != me["sid"]:
+            name = self.meta("owner_name") or owner
+            self.db.close()
+            raise StoreError(f"This database belongs to {name}. You are signed in to Windows as "
+                             f"{me['display']}, so it stays closed. Only the user who created a database can open it.")
 
     # -- meta / audit -----------------------------------------------------
     def _set_meta(self, key, value):
@@ -156,17 +203,21 @@ class Store:
 
     # -- ingest -----------------------------------------------------------
     def ingest(self, source, path, records, perms=None, perms_path=None):
+        perms_paths = [p for p in (perms_path if isinstance(perms_path, (list, tuple)) else [perms_path]) if p]
         store_secrets = self.meta("protector") != "none"
         cur = self.db.execute(
             "INSERT INTO inputs(source, path, sha256, records, permissions_path, permissions_sha256, "
             "loaded_utc, loaded_by) VALUES (?,?,?,?,?,?,?,?)",
             (source, str(Path(path).resolve()), sha256_file(path), len(records),
-             str(Path(perms_path).resolve()) if perms_path else None,
-             sha256_file(perms_path) if perms_path else None, _now(), _user()))
+             " | ".join(str(Path(p).resolve()) for p in perms_paths) or None,
+             " | ".join(sha256_file(p) for p in perms_paths) or None, _now(), _user()))
         input_id = cur.lastrowid
         seen = {}
         replaced = 0
+        self.last_sanitized = 0
         for rec in records:
+            if sanitize_record(rec):
+                self.last_sanitized += 1
             base = rec.record_id
             seen[base] = seen.get(base, 0) + 1
             if seen[base] > 1:
@@ -196,7 +247,8 @@ class Store:
                                 (rid, g.member, g.permission, g.member_type))
             rec.secret = ""  # drop the plaintext as soon as it is stored
         self.audit("ingest", source=source, path=str(path), records=len(records), replaced=replaced,
-                   permissions=str(perms_path or ""), secrets_stored=store_secrets)
+                   sanitized=self.last_sanitized,
+                   permissions=" | ".join(map(str, perms_paths)), secrets_stored=store_secrets)
         self.db.commit()
         return len(records), replaced
 
@@ -235,8 +287,30 @@ class Store:
             raise StoreError("no config stored yet; run 'map' first")
         return json.loads(text)
 
+    def member_edits(self):
+        return [dict(r) for r in self.db.execute("SELECT * FROM member_edits ORDER BY changed_utc")]
+
+    def set_member_edits(self, safes, member_name, action, search_in="", member_type="", role="", reason=""):
+        """action: add | remove | undo, for each Safe in safes."""
+        if action not in ("add", "remove", "undo"):
+            raise StoreError("action must be add, remove or undo")
+        for safe in safes:
+            if action == "undo":
+                self.db.execute("DELETE FROM member_edits WHERE lower(safe_name) = lower(?) AND "
+                                "lower(member_name) = lower(?)", (safe, member_name))
+            else:
+                self.db.execute("DELETE FROM member_edits WHERE lower(safe_name) = lower(?) AND "
+                                "lower(member_name) = lower(?)", (safe, member_name))
+                self.db.execute("INSERT INTO member_edits VALUES (?,?,?,?,?,?,?,?,?)",
+                                (safe, member_name, action, search_in, member_type, role, _now(), _user(), reason))
+        self.audit("member_" + action, safes=list(safes), member=member_name, role=role, search_in=search_in,
+                   reason=reason)
+        self.db.commit()
+        return len(safes)
+
     def plan(self, cfg, with_secrets=False):
-        return build_plan(self.load_records(with_secrets), cfg, None, self.overrides(), explicit=True)
+        return build_plan(self.load_records(with_secrets), cfg, None, self.overrides(), explicit=True,
+                          member_edits=self.member_edits())
 
     def map(self, cfg, cfg_path=None):
         plan = self.plan(cfg)
@@ -254,14 +328,23 @@ class Store:
                  r.folder_path, "; ".join(f"{g.member}={g.permission}" for g in p.grants),
                  p.access_source))
         for name, s in plan.safes.items():
-            self.db.execute("INSERT INTO plan_safes VALUES (?,?,?,?,?,?,?,?)",
+            body = safe_settings(name, s, cfg)
+            if str(body.get("numberOfVersionsRetention", "")).strip():
+                retention = f"{body['numberOfVersionsRetention']} versions"
+            elif str(body.get("numberOfDaysRetention", "")).strip():
+                retention = f"{body['numberOfDaysRetention']} days"
+            else:
+                retention = ""
+            self.db.execute("INSERT INTO plan_safes VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                             (name, len(name), "TRUE" if s["valid"] else "FALSE",
                              " | ".join(sorted(s["proposed"])), " | ".join(sorted(s["issues"])),
-                             " | ".join(sorted(s["sources"])), s["accounts"], s["migrating"]))
+                             " | ".join(sorted(s["sources"])), s["accounts"], s["migrating"],
+                             body.get("managingCPM", ""), body.get("description", ""), retention))
         for (safe, _), m in plan.members.items():
-            self.db.execute("INSERT INTO plan_members VALUES (?,?,?,?,?,?,?,?,?)",
+            self.db.execute("INSERT INTO plan_members VALUES (?,?,?,?,?,?,?,?,?,?)",
                             (safe, m["source_name"], m["member_name"], m["search_in"], m["member_type"],
-                             m["permission"], m["role"] or "UNMAPPED", m["accounts"], "; ".join(m["notes"])))
+                             m["permission"], m["role"] or "UNMAPPED", m["accounts"], "; ".join(m["notes"]),
+                             m.get("directory_source", "")))
         self._set_meta("config", json.dumps(cfg))
         self._set_meta("config_path", str(cfg_path or "(defaults)"))
         self._set_meta("mapped_utc", _now())

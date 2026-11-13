@@ -4,6 +4,8 @@ import copy
 import json
 from collections import OrderedDict
 
+from .naming import LAYER_FIELDS, default_layers
+
 # Every permission flag the Privilege Cloud "Add Safe member" API accepts.
 ALL_PERMISSIONS = [
     "useAccounts", "retrieveAccounts", "listAccounts", "addAccounts",
@@ -103,8 +105,14 @@ DEFAULT_CONFIG = {
         "abbreviations": {},
         # Folder levels to leave out entirely, e.g. ["Infrastructure", "Applications"].
         "skip_folder_levels": [],
+        # Placeholder layers: {env}, {tech}, {flavor}, {acct} and any you add (e.g. {region}).
+        # Each layer: {"label", "default", "rules": [{"field", "pattern", "code",
+        # optional "field2", "pattern2"}]}; the first rule that matches gives the code.
+        # Fields: folder_word, folder_level, folder, platform, username, address, name, type,
+        # source, env/tech/flavor/acct (an earlier layer's code) or column:<source column>.
+        "layers": default_layers(),
+        # Older settings, still read: extra environment words and platform codes.
         "environment_words": [],
-        # Platform ID -> {"tech": ..., "flavor": ..., "acct": ...}; adds to/overrides the built-ins.
         "platform_codes": {},
     },
     # Recommended maximum accounts per Safe (CyberArk: 3,000-5,000; hard limit 20,000 objects).
@@ -141,8 +149,15 @@ DEFAULT_CONFIG = {
     "custom_roles": {
         "List only": _perms("listAccounts"),
     },
-    # "DOMAIN\Group" or "group@domain" -> memberName + searchIn. "*" is the default
-    # directory. strip_domain_prefix drops "DOMAIN\" from memberName.
+    # Directory sources for Safe members, checked in order; the first that matches a member
+    # gives its searchIn directory and how its name is converted. Each source:
+    #   name, members ("both" | "groups" | "users"),
+    #   match: "*" (anything), a domain ("CORP", "corp.example.com") or "re:<regex>",
+    #   search_in: the directory name in Privilege Cloud ("Vault" for vault users/groups),
+    #   strip_domain (drop "CORP\" / "@corp..."), find + replace (regex), add_prefix,
+    #   add_suffix, case ("keep" | "lower" | "upper").
+    "directory_sources": [],
+    # Older, simpler form used when no directory source matches: domain -> searchIn.
     "directory_map": {"*": "Vault"},
     "strip_domain_prefix": True,
     "default_member_type": "Group",
@@ -157,6 +172,13 @@ DEFAULT_CONFIG = {
         "olacEnabled": False,
         "autoPurgeEnabled": False,
     },
+    # Safe settings by Safe name (regex), checked in order; the first match overrides
+    # safe_defaults. Keys: safe_pattern, managingCPM, description, numberOfVersionsRetention,
+    # numberOfDaysRetention. Descriptions may use {folder} (the Safe's first source folder).
+    "safe_rules": [],
+    # Account names: template first, fallback when the template comes out empty.
+    # Placeholders: {name} {address} {username} {platform} {safe} {folder_leaf}.
+    "account_name": {"template": "{name}", "fallback": "{address}-{username}"},
     "account_defaults": {
         "automaticManagementEnabled": False,
         "manualManagementReason": "Migrated - CPM management pending review",
@@ -219,7 +241,7 @@ DEFAULT_CONFIG = {
 
 # Keys whose dict value replaces the default wholesale instead of merging.
 NO_MERGE = {"platform_map", "permission_map", "role_permissions", "custom_roles", "directory_map",
-            "account_property_map", "abbreviations"}
+            "account_property_map", "abbreviations", "layers"}
 
 
 def all_roles(cfg):
