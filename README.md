@@ -1,6 +1,6 @@
-# D2P: PAM exports to Privilege Cloud upload files
+# Idira Migration Workbench: PAM exports to Privilege Cloud upload files
 
-`pam2pc` is an **offline** converter. It reads credential exports from other PAM tools and password managers and turns them into CSV files ready to load into CyberArk Privilege Cloud through its REST API. It makes **no network connections** to the source or to Privilege Cloud. Its job is the heavy lifting of a migration: mapping, cleaning and validating the data.
+`Idira Migration Workbench` is an **offline** converter. It reads credential exports from other PAM tools and password managers and turns them into CSV files ready to load into CyberArk Privilege Cloud through its REST API. It makes **no network connections** to the source or to Privilege Cloud. Its job is the heavy lifting of a migration: mapping, cleaning and validating the data.
 
 ```
   export files ──► source adapter ──► common model ──► rules ──► review/   (no secrets, shareable)
