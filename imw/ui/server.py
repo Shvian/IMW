@@ -1,4 +1,4 @@
-"""Local web UI for the staging database: python -m pam2pc ui
+"""Local web UI for the staging database: python -m imw ui
 
 Security model
   * Listens on 127.0.0.1 only, over HTTPS with a self-signed certificate made for this
@@ -41,12 +41,12 @@ from ..model import SourceRecord
 from ..naming import Namer
 from ..protect import ProtectError
 from ..store import Store, StoreError, run_extract
-from ..transform import Permissions, member_target
+from ..transform import Permissions, apply_member_override, member_target, normalize_member_type
 from .auth import get_authenticator
 from .tls import fingerprint, server_context, trust_certificate
 from ..owner import claim_workspace, peer_is_owner
 
-log = logging.getLogger("pam2pc.ui")
+log = logging.getLogger("imw.ui")
 PRODUCT = "Idira Migration Workbench"
 STATIC = Path(__file__).parent / "static"
 IDLE_SECONDS = 10 * 60          # auto-lock
@@ -161,8 +161,6 @@ def check_settings(cfg):
             if r.get("field2"):
                 rx(r.get("pattern2"), f"{{{name}}} rule")
     for src in cfg.get("directory_sources") or []:
-        if not src.get("search_in"):
-            raise UiError(f"Directory source '{src.get('name') or src.get('match')}' needs a directory (searchIn).")
         if str(src.get("match", "")).lower().startswith("re:"):
             rx(src["match"][3:], "Directory source match")
         if src.get("find"):
@@ -515,7 +513,7 @@ class App:
                 ids = st.select_ids(where, params)
             if not ids:
                 raise UiError("No accounts selected.")
-            if len(ids) > 1 and values.get("account_name"):
+            if len(ids) > 1 and values.get("account_name") and values["account_name"].lower() != "(none)":
                 raise UiError("Rename one account at a time.")
             st.set_edits(ids, values, body.get("reason") or "")
             st.map(st.stored_config(), st.meta("config_path"))
@@ -531,14 +529,74 @@ class App:
             cols, rows = st.query("SELECT * FROM plan_safes ORDER BY safe_name")
             mcols, mrows = st.query("SELECT * FROM plan_members ORDER BY safe_name, member_name")
             edits = st.member_edits()
+            overrides = st.member_overrides()
+            grants = st.db.execute("SELECT member, max(member_type) AS member_type, COUNT(DISTINCT record_id) AS n "
+                                   "FROM grants GROUP BY lower(member)").fetchall()
         finally:
             st.close()
         cfg = self.config()
         roles = list(all_roles(cfg))
         members = [dict(zip(mcols, r)) for r in mrows]
         return {"safes": [dict(zip(cols, r)) for r in rows], "members": members, "member_edits": edits,
-                "roles": roles, "directories": sorted({m["search_in"] for m in members} | {"Vault"}),
+                "people": self._people(members, grants, overrides, cfg),
+                "roles": roles, "directories": sorted({m["search_in"] for m in members if m["search_in"]} | {"Vault"}),
                 "known_members": sorted({m["member_name"] for m in members}, key=str.lower)}
+
+    @staticmethod
+    def _people(members, grants, overrides, cfg):
+        """One row per member (user, group or role), with the Safes it is on. Members from the
+        export whose accounts are not uploaded are listed too, with no Safes."""
+        in_export = {r["member"].lower(): r["n"] for r in grants}
+        people = {}
+        for m in members:
+            key = (m["source_member"] or m["member_name"]).lower()
+            p = people.setdefault(key, {
+                "key": key, "source_member": m["source_member"], "member_name": m["member_name"],
+                "member_type": m["member_type"], "search_in": m["search_in"],
+                "directory_source": m["directory_source"], "export_accounts": in_export.get(key, 0),
+                "edited": key in overrides, "override": overrides.get(key), "safes": []})
+            p["safes"].append({"safe_name": m["safe_name"], "role": m["role"], "accounts": m["accounts"],
+                               "source_permission": m["source_permission"], "notes": m["notes"]})
+        default_type = normalize_member_type(cfg["default_member_type"])
+        for r in grants:
+            key = r["member"].lower()
+            if key in people:
+                continue
+            mtype = normalize_member_type(r["member_type"], default_type)
+            name, search_in, src = member_target(r["member"], cfg, mtype)
+            m = apply_member_override({"source_name": r["member"], "member_name": name, "member_type": mtype,
+                                       "type": mtype, "search_in": search_in,
+                                       "directory_source": src or "default"}, overrides.get(key))
+            people[key] = {"key": key, "source_member": r["member"], "member_name": m["member_name"],
+                           "member_type": m["member_type"], "search_in": m["search_in"],
+                           "directory_source": m["directory_source"], "export_accounts": r["n"],
+                           "edited": key in overrides, "override": overrides.get(key), "safes": []}
+        return sorted(people.values(), key=lambda p: (p["member_name"] or "").lower())
+
+    def api_members_change(self, body):
+        """Change one member's memberName, memberType or searchIn everywhere (kept across re-mapping)."""
+        key = (body.get("key") or "").strip()
+        if not key:
+            raise UiError("Pick a member first.")
+        undo = bool(body.get("undo"))
+        name = (body.get("member_name") or "").strip()
+        mtype = (body.get("member_type") or "").strip()
+        if mtype and mtype.lower() not in ("user", "group", "role"):
+            raise UiError("Member type must be User, Group or Role.")
+        search_in = body.get("search_in")
+        search_in = None if search_in is None else str(search_in).strip()
+        if not undo and not name:
+            raise UiError("The member name can't be empty.")
+        st = self.store()
+        try:
+            st.set_member_override(key, name or None, normalize_member_type(mtype) if mtype else None,
+                                   search_in, body.get("reason") or "", undo=undo)
+            st.map(st.stored_config(), st.meta("config_path"))
+        except StoreError as exc:
+            raise UiError(str(exc))
+        finally:
+            st.close()
+        return {"changed": 1}
 
     def api_members_edit(self, body):
         """Add a member to, or remove one from, any number of Safes (kept across re-mapping)."""
@@ -559,8 +617,9 @@ class App:
             for safe, member in pairs:
                 by_member.setdefault(member, []).append(safe)
             for member, safes in by_member.items():
-                n += st.set_member_edits(safes, member, action, (body.get("search_in") or "Vault").strip(),
-                                         body.get("member_type") or "Group", role, body.get("reason") or "")
+                n += st.set_member_edits(safes, member, action, (body.get("search_in") or "").strip(),
+                                         normalize_member_type(body.get("member_type")) if body.get("member_type") else "",
+                                         role, body.get("reason") or "")
             st.map(st.stored_config(), st.meta("config_path"))
         except StoreError as exc:
             raise UiError(str(exc))
@@ -669,7 +728,7 @@ class App:
             if sys.platform == "win32":
                 os.startfile(str(path))   # noqa: S606 - opens Explorer on our own folder
                 opened = True
-            elif os.environ.get("PAM2PC_UI_NO_OPEN") != "1":
+            elif os.environ.get("IMW_UI_NO_OPEN") != "1":
                 tool = "open" if sys.platform == "darwin" else "xdg-open"
                 if shutil.which(tool):
                     subprocess.Popen([tool, str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -700,7 +759,7 @@ class App:
             st.close()
         out = []
         for r in rows:
-            mtype = r["member_type"] or cfg["default_member_type"]
+            mtype = normalize_member_type(r["member_type"], normalize_member_type(cfg["default_member_type"]))
             name, search_in, src = member_target(r["member"], cfg, mtype)
             out.append({"source": r["member"], "type": mtype, "accounts": r["n"], "member_name": name,
                         "search_in": search_in, "directory_source": src or "(not matched; default)"})
@@ -780,6 +839,7 @@ class App:
         ("POST", "/api/naming/preview"): "api_naming_preview", ("POST", "/api/open"): "api_open_folder",
         ("POST", "/api/lock"): "api_lock", ("POST", "/api/end"): "api_end", ("POST", "/api/ping"): "api_ping",
         ("POST", "/api/members/preview"): "api_members_preview", ("POST", "/api/members/edit"): "api_members_edit",
+        ("POST", "/api/members/change"): "api_members_change",
     }
     # Allowed while locked.
     OPEN_ROUTES = {("GET", "/api/session"): "api_session", ("POST", "/api/unlock"): "api_unlock"}
@@ -790,7 +850,7 @@ def make_handler(app, port, scheme="https"):
     secure = "; Secure" if scheme == "https" else ""
 
     class Handler(BaseHTTPRequestHandler):
-        server_version = "pam2pc-ui"
+        server_version = "IMW"
         sys_version = ""
         timeout = 60      # a browser that opens a connection and stops talking does not hold a thread
 
@@ -817,7 +877,7 @@ def make_handler(app, port, scheme="https"):
         def _cookie(self):
             for part in (self.headers.get("Cookie") or "").split(";"):
                 k, _, v = part.strip().partition("=")
-                if k == "pam2pc_sid":
+                if k == "imw_sid":
                     return v
             return None
 
@@ -827,7 +887,7 @@ def make_handler(app, port, scheme="https"):
             origin = self.headers.get("Origin")
             if origin and origin not in {f"{scheme}://{h}" for h in allowed_hosts}:
                 return "bad origin"
-            if mutating and self.headers.get("X-Pam2pc") != "1":
+            if mutating and self.headers.get("X-IMW") != "1":
                 return "missing header"
             return None
 
@@ -880,13 +940,13 @@ def make_handler(app, port, scheme="https"):
                         app.launch_token = None
                         app.sid = secrets.token_urlsafe(32)
                         app.unlocked = False
-                        cookie = f"pam2pc_sid={app.sid}; HttpOnly; SameSite=Strict; Path=/{secure}"
+                        cookie = f"imw_sid={app.sid}; HttpOnly; SameSite=Strict; Path=/{secure}"
                         return self._send(HTTPStatus.SEE_OTHER, b"", "text/plain",
                                           {"Location": "/", "Set-Cookie": cookie})
                 if not self._session_ok():
                     return self._send(HTTPStatus.UNAUTHORIZED,
                                       b"<p>Session ended or not started. Close this tab and run "
-                                      b"<code>python -m pam2pc ui</code> again to get a new link.</p>",
+                                      b"<code>python -m imw ui</code> again to get a new link.</p>",
                                       "text/html; charset=utf-8")
                 return self._send(HTTPStatus.OK, (STATIC / "index.html").read_bytes(),
                                   "text/html; charset=utf-8")
@@ -907,7 +967,7 @@ def make_handler(app, port, scheme="https"):
                     return self._send(exc.status, {"error": str(exc)})
                 stamp = time.strftime("%Y%m%d-%H%M%S")
                 return self._send(HTTPStatus.OK, text.encode("utf-8"), "text/csv; charset=utf-8",
-                                  {"Content-Disposition": f'attachment; filename="pam2pc_{what}_{stamp}.csv"'})
+                                  {"Content-Disposition": f'attachment; filename="imw_{what}_{stamp}.csv"'})
             name = App.OPEN_ROUTES.get((method, url.path))
             if name:
                 self._unlocked(touch=False)          # applies the idle lock before answering

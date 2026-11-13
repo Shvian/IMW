@@ -8,8 +8,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from pam2pc import owner, store
-from pam2pc.store import Store, StoreError
+from imw import owner, store
+from imw.store import Store, StoreError
 
 IAN = {"sid": "S-1-5-21-1-1001", "domain": "CORP", "user": "ian", "display": "CORP\\ian"}
 BOB = {"sid": "S-1-5-21-1-1002", "domain": "CORP", "user": "bob", "display": "CORP\\bob"}
@@ -87,7 +87,7 @@ class Owner(unittest.TestCase):
         self.run_as(mine, lambda: owner.claim_workspace(ws))
 
     def test_ui_refuses_to_start_on_someone_elses_workspace(self):
-        from pam2pc.ui import server
+        from imw.ui import server
         ws = self.tmp / "ws"
         self.run_as(IAN, lambda: owner.claim_workspace(ws))
         a, b = as_user(BOB)

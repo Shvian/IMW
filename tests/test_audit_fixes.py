@@ -9,19 +9,19 @@ from collections import OrderedDict
 from pathlib import Path
 from unittest import mock
 
-from test_pam2pc import SAMPLES, Base, read_csv  # noqa: F401
+from test_imw import SAMPLES, Base, read_csv  # noqa: F401
 from xlsx_writer import write_xlsx
 
-from pam2pc import csvsafe, safexml, xlsx
-from pam2pc.adapters.base import AdapterError
-from pam2pc.adapters.keepass import KeePassAdapter
-from pam2pc.adapters.rows import record_from_row
-from pam2pc.config import CONFIG_VERSION, DEFAULT_CONFIG, config_diff, config_from_dict, upgrade_config
-from pam2pc.model import SourceRecord
-from pam2pc.store import Store
-from pam2pc.transform import Permissions, build_plan, load_overrides
-from pam2pc.ui import server, tls
-from pam2pc.ui.auth import TestAuth
+from imw import csvsafe, safexml, xlsx
+from imw.adapters.base import AdapterError
+from imw.adapters.keepass import KeePassAdapter
+from imw.adapters.rows import record_from_row
+from imw.config import CONFIG_VERSION, DEFAULT_CONFIG, config_diff, config_from_dict, upgrade_config
+from imw.model import SourceRecord
+from imw.store import Store
+from imw.transform import Permissions, build_plan, load_overrides
+from imw.ui import server, tls
+from imw.ui.auth import TestAuth
 
 
 def rec(sid, name="", address="", username="u", folder=("IT",), **kw):
@@ -336,7 +336,7 @@ class LegacyRedact(unittest.TestCase):
 
 class AccessDeniedMessage(Base):
     def test_own_folder_is_not_blamed_on_another_user(self):
-        from pam2pc import owner
+        from imw import owner
         ws = self.tmp / "ws"
         ws.mkdir()
         err = PermissionError(13, "Access is denied", str(ws / ".owner"))
@@ -349,7 +349,7 @@ class AccessDeniedMessage(Base):
         self.assertIn("Access is denied", msg)
 
     def test_other_owner_still_named(self):
-        from pam2pc import owner
+        from imw import owner
         ws = self.tmp / "ws"
         ws.mkdir()
         with mock.patch.object(owner.Path, "iterdir", side_effect=PermissionError(13, "denied")), \
@@ -360,7 +360,7 @@ class AccessDeniedMessage(Base):
 
 class WindowsAclCommands(Base):
     def test_files_inherit_instead_of_getting_folder_flags(self):
-        from pam2pc import owner
+        from imw import owner
         ws = self.tmp / "ws"
         ws.mkdir()
         (ws / ".owner").write_text("{}")
@@ -378,12 +378,12 @@ class WindowsAclCommands(Base):
 @unittest.skipUnless(sys.platform == "win32", "Windows only")
 class WindowsOnly(unittest.TestCase):
     def test_dpapi_roundtrip(self):
-        from pam2pc.protect import DpapiProtector
+        from imw.protect import DpapiProtector
         p = DpapiProtector(b"salt")
         self.assertEqual(p.unprotect(p.protect("s3cret-ü", "r1"), "r1"), "s3cret-ü")
 
     def test_path_owner(self):
-        from pam2pc.owner import current_identity, path_owner_sid
+        from imw.owner import current_identity, path_owner_sid
         self.assertEqual(path_owner_sid(Path(__file__).parent), current_identity()["sid"])
 
 

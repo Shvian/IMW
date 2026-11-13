@@ -1,4 +1,4 @@
-"""pam2pc: offline converter from PAM exports to Privilege Cloud API-ready CSVs.
+"""Idira Migration Workbench (imw): offline converter from PAM exports to Privilege Cloud API-ready CSVs.
 
 Reads exported data from any supported source (Delinea/Thycotic Secret Server,
 KeePass, generic CSV/Excel, ...) through pluggable adapters, maps it onto one

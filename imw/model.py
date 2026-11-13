@@ -10,7 +10,7 @@ class Grant:
     """One principal's access to a record, as the source expressed it."""
     member: str
     permission: str              # source wording: Owner, Edit, View, Read, Full...
-    member_type: str = ""        # Group or User; blank -> config default_member_type
+    member_type: str = ""        # User, Group or Role; blank -> config default_member_type
 
 
 @dataclass

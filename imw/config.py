@@ -91,7 +91,7 @@ DEFAULT_CONFIG = {
     # Naming convention (fallback_strategy "convention", or {convention} / {env} /
     # {folder_abbrev} / {tech} / {flavor} / {acct} in a rule's Safe name). Layers follow
     # the CyberArk convention: environment, location/BU/app (from the folders),
-    # technology, flavor, account type. See pam2pc/naming.py for the built-in codes.
+    # technology, flavor, account type. See imw/naming.py for the built-in codes.
     "safe_convention": {
         # Records with folders: the folder structure, each level abbreviated, in order.
         # Environment words (Prod, Dev...) stay where they are unless the template has {env}.
@@ -151,16 +151,17 @@ DEFAULT_CONFIG = {
     },
     # Directory sources for Safe members, checked in order; the first that matches a member
     # gives its searchIn directory and how its name is converted. Each source:
-    #   name, members ("both" | "groups" | "users"),
+    #   name, members ("both" | "groups" | "users"; groups sources also take roles),
     #   match: "*" (anything), a domain ("CORP", "corp.example.com") or "re:<regex>",
-    #   search_in: the directory name in Privilege Cloud ("Vault" for vault users/groups),
+    #   search_in: optional. Empty = Privilege Cloud searches every directory. Fill it only
+    #   when one name exists in more than one directory (the directory's ID from Identity),
     #   strip_domain (drop "CORP\" / "@corp..."), find + replace (regex), add_prefix,
     #   add_suffix, case ("keep" | "lower" | "upper").
     "directory_sources": [],
     # Older, simpler form used when no directory source matches: domain -> searchIn.
-    "directory_map": {"*": "Vault"},
+    "directory_map": {"*": ""},
     "strip_domain_prefix": True,
-    "default_member_type": "Group",
+    "default_member_type": "Group",          # User, Group or Role
     # Body fields for every Safe in Safes.csv. Use either numberOfDaysRetention
     # or numberOfVersionsRetention, not both.
     "safe_defaults": {
@@ -176,9 +177,11 @@ DEFAULT_CONFIG = {
     # safe_defaults. Keys: safe_pattern, managingCPM, description, numberOfVersionsRetention,
     # numberOfDaysRetention. Descriptions may use {folder} (the Safe's first source folder).
     "safe_rules": [],
-    # Account names: template first, fallback when the template comes out empty.
-    # Placeholders: {name} {address} {username} {platform} {safe} {folder_leaf}.
-    "account_name": {"template": "{name}", "fallback": "{address}-{username}"},
+    # Account names: mode "pattern" builds them from template, then fallback when the
+    # template comes out empty. Placeholders: {name} {address} {username} {platform} {safe}
+    # {folder_leaf} {type} {source_id}. Mode "none" leaves the name empty in Accounts.csv
+    # and Privilege Cloud generates one on upload.
+    "account_name": {"mode": "pattern", "template": "{name}", "fallback": "{address}-{username}"},
     "account_defaults": {
         "automaticManagementEnabled": False,
         "manualManagementReason": "Migrated - CPM management pending review",
@@ -352,11 +355,11 @@ def load_config(path=None):
 
 def write_default_config(path):
     out = OrderedDict()
-    out["_comment"] = ("pam2pc config. Only keep the keys you change; everything else uses the "
+    out["_comment"] = ("Idira Migration Workbench config. Only keep the keys you change; everything else uses the "
                        "built-in default. See README for each key.")
     out.update(copy.deepcopy(DEFAULT_CONFIG))
     out["folder_rules"] = [{"folder_prefix": "\\Infrastructure\\Network", "safe": "NET-Devices"}]
     out["platform_rules"] = [{"field": "folder", "pattern": "(?i)linux|unix", "platform": "UnixSSH"}]
-    out["directory_map"] = {"CORP": "corp.example.com", "*": "Vault"}
+    out["directory_map"] = {"CORP": "corp.example.com", "*": ""}
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(out, fh, indent=2)

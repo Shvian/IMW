@@ -14,7 +14,7 @@ class UnsafeXmlError(ValueError):
 
 
 def _refuse(*_args):
-    raise UnsafeXmlError("the XML declares a DTD or entities, which pam2pc does not accept")
+    raise UnsafeXmlError("the XML declares a DTD or entities, which the Workbench does not accept")
 
 
 def _checker():

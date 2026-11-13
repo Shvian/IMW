@@ -16,9 +16,10 @@ from .config import all_roles, resolve_role
 from .model import Grant, split_folder
 from .naming import Namer
 
-log = logging.getLogger("pam2pc.transform")
+log = logging.getLogger("imw.transform")
 
 NO_PLATFORM = "(none)"          # an edit that removes the platform on purpose
+NO_NAME = "(none)"              # an edit that leaves the account name empty: Privilege Cloud names it
 PLATFORM_INVALID = re.compile(r"[^A-Za-z0-9_.\-]")
 # Characters removed from every stored text value: control characters, zero-width and BOM.
 UNSAFE_TEXT = re.compile("[\x00-\x08\x0b-\x1f\x7f\u200b-\u200f\u2028\u2029\u2060\ufeff]")
@@ -280,6 +281,7 @@ def _split_member(name):
 
 
 def _source_matches(src, name, domain, member_type):
+    # Group sources also take roles: like groups, they are named without a domain.
     kind = (src.get("members") or "both").lower()
     mt = (member_type or "").lower()
     if kind == "groups" and mt == "user" or kind == "users" and mt != "user":
@@ -303,17 +305,29 @@ def convert_member_name(src, name, domain, short):
     return out.lower() if case == "lower" else out.upper() if case == "upper" else out
 
 
+MEMBER_TYPES = ("User", "Group", "Role")
+
+
+def normalize_member_type(value, default="Group"):
+    """'group', 'USER', 'role' -> Group / User / Role; anything else -> default."""
+    v = (value or "").strip().lower()
+    for t in MEMBER_TYPES:
+        if v == t.lower() or v == t.lower() + "s":
+            return t
+    return default if default in MEMBER_TYPES else "Group"
+
+
 def member_target(name, cfg, member_type=""):
     """'CORP\\Group' -> (memberName, searchIn, source name) using directory_sources, then directory_map."""
     domain, short = _split_member(name)
     member_type = member_type or cfg.get("default_member_type", "Group")
     for src in cfg.get("directory_sources") or []:
         if _source_matches(src, name, domain, member_type):
-            return convert_member_name(src, name, domain, short), src.get("search_in") or "Vault", \
+            return convert_member_name(src, name, domain, short), src.get("search_in") or "", \
                 src.get("name") or src.get("match") or ""
     dmap = {k.lower(): v for k, v in cfg["directory_map"].items()}
     search_in = (dmap.get(domain.lower()) or dmap.get(domain.split(".")[0].lower())
-                 or dmap.get("*", "Vault")) if domain else dmap.get("*", "Vault")
+                 or dmap.get("*", "")) if domain else dmap.get("*", "")
     member = short if (domain and cfg["strip_domain_prefix"]) else name
     return member, search_in, ""
 
@@ -354,6 +368,7 @@ class Plan:
     safes: "OrderedDict"
     members: "OrderedDict"
     member_edits: list = field(default_factory=list)
+    member_overrides: dict = field(default_factory=dict)
 
 
 def load_overrides(path, encoding="utf-8-sig"):
@@ -389,7 +404,7 @@ def _changed(edited, computed):
 def rebuild_totals(plan, cfg):
     """Recompute Safe and member totals after in_scope or migrate changed."""
     plan.safes = _safes(plan.accounts, cfg)
-    plan.members = _members(plan.accounts, cfg, plan.member_edits)
+    plan.members = _members(plan.accounts, cfg, plan.member_edits, plan.member_overrides)
     return plan
 
 
@@ -397,7 +412,8 @@ def _explicit_changed(edited, computed):
     return bool(edited) and edited.strip().lower() != (computed or "").strip().lower()
 
 
-def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_edits=None):
+def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_edits=None,
+               member_overrides=None):
     """explicit=True: overrides are deliberate edits (database), not a re-fed review file."""
     changed = _explicit_changed if explicit else _changed
     perms = perms or Permissions()
@@ -489,6 +505,8 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
         name = account_name_for(rec, p, cfg)
         if changed(ov.get("Account_Name"), ACCOUNT_NAME_INVALID.sub("_", name).strip()):
             name = ov["Account_Name"]
+        if name.strip().lower() == NO_NAME:
+            name = ""                   # left empty on purpose: Privilege Cloud generates one
         clean = ACCOUNT_NAME_INVALID.sub("_", name).strip()
         if len(clean) > ACCOUNT_NAME_MAX:
             clean = clean[:ACCOUNT_NAME_MAX]
@@ -541,9 +559,12 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
                 others = [y.rec.record_id for y in group if y is not x]
                 more = f" and {len(others) - 3} more" if len(others) > 3 else ""
                 x.warnings.append("possible duplicate: same username/address/type in this Safe as "
-                                  + ", ".join(others[:3]) + more)
+                                  + ", ".join(others[:3]) + more
+                                  + ("; with no account name Privilege Cloud gives both the same "
+                                     "name and rejects the second" if not x.account_name else ""))
 
-    return Plan(plans, _safes(plans, cfg), _members(plans, cfg, member_edits), list(member_edits or []))
+    return Plan(plans, _safes(plans, cfg), _members(plans, cfg, member_edits, member_overrides),
+                list(member_edits or []), dict(member_overrides or {}))
 
 
 def _unique_account_names(plans):
@@ -558,6 +579,8 @@ def _unique_account_names(plans):
         if not p.uploadable:
             continue
         safe = p.safe.lower()
+        if not p.account_name:          # Privilege Cloud names it; nothing to make unique
+            continue
         if p.account_name.lower() not in claimed[safe]:
             claimed[safe].add(p.account_name.lower())
             continue
@@ -574,8 +597,11 @@ def _unique_account_names(plans):
 
 
 def account_name_for(rec, p, cfg):
-    """Account name from account_name.template, else account_name.fallback."""
+    """Account name from account_name.template, else account_name.fallback; empty when
+    account_name.mode is "none" (Privilege Cloud then generates a name)."""
     an = cfg.get("account_name") or {}
+    if str(an.get("mode") or "").lower() == "none":
+        return ""                       # Privilege Cloud generates the name on upload
     vals = {"name": rec.name, "address": rec.address, "username": rec.username, "platform": p.platform,
             "safe": p.proposed_safe, "folder_leaf": rec.folder[-1] if rec.folder else "",
             "type": rec.type, "source_id": rec.source_id}
@@ -608,7 +634,9 @@ def safe_settings(name, info, cfg):
 
 
 def apply_member_edits(members, plans, edits):
-    """Your member changes on the Safes page: remove a member from a Safe, or add one."""
+    """Your member changes on the Safes page: remove a member from a Safe, or add one.
+    Adding a member that is already on the Safe changes its role (and its type or searchIn
+    when the change gives one) and keeps everything else."""
     if not edits:
         return members
     uploading = defaultdict(int)
@@ -619,17 +647,61 @@ def apply_member_edits(members, plans, edits):
             names[p.safe.lower()] = p.safe
     for e in edits:
         safe_l, name_l = e["safe_name"].lower(), e["member_name"].lower()
-        for key in [k for k, m in members.items() if k[0].lower() == safe_l and
-                    name_l in (m["member_name"].lower(), m["source_name"].lower())]:
+        found = [k for k, m in members.items() if k[0].lower() == safe_l and
+                 name_l in (m["member_name"].lower(), m["source_name"].lower())]
+        why = f": {e['reason']}" if e.get("reason") else ""
+        if e["action"] == "add" and found:
+            for key in found[1:]:
+                del members[key]
+            m = members[found[0]]
+            if e.get("role"):
+                m["role"] = e["role"]
+            if (e.get("member_type") or "").strip():
+                m["member_type"] = m["type"] = normalize_member_type(e["member_type"], m["member_type"])
+            if (e.get("search_in") or "").strip():
+                m["search_in"] = e["search_in"].strip()
+            m["notes"] = list(m.get("notes") or []) + ["role changed by you" + why]
+            continue
+        for key in found:
             del members[key]
         if e["action"] == "add" and safe_l in uploading:
             members[(names[safe_l], "edit:" + name_l)] = {
-                "source_name": e["member_name"], "type": e.get("member_type") or "Group",
-                "member_type": e.get("member_type") or "Group", "role": e.get("role") or "",
+                "source_name": e["member_name"], "type": normalize_member_type(e.get("member_type")),
+                "member_type": normalize_member_type(e.get("member_type")), "role": e.get("role") or "",
                 "permission": "(added by you)", "accounts": uploading[safe_l], "seen": set(),
-                "member_name": e["member_name"], "search_in": e.get("search_in") or "Vault",
+                "member_name": e["member_name"], "search_in": e.get("search_in") or "",
                 "directory_source": "added by you",
-                "notes": ["added by you" + (f": {e['reason']}" if e.get("reason") else "")]}
+                "notes": ["added by you" + why]}
+    return members
+
+
+def apply_member_override(m, ov):
+    """Your change to one member everywhere (its memberName, memberType or searchIn).
+    A None value keeps what the rules give; searchIn may be set to empty on purpose."""
+    if not ov:
+        return m
+    changed = []
+    if ov.get("member_name"):
+        m["member_name"] = ov["member_name"]
+        changed.append("name")
+    if ov.get("member_type"):
+        m["member_type"] = m["type"] = normalize_member_type(ov["member_type"], m.get("member_type") or "Group")
+        changed.append("type")
+    if ov.get("search_in") is not None:
+        m["search_in"] = ov["search_in"]
+        changed.append("searchIn")
+    if changed:
+        m["directory_source"] = "edited by you"
+        if "notes" in m:
+            m["notes"] = list(m["notes"]) + ["edited by you (" + ", ".join(changed) + ")"
+                                             + (f": {ov['reason']}" if ov.get("reason") else "")]
+    return m
+
+
+def apply_member_overrides(members, overrides):
+    if overrides:
+        for m in members.values():
+            apply_member_override(m, overrides.get(m["source_name"].lower()))
     return members
 
 
@@ -688,7 +760,7 @@ def _safes(plans, cfg=None):
     return safes
 
 
-def _members(plans, cfg, edits=None):
+def _members(plans, cfg, edits=None, overrides=None):
     """Strongest role per (Safe, member) over the accounts that migrate, then your member edits."""
     members = OrderedDict()
     for p in plans:
@@ -714,8 +786,9 @@ def _members(plans, cfg, edits=None):
         elif m["role"] not in all_roles(cfg):
             notes.append(f"role '{m['role']}' is not a preset or custom role")
         m["notes"] = notes
-        m["member_type"] = m["type"] or cfg["default_member_type"]
+        m["member_type"] = normalize_member_type(m["type"], normalize_member_type(cfg["default_member_type"]))
         m["member_name"], m["search_in"], m["directory_source"] = member_target(
             m["source_name"], cfg, m["member_type"])
     apply_member_edits(members, plans, edits)
+    apply_member_overrides(members, overrides)
     return members

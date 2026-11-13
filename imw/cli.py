@@ -1,4 +1,4 @@
-"""Command line: python -m pam2pc <command> ..."""
+"""Command line: python -m imw <command> ..."""
 
 import argparse
 import logging
@@ -14,7 +14,7 @@ from .store import REPORTS, Store, StoreError, print_table, run_extract
 from .transform import sanitize_record, Permissions, build_plan, load_overrides
 from .writers import write_manifest, write_review, write_upload
 
-log = logging.getLogger("pam2pc")
+log = logging.getLogger("imw")
 
 SECRETS_WARNING = """\
 WARNING: upload/Accounts.csv now holds PLAINTEXT secrets, as do your source exports.
@@ -122,7 +122,7 @@ def cmd_ingest(args):
              "plain": "PLAINTEXT - test data only"}[mode] + ")")
     if mode == "dpapi":
         print("The export files are no longer needed: securely delete them now.")
-    print("Next: python -m pam2pc map --db " + str(args.db) + " -c <config.json>")
+    print("Next: python -m imw map --db " + str(args.db) + " -c <config.json>")
     store.close()
     return 0
 
@@ -137,7 +137,7 @@ def cmd_map(args):
         log.error("%s", exc)
         return 2
     print_summary(plan)
-    print("Results are in the database. Try: python -m pam2pc query --db " + str(args.db) +
+    print("Results are in the database. Try: python -m imw query --db " + str(args.db) +
           " --report summary")
     store.close()
     return 0
@@ -235,6 +235,11 @@ def cmd_ui(args):
         return 2
     from .owner import OwnerError
     from .ui.tls import TlsError
+    # Workspaces made before the rename are called pam2pc_workspace: keep using one if it is there.
+    if args.workspace == "imw_workspace" and not Path("imw_workspace").exists() and Path("pam2pc_workspace").is_dir():
+        print("Using the existing workspace pam2pc_workspace (from before the rename). "
+              "Rename the folder to imw_workspace, or pass -w, to change this.")
+        args.workspace = "pam2pc_workspace"
     try:
         return serve(args.workspace, args.port, not args.no_browser, flag, authenticator=auth,
                      use_tls=not args.no_tls, new_cert=args.new_cert, trust_cert=args.trust_cert)
@@ -294,9 +299,9 @@ def cmd_convert(args):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(
-        prog="pam2pc", description="Convert PAM exports into Privilege Cloud API-ready CSV files. "
+        prog="imw", description="Convert PAM exports into Privilege Cloud API-ready CSV files. "
                                    "Offline: makes no network connections.")
-    ap.add_argument("--version", action="version", version=f"pam2pc {__version__}")
+    ap.add_argument("--version", action="version", version=f"Idira Migration Workbench (imw) {__version__}")
     ap.add_argument("-v", "--verbose", action="store_true")
     sub = ap.add_subparsers(dest="command", required=True)
 
@@ -316,7 +321,7 @@ def main(argv=None):
                        help="Permissions CSV: groups per folder or record. Repeat to merge several files")
     p.add_argument("--overrides", help="An edited review/Accounts_Review.csv; changed Migrate, "
                                        "Target_Safe, Platform_ID and Account_Name values win")
-    p.add_argument("--output-dir", "-o", default="pam2pc_output")
+    p.add_argument("--output-dir", "-o", default="imw_output")
     p.add_argument("--include-secrets", action="store_true",
                    help="Write secret values into upload/Accounts.csv (default: left empty)")
     p.add_argument("--force", action="store_true", help="Replace an existing output folder")
@@ -380,8 +385,8 @@ def main(argv=None):
     p.set_defaults(func=cmd_extract)
 
     p = sub.add_parser("ui", help="Start the Idira Migration Workbench (local web UI over HTTPS)")
-    p.add_argument("--workspace", "-w", default="pam2pc_workspace",
-                   help="Folder for the database, config, inbox and outputs (default: pam2pc_workspace)")
+    p.add_argument("--workspace", "-w", default="imw_workspace",
+                   help="Folder for the database, config, inbox and outputs (default: imw_workspace)")
     p.add_argument("--port", type=int, default=0, help="Port on 127.0.0.1 (default: any free port)")
     p.add_argument("--no-browser", action="store_true", help="Print the link instead of opening a browser")
     p.add_argument("--no-secrets", action="store_true", help="New database only: metadata, no secrets")

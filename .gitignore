@@ -8,7 +8,7 @@ node_modules/
 /phase1_output/
 *.tmp
 run.lock
-/pam2pc_output/
+/imw_output/
 # Converter output can hold plaintext secrets: never commit it
 /run*/
 /final/
@@ -17,7 +17,9 @@ run.lock
 # Staging databases hold encrypted secrets and all metadata: never commit them
 *.db
 *.db-journal
-/pam2pc_workspace/
+/imw_workspace/
 /sample_workspace/
 # Workbench HTTPS key (DPAPI-encrypted) and certificate
 workbench.key.*
+/pam2pc_workspace/
+/pam2pc_output/

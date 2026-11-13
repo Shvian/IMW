@@ -8,7 +8,7 @@ Three locks, each enough on its own for most cases:
    have no access unless they take ownership first (which Windows logs and which needs
    admin rights). This is what stops another person who is signed in to the same machine.
 2. An owner record. The workspace (.owner) and the database (meta table) record the owner's
-   Windows SID. pam2pc refuses to open either for another SID, with a clear message.
+   Windows SID. The Workbench refuses to open either for another SID, with a clear message.
 3. The running Workbench only answers browser connections that come from a process of the
    same Windows user (Windows reports which process owns each loopback TCP connection).
    127.0.0.1 is shared by every session on a machine, so without this another signed-in
@@ -28,7 +28,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-log = logging.getLogger("pam2pc.owner")
+log = logging.getLogger("imw.owner")
 OWNER_FILE = ".owner"
 SYSTEM_SID = "S-1-5-18"
 

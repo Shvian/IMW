@@ -9,10 +9,10 @@ import threading
 import unittest
 from pathlib import Path
 
-from test_pam2pc import SAMPLES, Base, read_csv  # noqa: F401
+from test_imw import SAMPLES, Base, read_csv  # noqa: F401
 
-from pam2pc.ui import server, tls
-from pam2pc.ui.auth import TestAuth
+from imw.ui import server, tls
+from imw.ui.auth import TestAuth
 
 PASSWORD = "correct horse"
 
@@ -24,7 +24,7 @@ def _shared_cert():
     """One certificate for the whole test run (making one takes about half a second)."""
     global _CERT_DIR
     if _CERT_DIR is None:
-        _CERT_DIR = Path(tempfile.mkdtemp(prefix="pam2pc-cert-"))
+        _CERT_DIR = Path(tempfile.mkdtemp(prefix="imw-cert-"))
         tls.ensure_certificate(_CERT_DIR)
     return _CERT_DIR / "tls"
 
@@ -67,7 +67,7 @@ class UiServer(Base):
         if self.cookie:
             h["Cookie"] = self.cookie
         if method == "POST":
-            h["X-Pam2pc"] = "1"
+            h["X-IMW"] = "1"
             h["Content-Type"] = "application/json"
         h.update(headers or {})
         c.request(method, path, json.dumps(body) if body is not None else None, h)
@@ -147,12 +147,12 @@ class UiServer(Base):
         self.login()
         self.assertEqual(self.req("GET", f"/?t={self.token}")[0], 200)     # token is one-time; cookie works
         self.assertEqual(self.req("GET", "/api/state")[0], 200)
-        self.assertEqual(self.req("POST", "/api/ingest", {}, headers={"X-Pam2pc": ""})[0], 403)
+        self.assertEqual(self.req("POST", "/api/ingest", {}, headers={"X-IMW": ""})[0], 403)
         self.assertEqual(self.req("POST", "/api/ingest", {}, headers={"Origin": "http://evil.example"})[0], 403)
         plain_origin = {"Origin": f"http://127.0.0.1:{self.port}"}    # the http:// twin of this page
         self.assertEqual(self.req("POST", "/api/ingest", {}, headers=plain_origin)[0], 403)
         self.assertEqual(self.req("POST", "/api/inbox/delete", {"name": "../x"})[0], 400)
-        self.cookie = "pam2pc_sid=forged"
+        self.cookie = "imw_sid=forged"
         self.assertEqual(self.req("GET", "/api/state")[0], 401)
 
     def test_flow(self):

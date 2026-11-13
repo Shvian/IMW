@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from pam2pc.ui import tls
+from imw.ui import tls
 
 
 class Certificate(unittest.TestCase):

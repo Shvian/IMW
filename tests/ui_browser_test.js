@@ -1,14 +1,14 @@
-// End-to-end browser test of the pam2pc UI (needs Node.js + Playwright).
+// End-to-end browser test of the Idira Migration Workbench UI (needs Node.js + Playwright).
 //
-//   PAM2PC_UI_TEST_PASSWORD=test-pass PAM2PC_UI_NO_OPEN=1 \
-//     python -m pam2pc ui -w <ws> --no-browser --insecure-plaintext-secrets > ui.log &
+//   IMW_UI_TEST_PASSWORD=test-pass IMW_UI_NO_OPEN=1 \
+//     python -m imw ui -w <ws> --no-browser --insecure-plaintext-secrets > ui.log &
 //   (copy samples/delinea_export.csv, delinea_permissions.csv, keepass_export.xml,
 //    accounts_by_group.xlsx into <ws>/inbox first)
 //   node tests/ui_browser_test.js ui.log [screenshot-folder]
 const { chromium } = require('playwright');
 const fs = require('fs');
 
-const PASSWORD = process.env.PAM2PC_UI_TEST_PASSWORD || 'test-pass';
+const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
 
 (async () => {
   const log = fs.readFileSync(process.argv[2], 'utf8');
@@ -19,11 +19,12 @@ const PASSWORD = process.env.PAM2PC_UI_TEST_PASSWORD || 'test-pass';
   // The certificate is self-signed for this computer; a real browser warns once (or not after --trust-cert).
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, ignoreHTTPSErrors: true });
   const errors = [];
-  page.on('pageerror', e => errors.push(e.message));
+  page.on('pageerror', e => { errors.push(e.message); console.log('PAGEERROR', e.stack); });
   page.on('console', m => {
     if (m.type() === 'error' && !/status of (400|401|423)/.test(m.text())) errors.push(m.text());
   });
-  page.on('dialog', async d => d.accept());
+  const DIALOGS = []; let DISMISS = false;
+  page.on('dialog', async d => { DIALOGS.push(d.message()); if (DISMISS) { DISMISS = false; await d.dismiss(); } else await d.accept(); });
   // Input tables start folded: open one before using it.
   const openBlock = async (id) => {
     const d = await page.$(`[data-block="${id}"]`);
@@ -44,7 +45,12 @@ const PASSWORD = process.env.PAM2PC_UI_TEST_PASSWORD || 'test-pass';
   await page.waitForSelector('#login-msg >> text=not right');
   await page.waitForTimeout(300); await shot(page, '00_login_error');
   await signIn(PASSWORD);
-  await page.waitForSelector('text=Welcome');
+  await page.waitForSelector('#main h2 >> text=Welcome');   // the Overview, not a blank page
+  if (await page.getAttribute('html', 'data-theme') !== 'dark') throw new Error('dark mode is not the default');
+  await page.click('#theme');
+  if (await page.getAttribute('html', 'data-theme') !== 'light') throw new Error('theme switch did not change to light');
+  await shot(page, '00_welcome_light');
+  await page.click('#theme');
   await shot(page, '00_welcome');
 
   // 1. Load (both permissions files ticked and merged)
@@ -91,6 +97,17 @@ const PASSWORD = process.env.PAM2PC_UI_TEST_PASSWORD || 'test-pass';
   await page.click('nav >> text=A. Directory sources');
   await page.waitForSelector('#dir-out table');
   if (await page.$eval('[data-block="t-dg"]', e => e.open)) throw new Error('input table not folded by default');
+  // Every column heading explains its field with an example; so does every cell
+  {
+    const cols = ['name', 'match', 'search_in', 'strip_domain', 'find', 'replace', 'add_prefix', 'add_suffix', 'case'];
+    for (const k of ['match', 'search_in', 'find', 'replace', 'case']) {
+      const tip = await page.$eval(`#t-dg th:nth-child(${cols.indexOf(k) + 1})`, e => e.title);
+      if (!tip || tip.length < 40) throw new Error(`no explained tooltip on the ${k} heading`);
+    }
+  }
+  if (!(await page.$('.explain >> text=How it works'))) throw new Error('directory sources page does not explain itself');
+  if ((await page.$$eval('#dir-type option', os => os.map(o => o.value))).join() !== 'Group,User,Role') throw new Error('member types are not Group, User, Role');
+  if (await page.inputValue('#dir-fallback') !== '') throw new Error('searchIn is not blank by default');
   let rows = await addRow('t-dg');
   await (await rows[rows.length - 1].$('[data-k=name]')).fill('Corporate AD');
   await (await rows[rows.length - 1].$('[data-k=match]')).fill('CORP');
@@ -120,9 +137,16 @@ const PASSWORD = process.env.PAM2PC_UI_TEST_PASSWORD || 'test-pass';
   if (!(await page.getAttribute('#s-cpm', 'title'))) throw new Error('no tooltip on the CPM field');
   await page.waitForSelector('#conv-folders input[data-folder]', { state: 'attached' });
   console.log('FOLDER CODES:', (await page.$$('#conv-folders input[data-folder]')).length);
+  // Placeholders start folded: the whole section, and each placeholder inside it
+  if (await page.$eval('[data-block="layers-all"]', e => e.open)) throw new Error('placeholders not folded by default');
+  console.log('PLACEHOLDERS:', await page.innerText('#layers-sum'));
+  await openBlock('layers-all');
+  if (await page.$eval('[data-block="layer-env"]', e => e.open)) throw new Error('{env} not folded by default');
+  console.log('ENV:', (await page.innerText('[data-block="layer-env"] > summary')).replace(/\s+/g, ' '));
   // a custom placeholder, used in the template
   await page.fill('#new-layer', 'region');
   await page.click('#add-layer');
+  if (!(await page.$eval('[data-block="layer-region"]', e => e.open))) throw new Error('new placeholder not opened');
   rows = await page.$$('#t-layer-region tr');
   await (await rows[1].$('[data-k=field]')).fill('address');
   await (await rows[1].$('[data-k=pattern]')).fill('corp\\.example\\.com$');
@@ -156,11 +180,23 @@ const PASSWORD = process.env.PAM2PC_UI_TEST_PASSWORD || 'test-pass';
 
   await page.click('nav >> text=C. Platforms');
   await page.waitForSelector('#t-pm', { state: 'attached' });
+  if (!(await page.$('.explain >> text=How a platform is chosen'))) throw new Error('platforms page does not explain rules vs record type');
+  // unsaved changes: leaving asks first, and Cancel stays on the page
+  await page.fill('#defplat', 'WinServerLocal');
+  DISMISS = true;
+  await page.click('nav >> text=D. Accounts');
+  if (!/not saved/.test(DIALOGS[DIALOGS.length - 1] || '')) throw new Error('no unsaved-changes warning when leaving a page');
+  if (!(await page.innerText('h2')).includes('C. Platforms')) throw new Error('Cancel on the unsaved warning still left the page');
+  await page.fill('#defplat', '');
+  await shot(page, '02e_platforms');
   await page.click('#save');
   await page.waitForSelector('#rules-msg .msg.ok');
   await page.click('nav >> text=D. Accounts');
   await page.waitForSelector('#an-t');
+  await page.check('input[name=an-mode][value=none]');
+  if (!(await page.isDisabled('#an-t'))) throw new Error('name pattern still editable with names left to Privilege Cloud');
   await shot(page, '02d_accounts');
+  await page.check('input[name=an-mode][value=pattern]');
   await page.click('#save');
   await page.waitForSelector('#rules-msg .msg.ok');
 
@@ -196,16 +232,84 @@ const PASSWORD = process.env.PAM2PC_UI_TEST_PASSWORD || 'test-pass';
   await page.click('[data-act=exclude]');
   await page.waitForSelector('#act-msg .msg.ok');
   console.log('EXCLUDE:', await page.innerText('#act-msg'));
+  // leave one account's name to Privilege Cloud
+  await page.selectOption('#view', 'all');
+  await page.fill('#f-search', 'svc_backup');
+  await page.waitForTimeout(800);
+  await page.check('.sel >> nth=0');
+  await page.click('[data-act=noname]');
+  await page.waitForSelector('#act-msg .msg.ok');
+  await page.waitForSelector('#list >> text=(named by Privilege Cloud)');
+  await page.fill('#f-search', '');
   await page.selectOption('#view', 'edited');
   await page.waitForTimeout(800);
   await page.click('tr.clickable >> nth=0');
   await page.waitForSelector('#drawer:not(.hidden)');
   await shot(page, '04_record');
   await page.click('#drawer >> text=Close');
+  // edit one account in its panel: platform and name, then undo the platform
+  await page.selectOption('#view', 'all');
+  await page.fill('#f-search', 'web01');
+  await page.waitForTimeout(800);
+  await page.click('tr.clickable >> nth=0');
+  await page.waitForSelector('#ra-plat');
+  await page.fill('#ra-plat', 'UnixSSHKeys');
+  await page.fill('#ra-name', 'web-service-account');
+  await page.fill('#ra-reason', 'checked with app team');
+  await page.click('#ra-save');
+  await page.waitForSelector('#ra-msg .msg.ok');
+  if (await page.inputValue('#ra-plat') !== 'UnixSSHKeys') throw new Error('platform not saved from the account panel');
+  await page.waitForSelector('#list >> text=web-service-account');
+  await shot(page, '04_account_panel');
+  await page.click('#drawer [data-undo-field="platform_id"]');
+  await page.waitForSelector('#ra-msg >> text=Undone');
+  if (await page.inputValue('#ra-plat') === 'UnixSSHKeys') throw new Error('undo did not hand the platform back to the rules');
+  console.log('ACCOUNT PANEL: platform back to', await page.inputValue('#ra-plat'));
+  await page.click('#drawer >> text=Close');
+  await page.fill('#f-search', '');
 
   // 3A. Safes & Safe members: add one member to two Safes, then undo one of them
   await page.click('nav >> text=A. Safes & Safe members');
   await page.waitForSelector('text=Members (');
+  // clicking a Safe shows its members (in a panel on this page), not its accounts
+  {
+    const first = await page.$('[data-members-of="UNIX-Servers"]');
+    await first.click();
+    await page.waitForSelector('#drawer:not(.hidden) >> text=Safe UNIX-Servers');
+    if (!(await page.innerText('h2')).includes('Safes & Safe members')) throw new Error('Safe click left the page');
+    const n = (await page.$$('#drawer [data-open-person]')).length;
+    console.log('SAFE CLICK: UNIX-Servers has', n, 'members');
+    if (n < 2) throw new Error('Safe panel does not list its members');
+    await shot(page, '05_safe_panel');
+    // change one member's role on this Safe from the panel
+    await page.selectOption('#drawer .pr-role >> nth=0', 'Read only');
+    await page.waitForSelector('#panel-msg .msg.ok');
+    // open a member from the Safe panel: its Safes, editable values
+    await page.click('#drawer [data-open-person] >> nth=0');
+    await page.waitForSelector('#pe-name');
+    console.log('MEMBER PANEL:', (await page.innerText('#drawer h3')));
+    await page.fill('#pe-name', 'PAM-Unix-Admins');
+    await page.selectOption('#pe-type', 'Role');
+    await page.fill('#pe-dir', '');
+    await page.click('#pe-save');
+    await page.waitForSelector('#panel-msg .msg.ok');
+    await page.waitForSelector('#people-table >> text=PAM-Unix-Admins');
+    await shot(page, '05_member_panel');
+    await page.click('#panel-close');
+    // every member in the list is clickable, including members on no Safe
+    const rowsAll = (await page.$$('#people-table tr[data-person]')).length;
+    await page.check('#p-nosafe');
+    const noSafe = (await page.$$('#people-table tr[data-person]:not(.hidden)')).length;
+    console.log('MEMBERS:', rowsAll, 'listed,', noSafe, 'on no Safe');
+    if (noSafe) {
+      await page.click('#people-table tr[data-person]:not(.hidden) >> nth=0');
+      await page.waitForSelector('#drawer >> text=On no Safe');
+      await page.click('#panel-close');
+    }
+    await page.uncheck('#p-nosafe');
+  }
+  if ((await page.$$eval('#m-type option', os => os.map(o => o.value))).join() !== 'Group,User,Role') throw new Error('member types are not Group, User, Role');
+  if (await page.inputValue('#m-dir') !== '') throw new Error('searchIn not blank by default');
   const ticks = await page.$$('.s-sel');
   await ticks[0].check(); await ticks[1].check();
   await page.fill('#m-name', 'PAM-Auditors');
@@ -214,10 +318,10 @@ const PASSWORD = process.env.PAM2PC_UI_TEST_PASSWORD || 'test-pass';
   await page.click('#m-add');
   await page.waitForSelector('#m-msg .msg.ok');
   console.log('ADD MEMBER:', await page.innerText('#m-msg'));
-  await page.waitForSelector('text=Your member changes (2)');
+  await page.waitForSelector('text=Your member changes (4)');
   await shot(page, '05_safes_bulk');
   await page.click('[data-undo="0"]');
-  await page.waitForSelector('text=Your member changes (1)');
+  await page.waitForSelector('text=Your member changes (3)');
   const safesHtml = await page.content();
   if (!safesHtml.includes('Helpdesk')) throw new Error('custom role not used for any member');
   if (!safesHtml.includes('PasswordManager') || !safesHtml.includes('10 versions')) throw new Error('Safe settings missing');
@@ -290,6 +394,7 @@ const PASSWORD = process.env.PAM2PC_UI_TEST_PASSWORD || 'test-pass';
   await page.waitForSelector('text=Session ended');
   if (!(await page.content()).includes('still on disk')) throw new Error('end session message wrong');
 
+  console.log('UNSAVED WARNINGS:', DIALOGS.filter(m => /not saved/.test(m)).length);
   if (errors.length) throw new Error('JS errors: ' + errors.join('; '));
   console.log('PASS');
   await browser.close();

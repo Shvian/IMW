@@ -32,7 +32,7 @@ from .protect import ProtectError, get_protector, new_salt
 from .transform import _changed, build_plan, rebuild_totals, safe_settings, sanitize_record
 from .writers import write_manifest, write_review, write_upload
 
-log = logging.getLogger("pam2pc.store")
+log = logging.getLogger("imw.store")
 SCHEMA_VERSION = "1"
 
 SCHEMA = """
@@ -66,6 +66,9 @@ CREATE TABLE IF NOT EXISTS plan_members (
 CREATE TABLE IF NOT EXISTS member_edits (
   safe_name TEXT, member_name TEXT, action TEXT, search_in TEXT, member_type TEXT, role TEXT,
   changed_utc TEXT, changed_by TEXT, reason TEXT, PRIMARY KEY (safe_name, member_name));
+CREATE TABLE IF NOT EXISTS member_overrides (
+  member_key TEXT PRIMARY KEY, member_name TEXT, member_type TEXT, search_in TEXT,
+  changed_utc TEXT, changed_by TEXT, reason TEXT);
 CREATE TABLE IF NOT EXISTS audit (
   id INTEGER PRIMARY KEY, ts TEXT, user TEXT, host TEXT, action TEXT, detail TEXT);
 CREATE VIEW IF NOT EXISTS accounts AS SELECT * FROM plan_accounts;
@@ -311,9 +314,27 @@ class Store:
         self.db.commit()
         return len(safes)
 
+    def member_overrides(self):
+        """{lower source member name: {member_name, member_type, search_in, ...}}; None = not changed."""
+        return {r["member_key"]: dict(r) for r in self.db.execute("SELECT * FROM member_overrides")}
+
+    def set_member_override(self, member_key, member_name=None, member_type=None, search_in=None,
+                            reason="", undo=False):
+        """Change one member everywhere it appears. undo=True puts the rules' values back."""
+        key = (member_key or "").strip().lower()
+        if not key:
+            raise StoreError("name the member to change")
+        self.db.execute("DELETE FROM member_overrides WHERE member_key = ?", (key,))
+        if not undo and any(v is not None for v in (member_name, member_type, search_in)):
+            self.db.execute("INSERT INTO member_overrides VALUES (?,?,?,?,?,?,?)",
+                            (key, member_name or None, member_type or None, search_in, _now(), _user(), reason))
+        self.audit("member_undo" if undo else "member_change", member=member_key, member_name=member_name,
+                   member_type=member_type, search_in=search_in, reason=reason)
+        self.db.commit()
+
     def plan(self, cfg, with_secrets=False):
         return build_plan(self.load_records(with_secrets), cfg, None, self.overrides(), explicit=True,
-                          member_edits=self.member_edits())
+                          member_edits=self.member_edits(), member_overrides=self.member_overrides())
 
     def map(self, cfg, cfg_path=None):
         plan = self.plan(cfg)

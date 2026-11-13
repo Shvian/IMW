@@ -224,7 +224,7 @@ def write_upload(plan, cfg, out_dir, include_secrets):
 
 def write_manifest(out_dir, inputs, files, counts, include_secrets, cfg_path):
     manifest = {
-        "tool": "pam2pc", "version": __version__,
+        "tool": "Idira Migration Workbench", "version": __version__,
         "created_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "host": _platform.node(),
         "includes_secrets": include_secrets,

@@ -12,7 +12,7 @@ from collections import OrderedDict, defaultdict
 from .base import Adapter, file_stem, read_head
 from .rows import record_from_row
 
-log = logging.getLogger("pam2pc.delinea")
+log = logging.getLogger("imw.delinea")
 
 
 def _is_blank(row):

@@ -4,7 +4,7 @@ On Windows the password is checked by Windows itself (LogonUserW); nothing is st
 account is read from this process's own token (not from environment variables, which anyone
 can change), and a password only counts if Windows logs on that same account (same SID).
 Elsewhere there is no sign-in, except a test password for automated tests
-(PAM2PC_UI_TEST_PASSWORD), which must never be used with real data.
+(IMW_UI_TEST_PASSWORD), which must never be used with real data.
 """
 
 import getpass
@@ -69,10 +69,10 @@ class TestAuth:
 
 
 def get_authenticator(test_password=None):
-    test_password = test_password or os.environ.get("PAM2PC_UI_TEST_PASSWORD")
+    test_password = test_password or os.environ.get("IMW_UI_TEST_PASSWORD")
     if test_password:
         return TestAuth(test_password)
     if sys.platform == "win32":
         return WindowsAuth()
     raise AuthError("The Workbench sign-in uses your Windows password, so it needs Windows. For tests on "
-                    "other systems set PAM2PC_UI_TEST_PASSWORD (never with real data).")
+                    "other systems set IMW_UI_TEST_PASSWORD (never with real data).")
