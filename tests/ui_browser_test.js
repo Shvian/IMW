@@ -91,6 +91,17 @@ const PASSWORD = process.env.PAM2PC_UI_TEST_PASSWORD || 'test-pass';
   await page.click('nav >> text=A. Directory sources');
   await page.waitForSelector('#dir-out table');
   if (await page.$eval('[data-block="t-dg"]', e => e.open)) throw new Error('input table not folded by default');
+  // Every column heading explains its field with an example; so does every cell
+  {
+    const cols = ['name', 'match', 'search_in', 'strip_domain', 'find', 'replace', 'add_prefix', 'add_suffix', 'case'];
+    for (const k of ['match', 'search_in', 'find', 'replace', 'case']) {
+      const tip = await page.$eval(`#t-dg th:nth-child(${cols.indexOf(k) + 1})`, e => e.title);
+      if (!tip || tip.length < 40) throw new Error(`no explained tooltip on the ${k} heading`);
+    }
+  }
+  if (!(await page.$('.explain >> text=How it works'))) throw new Error('directory sources page does not explain itself');
+  if ((await page.$$eval('#dir-type option', os => os.map(o => o.value))).join() !== 'Group,User,Role') throw new Error('member types are not Group, User, Role');
+  if (await page.inputValue('#dir-fallback') !== '') throw new Error('searchIn is not blank by default');
   let rows = await addRow('t-dg');
   await (await rows[rows.length - 1].$('[data-k=name]')).fill('Corporate AD');
   await (await rows[rows.length - 1].$('[data-k=match]')).fill('CORP');
@@ -120,9 +131,16 @@ const PASSWORD = process.env.PAM2PC_UI_TEST_PASSWORD || 'test-pass';
   if (!(await page.getAttribute('#s-cpm', 'title'))) throw new Error('no tooltip on the CPM field');
   await page.waitForSelector('#conv-folders input[data-folder]', { state: 'attached' });
   console.log('FOLDER CODES:', (await page.$$('#conv-folders input[data-folder]')).length);
+  // Placeholders start folded: the whole section, and each placeholder inside it
+  if (await page.$eval('[data-block="layers-all"]', e => e.open)) throw new Error('placeholders not folded by default');
+  console.log('PLACEHOLDERS:', await page.innerText('#layers-sum'));
+  await openBlock('layers-all');
+  if (await page.$eval('[data-block="layer-env"]', e => e.open)) throw new Error('{env} not folded by default');
+  console.log('ENV:', (await page.innerText('[data-block="layer-env"] > summary')).replace(/\s+/g, ' '));
   // a custom placeholder, used in the template
   await page.fill('#new-layer', 'region');
   await page.click('#add-layer');
+  if (!(await page.$eval('[data-block="layer-region"]', e => e.open))) throw new Error('new placeholder not opened');
   rows = await page.$$('#t-layer-region tr');
   await (await rows[1].$('[data-k=field]')).fill('address');
   await (await rows[1].$('[data-k=pattern]')).fill('corp\\.example\\.com$');
@@ -156,11 +174,16 @@ const PASSWORD = process.env.PAM2PC_UI_TEST_PASSWORD || 'test-pass';
 
   await page.click('nav >> text=C. Platforms');
   await page.waitForSelector('#t-pm', { state: 'attached' });
+  if (!(await page.$('.explain >> text=How a platform is chosen'))) throw new Error('platforms page does not explain rules vs record type');
+  await shot(page, '02e_platforms');
   await page.click('#save');
   await page.waitForSelector('#rules-msg .msg.ok');
   await page.click('nav >> text=D. Accounts');
   await page.waitForSelector('#an-t');
+  await page.check('input[name=an-mode][value=none]');
+  if (!(await page.isDisabled('#an-t'))) throw new Error('name pattern still editable with names left to Privilege Cloud');
   await shot(page, '02d_accounts');
+  await page.check('input[name=an-mode][value=pattern]');
   await page.click('#save');
   await page.waitForSelector('#rules-msg .msg.ok');
 
@@ -196,6 +219,15 @@ const PASSWORD = process.env.PAM2PC_UI_TEST_PASSWORD || 'test-pass';
   await page.click('[data-act=exclude]');
   await page.waitForSelector('#act-msg .msg.ok');
   console.log('EXCLUDE:', await page.innerText('#act-msg'));
+  // leave one account's name to Privilege Cloud
+  await page.selectOption('#view', 'all');
+  await page.fill('#f-search', 'svc_backup');
+  await page.waitForTimeout(800);
+  await page.check('.sel >> nth=0');
+  await page.click('[data-act=noname]');
+  await page.waitForSelector('#act-msg .msg.ok');
+  await page.waitForSelector('#list >> text=(named by Privilege Cloud)');
+  await page.fill('#f-search', '');
   await page.selectOption('#view', 'edited');
   await page.waitForTimeout(800);
   await page.click('tr.clickable >> nth=0');
@@ -206,6 +238,22 @@ const PASSWORD = process.env.PAM2PC_UI_TEST_PASSWORD || 'test-pass';
   // 3A. Safes & Safe members: add one member to two Safes, then undo one of them
   await page.click('nav >> text=A. Safes & Safe members');
   await page.waitForSelector('text=Members (');
+  // clicking a Safe shows its members here, not its accounts
+  {
+    const first = await page.$('[data-members-of]');
+    const safe = await first.getAttribute('data-members-of');
+    await first.click();
+    await page.waitForSelector('#m-showing:not(.hidden)');
+    const shown = await page.$$eval('#members-table tr[data-safe-l]:not(.hidden) td:nth-child(2)', tds => tds.map(t => t.textContent));
+    if (!shown.length || shown.some(t => t !== safe)) throw new Error('Safe click did not show only its members: ' + shown.join());
+    if (!(await page.innerText('h2')).includes('Safes & Safe members')) throw new Error('Safe click left the page');
+    console.log('SAFE CLICK:', await page.innerText('#m-showing-txt'));
+    await shot(page, '05_safe_members');
+    await page.click('#m-showall');
+    if (await page.$('#members-table tr.hidden')) throw new Error('Show all members did not show all');
+  }
+  if ((await page.$$eval('#m-type option', os => os.map(o => o.value))).join() !== 'Group,User,Role') throw new Error('member types are not Group, User, Role');
+  if (await page.inputValue('#m-dir') !== '') throw new Error('searchIn not blank by default');
   const ticks = await page.$$('.s-sel');
   await ticks[0].check(); await ticks[1].check();
   await page.fill('#m-name', 'PAM-Auditors');

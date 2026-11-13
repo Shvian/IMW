@@ -30,7 +30,26 @@ class DirectorySources(unittest.TestCase):
         self.assertEqual(member_target("jdoe@corp.example.com", cfg, "User"),
                          ("jdoe@corp.example.com", "corp.example.com", "AD users"))
         self.assertEqual(member_target("APP_payments", cfg, "Group"), ("APP_payments", "Vault", "Apps"))
-        self.assertEqual(member_target("OTHER\\x", cfg, "Group"), ("x", "Vault", ""))   # falls back to directory_map
+        # Falls back to directory_map, whose default searchIn is empty: Privilege Cloud searches every directory.
+        self.assertEqual(member_target("OTHER\\x", cfg, "Group"), ("x", "", ""))
+
+    def test_search_in_optional_and_roles_use_group_sources(self):
+        cfg = config_from_dict({"directory_sources": [
+            {"name": "Groups", "members": "groups", "match": "*", "strip_domain": True},
+            {"name": "Users", "members": "users", "match": "*", "search_in": "abc-guid"}]})
+        self.assertEqual(member_target("CORP\\PAM-Admins", cfg, "Role"), ("PAM-Admins", "", "Groups"))
+        self.assertEqual(member_target("jdoe", cfg, "User"), ("jdoe", "abc-guid", "Users"))
+
+    def test_member_types(self):
+        from pam2pc.transform import normalize_member_type
+        self.assertEqual([normalize_member_type(v) for v in ("user", "GROUPS", "Role", "", "weird")],
+                         ["User", "Group", "Role", "Group", "Group"])
+        self.assertEqual(normalize_member_type("", "User"), "User")
+        cfg = config_from_dict({"default_member_type": "Role"})
+        r = rec("\\Apps", grants=[("PAM-Ops", "View")])
+        plan = build_plan([r], cfg)
+        m = next(iter(plan.members.values()))
+        self.assertEqual((m["member_type"], m["search_in"]), ("Role", ""))
 
     def test_old_directory_map_still_works(self):
         cfg = config_from_dict({"directory_map": {"CORP": "corp.example.com", "*": "Vault"}})
@@ -74,6 +93,17 @@ class SafeSettings(unittest.TestCase):
         self.assertEqual(plan.accounts[0].account_name, "svc_x@app1")
         plan = build_plan([rec("\\Apps", "svc_x", "app1", name="")], load_config())
         self.assertEqual(plan.accounts[0].account_name, "app1-svc_x")
+
+    def test_account_name_left_to_privilege_cloud(self):
+        cfg = config_from_dict({"account_name": {"mode": "none"}})
+        a, b = rec("\\Apps", "svc_x", "app1", name="Same"), rec("\\Apps", "svc_y", "app1", name="Same")
+        b.source_id = "other"
+        plan = build_plan([a, b], cfg)
+        self.assertEqual([p.account_name for p in plan.accounts], ["", ""])   # no _2 suffix on blanks
+        self.assertFalse(any("duplicate" in w for p in plan.accounts for w in p.warnings))
+        # One account left unnamed by an edit while the others keep their built names.
+        plan = build_plan([a, b], load_config(), overrides={b.record_id: {"Account_Name": "(none)"}}, explicit=True)
+        self.assertEqual([p.account_name for p in plan.accounts], ["Same", ""])
 
 
 class MergedPermissions(unittest.TestCase):

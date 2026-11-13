@@ -41,7 +41,7 @@ from ..model import SourceRecord
 from ..naming import Namer
 from ..protect import ProtectError
 from ..store import Store, StoreError, run_extract
-from ..transform import Permissions, member_target
+from ..transform import Permissions, member_target, normalize_member_type
 from .auth import get_authenticator
 from .tls import fingerprint, server_context, trust_certificate
 from ..owner import claim_workspace, peer_is_owner
@@ -161,8 +161,6 @@ def check_settings(cfg):
             if r.get("field2"):
                 rx(r.get("pattern2"), f"{{{name}}} rule")
     for src in cfg.get("directory_sources") or []:
-        if not src.get("search_in"):
-            raise UiError(f"Directory source '{src.get('name') or src.get('match')}' needs a directory (searchIn).")
         if str(src.get("match", "")).lower().startswith("re:"):
             rx(src["match"][3:], "Directory source match")
         if src.get("find"):
@@ -515,7 +513,7 @@ class App:
                 ids = st.select_ids(where, params)
             if not ids:
                 raise UiError("No accounts selected.")
-            if len(ids) > 1 and values.get("account_name"):
+            if len(ids) > 1 and values.get("account_name") and values["account_name"].lower() != "(none)":
                 raise UiError("Rename one account at a time.")
             st.set_edits(ids, values, body.get("reason") or "")
             st.map(st.stored_config(), st.meta("config_path"))
@@ -537,7 +535,7 @@ class App:
         roles = list(all_roles(cfg))
         members = [dict(zip(mcols, r)) for r in mrows]
         return {"safes": [dict(zip(cols, r)) for r in rows], "members": members, "member_edits": edits,
-                "roles": roles, "directories": sorted({m["search_in"] for m in members} | {"Vault"}),
+                "roles": roles, "directories": sorted({m["search_in"] for m in members if m["search_in"]} | {"Vault"}),
                 "known_members": sorted({m["member_name"] for m in members}, key=str.lower)}
 
     def api_members_edit(self, body):
@@ -559,8 +557,8 @@ class App:
             for safe, member in pairs:
                 by_member.setdefault(member, []).append(safe)
             for member, safes in by_member.items():
-                n += st.set_member_edits(safes, member, action, (body.get("search_in") or "Vault").strip(),
-                                         body.get("member_type") or "Group", role, body.get("reason") or "")
+                n += st.set_member_edits(safes, member, action, (body.get("search_in") or "").strip(),
+                                         normalize_member_type(body.get("member_type")), role, body.get("reason") or "")
             st.map(st.stored_config(), st.meta("config_path"))
         except StoreError as exc:
             raise UiError(str(exc))
@@ -700,7 +698,7 @@ class App:
             st.close()
         out = []
         for r in rows:
-            mtype = r["member_type"] or cfg["default_member_type"]
+            mtype = normalize_member_type(r["member_type"], normalize_member_type(cfg["default_member_type"]))
             name, search_in, src = member_target(r["member"], cfg, mtype)
             out.append({"source": r["member"], "type": mtype, "accounts": r["n"], "member_name": name,
                         "search_in": search_in, "directory_source": src or "(not matched; default)"})

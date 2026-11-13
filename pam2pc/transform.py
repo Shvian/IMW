@@ -19,6 +19,7 @@ from .naming import Namer
 log = logging.getLogger("pam2pc.transform")
 
 NO_PLATFORM = "(none)"          # an edit that removes the platform on purpose
+NO_NAME = "(none)"              # an edit that leaves the account name empty: Privilege Cloud names it
 PLATFORM_INVALID = re.compile(r"[^A-Za-z0-9_.\-]")
 # Characters removed from every stored text value: control characters, zero-width and BOM.
 UNSAFE_TEXT = re.compile("[\x00-\x08\x0b-\x1f\x7f\u200b-\u200f\u2028\u2029\u2060\ufeff]")
@@ -280,6 +281,7 @@ def _split_member(name):
 
 
 def _source_matches(src, name, domain, member_type):
+    # Group sources also take roles: like groups, they are named without a domain.
     kind = (src.get("members") or "both").lower()
     mt = (member_type or "").lower()
     if kind == "groups" and mt == "user" or kind == "users" and mt != "user":
@@ -303,17 +305,29 @@ def convert_member_name(src, name, domain, short):
     return out.lower() if case == "lower" else out.upper() if case == "upper" else out
 
 
+MEMBER_TYPES = ("User", "Group", "Role")
+
+
+def normalize_member_type(value, default="Group"):
+    """'group', 'USER', 'role' -> Group / User / Role; anything else -> default."""
+    v = (value or "").strip().lower()
+    for t in MEMBER_TYPES:
+        if v == t.lower() or v == t.lower() + "s":
+            return t
+    return default if default in MEMBER_TYPES else "Group"
+
+
 def member_target(name, cfg, member_type=""):
     """'CORP\\Group' -> (memberName, searchIn, source name) using directory_sources, then directory_map."""
     domain, short = _split_member(name)
     member_type = member_type or cfg.get("default_member_type", "Group")
     for src in cfg.get("directory_sources") or []:
         if _source_matches(src, name, domain, member_type):
-            return convert_member_name(src, name, domain, short), src.get("search_in") or "Vault", \
+            return convert_member_name(src, name, domain, short), src.get("search_in") or "", \
                 src.get("name") or src.get("match") or ""
     dmap = {k.lower(): v for k, v in cfg["directory_map"].items()}
     search_in = (dmap.get(domain.lower()) or dmap.get(domain.split(".")[0].lower())
-                 or dmap.get("*", "Vault")) if domain else dmap.get("*", "Vault")
+                 or dmap.get("*", "")) if domain else dmap.get("*", "")
     member = short if (domain and cfg["strip_domain_prefix"]) else name
     return member, search_in, ""
 
@@ -489,6 +503,8 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
         name = account_name_for(rec, p, cfg)
         if changed(ov.get("Account_Name"), ACCOUNT_NAME_INVALID.sub("_", name).strip()):
             name = ov["Account_Name"]
+        if name.strip().lower() == NO_NAME:
+            name = ""                   # left empty on purpose: Privilege Cloud generates one
         clean = ACCOUNT_NAME_INVALID.sub("_", name).strip()
         if len(clean) > ACCOUNT_NAME_MAX:
             clean = clean[:ACCOUNT_NAME_MAX]
@@ -541,7 +557,9 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
                 others = [y.rec.record_id for y in group if y is not x]
                 more = f" and {len(others) - 3} more" if len(others) > 3 else ""
                 x.warnings.append("possible duplicate: same username/address/type in this Safe as "
-                                  + ", ".join(others[:3]) + more)
+                                  + ", ".join(others[:3]) + more
+                                  + ("; with no account name Privilege Cloud gives both the same "
+                                     "name and rejects the second" if not x.account_name else ""))
 
     return Plan(plans, _safes(plans, cfg), _members(plans, cfg, member_edits), list(member_edits or []))
 
@@ -558,6 +576,8 @@ def _unique_account_names(plans):
         if not p.uploadable:
             continue
         safe = p.safe.lower()
+        if not p.account_name:          # Privilege Cloud names it; nothing to make unique
+            continue
         if p.account_name.lower() not in claimed[safe]:
             claimed[safe].add(p.account_name.lower())
             continue
@@ -574,8 +594,11 @@ def _unique_account_names(plans):
 
 
 def account_name_for(rec, p, cfg):
-    """Account name from account_name.template, else account_name.fallback."""
+    """Account name from account_name.template, else account_name.fallback; empty when
+    account_name.mode is "none" (Privilege Cloud then generates a name)."""
     an = cfg.get("account_name") or {}
+    if str(an.get("mode") or "").lower() == "none":
+        return ""                       # Privilege Cloud generates the name on upload
     vals = {"name": rec.name, "address": rec.address, "username": rec.username, "platform": p.platform,
             "safe": p.proposed_safe, "folder_leaf": rec.folder[-1] if rec.folder else "",
             "type": rec.type, "source_id": rec.source_id}
@@ -624,10 +647,10 @@ def apply_member_edits(members, plans, edits):
             del members[key]
         if e["action"] == "add" and safe_l in uploading:
             members[(names[safe_l], "edit:" + name_l)] = {
-                "source_name": e["member_name"], "type": e.get("member_type") or "Group",
-                "member_type": e.get("member_type") or "Group", "role": e.get("role") or "",
+                "source_name": e["member_name"], "type": normalize_member_type(e.get("member_type")),
+                "member_type": normalize_member_type(e.get("member_type")), "role": e.get("role") or "",
                 "permission": "(added by you)", "accounts": uploading[safe_l], "seen": set(),
-                "member_name": e["member_name"], "search_in": e.get("search_in") or "Vault",
+                "member_name": e["member_name"], "search_in": e.get("search_in") or "",
                 "directory_source": "added by you",
                 "notes": ["added by you" + (f": {e['reason']}" if e.get("reason") else "")]}
     return members
@@ -714,7 +737,7 @@ def _members(plans, cfg, edits=None):
         elif m["role"] not in all_roles(cfg):
             notes.append(f"role '{m['role']}' is not a preset or custom role")
         m["notes"] = notes
-        m["member_type"] = m["type"] or cfg["default_member_type"]
+        m["member_type"] = normalize_member_type(m["type"], normalize_member_type(cfg["default_member_type"]))
         m["member_name"], m["search_in"], m["directory_source"] = member_target(
             m["source_name"], cfg, m["member_type"])
     apply_member_edits(members, plans, edits)
