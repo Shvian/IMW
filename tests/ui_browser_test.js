@@ -42,6 +42,7 @@ const PASSWORD = process.env.PAM2PC_UI_TEST_PASSWORD || 'test-pass';
   await shot(page, '00_login');
   await signIn('wrong');
   await page.waitForSelector('#login-msg >> text=not right');
+  await page.waitForTimeout(300); await shot(page, '00_login_error');
   await signIn(PASSWORD);
   await page.waitForSelector('text=Welcome');
   await shot(page, '00_welcome');

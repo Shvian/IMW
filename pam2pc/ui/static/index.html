@@ -108,6 +108,59 @@ input.chk-bad { border-color: var(--warn); background: var(--warn-bg); }
 .bulk h4 { margin: 0 0 8px; font-size: 13px; }
 .bulk label { display: block; font-size: 12px; color: var(--muted); margin: 4px 0; }
 .bulk label input, .bulk label select { width: 100%; }
+/* Sign-in screen */
+#login.overlay { background: #0b1220; overflow: auto; padding: 24px 16px; }
+#login::before { content: ""; position: fixed; inset: 0; pointer-events: none;
+  background: radial-gradient(900px 600px at 15% 10%, rgba(59,91,219,.35), transparent 60%),
+              radial-gradient(700px 500px at 90% 90%, rgba(20,184,166,.22), transparent 60%),
+              radial-gradient(600px 400px at 80% 15%, rgba(139,92,246,.18), transparent 60%); }
+#login::after { content: ""; position: fixed; inset: 0; pointer-events: none; opacity: .5;
+  background-image: linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+  background-size: 44px 44px; mask-image: radial-gradient(circle at center, #000 30%, transparent 75%); }
+.signin { position: relative; z-index: 1; width: 400px; max-width: 100%; animation: rise .35s ease-out; }
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.signin-card { background: rgba(255,255,255,.97); border-radius: 18px; padding: 32px 30px 26px;
+  box-shadow: 0 24px 60px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,255,.06); }
+.brand { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
+.brand-mark { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; flex-shrink: 0;
+  background: linear-gradient(135deg, #3b5bdb, #14b8a6); box-shadow: 0 6px 16px rgba(59,91,219,.4); }
+.brand-mark svg { width: 22px; height: 22px; }
+.brand-name { font-size: 17px; font-weight: 650; letter-spacing: -.01em; line-height: 1.2; }
+.brand-name small { display: block; font-size: 12px; font-weight: 400; color: var(--muted); letter-spacing: 0; }
+.signin h2 { font-size: 22px; margin: 0 0 4px; letter-spacing: -.02em; }
+.signin .why { color: var(--muted); margin: 0 0 20px; }
+.who { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: #f7f8fb; margin-bottom: 18px; }
+.avatar { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0;
+  background: linear-gradient(135deg, #e0e7ff, #ccfbf1); color: #1e3a8a; font-weight: 700; font-size: 14px; }
+.who b { display: block; font-size: 14px; word-break: break-all; }
+.who span { font-size: 12px; color: var(--muted); }
+.field-label { display: block; font-size: 12px; font-weight: 600; color: #39424f; margin-bottom: 6px; }
+.pw-wrap { position: relative; }
+.signin input[type=password], .signin input[type=text]#login-pw { width: 100%; height: 46px; padding: 0 46px 0 14px; font-size: 15px;
+  border: 1.5px solid var(--line); border-radius: 10px; background: #fff; transition: border-color .15s, box-shadow .15s; }
+.signin input#login-pw:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 4px rgba(35,87,217,.15); }
+.signin.error input#login-pw, .signin.error input#login-pw:focus { border-color: var(--err); box-shadow: 0 0 0 4px rgba(180,35,24,.12); }
+.pw-toggle { position: absolute; right: 6px; top: 6px; width: 34px; height: 34px; border: 0; background: none; border-radius: 8px;
+  cursor: pointer; color: var(--muted); display: grid; place-items: center; }
+.pw-toggle:hover { background: #f0f2f6; color: var(--ink); }
+.pw-toggle svg { width: 18px; height: 18px; }
+.caps { font-size: 12px; color: var(--warn); margin-top: 6px; }
+#login-msg:empty { display: none; }
+#login-msg { display: flex; gap: 8px; align-items: flex-start; margin-top: 12px; padding: 10px 12px; border-radius: 10px;
+  background: var(--err-bg); color: var(--err); font-size: 13px; }
+.signin-go { width: 100%; height: 46px; margin-top: 16px; border: 0; border-radius: 10px; font: inherit; font-size: 15px; font-weight: 600;
+  color: #fff; cursor: pointer; background: linear-gradient(135deg, #2357d9, #3b5bdb); box-shadow: 0 8px 20px rgba(35,87,217,.35);
+  display: flex; align-items: center; justify-content: center; gap: 8px; transition: transform .1s, box-shadow .15s, filter .15s; }
+.signin-go:hover { filter: brightness(1.06); box-shadow: 0 10px 24px rgba(35,87,217,.42); }
+.signin-go:active { transform: translateY(1px); }
+.signin-go:disabled { opacity: .75; cursor: default; }
+.spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.45); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.signin-notes { list-style: none; padding: 16px 0 0; margin: 18px 0 0; border-top: 1px solid var(--line); display: grid; gap: 8px; }
+.signin-notes li { display: flex; gap: 10px; align-items: flex-start; font-size: 12px; color: var(--muted); }
+.signin-notes svg { width: 15px; height: 15px; flex-shrink: 0; margin-top: 1px; color: #14b8a6; }
+.signin-foot { text-align: center; color: #8d97ab; font-size: 12px; margin-top: 16px; display: flex; justify-content: center; gap: 6px; align-items: center; }
+.signin-foot svg { width: 13px; height: 13px; }
 .busy { position: fixed; inset: 0; background: rgba(255,255,255,.6); display: flex; align-items: center; justify-content: center;
   font-weight: 600; z-index: 20; }
 </style>
@@ -143,13 +196,27 @@ input.chk-bad { border-color: var(--warn); background: var(--warn-bg); }
 </div>
 <div id="drawer" class="drawer hidden"></div>
 <div id="busy" class="busy hidden">Working…</div>
-<div id="login" class="overlay hidden"><form class="dialog" id="login-form" autocomplete="off">
-  <h2>Idira Migration Workbench</h2>
-  <p class="muted" id="login-why">Sign in to continue.</p>
-  <label>Password for <b id="login-user"></b><input type="password" id="login-pw" autocomplete="current-password"></label>
-  <div class="row"><button class="btn primary" type="submit" id="login-go">Unlock</button><span id="login-msg" class="small"></span></div>
-  <p class="muted small">Only the Windows user who started the Workbench can sign in. Windows checks the password; it is not stored.
-    The Workbench locks after <span id="login-idle">10</span> minutes without activity.</p></form></div>
+<div id="login" class="overlay hidden"><div class="signin" id="signin">
+  <form class="signin-card" id="login-form" autocomplete="off">
+    <div class="brand"><div class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg></div>
+      <div class="brand-name">Idira Migration Workbench<small>PAM exports to Privilege Cloud</small></div></div>
+    <h2>Welcome back</h2>
+    <p class="why" id="login-why">Sign in to continue.</p>
+    <div class="who"><div class="avatar" id="login-avatar">?</div><div><b id="login-user"></b><span>Windows account that started the Workbench</span></div></div>
+    <label class="field-label" for="login-pw">Windows password</label>
+    <div class="pw-wrap"><input type="password" id="login-pw" autocomplete="current-password" placeholder="Enter your password" required>
+      <button type="button" class="pw-toggle" id="pw-toggle" title="Show or hide the password" aria-label="Show password"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
+    <div class="caps hidden" id="login-caps">Caps Lock is on</div>
+    <div id="login-msg" role="alert"></div>
+    <button class="signin-go" type="submit" id="login-go"><span>Unlock</span></button>
+    <ul class="signin-notes">
+      <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span>Windows checks your password; the Workbench never stores it.</span></li>
+      <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span>Only this Windows user can open this workspace and its database.</span></li>
+      <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span>Locks after <span id="login-idle">10</span> minutes without activity.</span></li>
+    </ul>
+  </form>
+  <div class="signin-foot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span>Encrypted connection · this computer only</span></div>
+</div></div>
 <div id="endbox" class="overlay modal hidden"><div class="dialog">
   <h2>End session?</h2>
   <p>Ending the session:</p>
@@ -204,23 +271,36 @@ function showLogin(why) {
   $("#login-why").textContent = why || "Sign in to continue.";
   $("#login").classList.remove("hidden");
   $("#main").innerHTML = ""; closeDrawer();
-  $("#login-msg").innerHTML = "";
-  $("#login-pw").value = ""; $("#login-pw").focus();
+  $("#login-msg").innerHTML = ""; $("#signin").classList.remove("error");
+  $("#login-pw").value = ""; $("#login-pw").type = "password"; $("#login-pw").focus();
 }
 async function checkSession() {
   const r = await fetch("/api/session", { headers: { "X-Pam2pc": "1" } });
   if (r.status === 401) { document.body.innerHTML = "<p style='padding:30px'>Session ended. Restart the Workbench to get a new link.</p>"; return null; }
   return r.json();
 }
+$("#pw-toggle").onclick = () => {
+  const pw = $("#login-pw"), show = pw.type === "password";
+  pw.type = show ? "text" : "password"; $("#pw-toggle").setAttribute("aria-label", show ? "Hide password" : "Show password"); pw.focus();
+};
+["keydown", "keyup"].forEach(ev => $("#login-pw").addEventListener(ev, (e) => {
+  if (e.getModifierState) $("#login-caps").classList.toggle("hidden", !e.getModifierState("CapsLock"));
+}));
+$("#login-pw").addEventListener("input", () => $("#signin").classList.remove("error"));
 $("#login-form").onsubmit = async (e) => {
   e.preventDefault();
+  const go = $("#login-go");
+  go.disabled = true; go.innerHTML = '<span class="spinner"></span><span>Checking…</span>';
   try {
     await api("/api/unlock", { password: $("#login-pw").value });
-    $("#login-pw").value = ""; $("#login-msg").innerHTML = "";
+    $("#login-pw").value = ""; $("#login-msg").innerHTML = ""; $("#signin").classList.remove("error");
     LOCKED = false; LAST_PING = Date.now();
     $("#login").classList.add("hidden");
     go(PAGE);
-  } catch (err) { $("#login-msg").innerHTML = `<span style="color:var(--err)">${esc(err.message)}</span>`; $("#login-pw").select(); }
+  } catch (err) {
+    $("#login-msg").innerHTML = `<span>⚠</span><span>${esc(err.message)}</span>`;
+    $("#signin").classList.add("error"); $("#login-pw").select();
+  } finally { go.disabled = false; go.innerHTML = "<span>Unlock</span>"; }
 };
 $("#lock").onclick = async () => { await api("/api/lock", {}).catch(() => {}); showLogin("Session locked."); };
 $("#logout").onclick = () => {
@@ -251,6 +331,9 @@ async function start() {
   const s = await checkSession();
   if (!s) return;
   $("#login-user").textContent = s.user;
+  const short = String(s.user || "").split(/[\\@ ]/).filter(Boolean);
+  const nm = (short.length > 1 && /\\/.test(s.user) ? short[1] : short[0]) || "?";
+  $("#login-avatar").textContent = nm.replace(/[^A-Za-z0-9]/g, "").slice(0, 2).toUpperCase() || "?";
   $("#login-idle").textContent = s.idle_minutes;
   if (s.locked) showLogin("Sign in to continue.");
   else { LOCKED = false; go("overview"); }
