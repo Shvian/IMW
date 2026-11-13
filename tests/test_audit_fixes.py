@@ -334,6 +334,30 @@ class LegacyRedact(unittest.TestCase):
             self.assertNotIn("w0rd", out, shown)
 
 
+class AccessDeniedMessage(Base):
+    def test_own_folder_is_not_blamed_on_another_user(self):
+        from pam2pc import owner
+        ws = self.tmp / "ws"
+        ws.mkdir()
+        err = PermissionError(13, "Access is denied", str(ws / ".owner"))
+        with mock.patch.object(owner.Path, "iterdir", side_effect=err):
+            with self.assertRaises(owner.OwnerError) as ctx:
+                owner.claim_workspace(ws)
+        msg = str(ctx.exception)
+        self.assertNotIn("belongs to another Windows user", msg)
+        self.assertIn(".owner", msg)
+        self.assertIn("Access is denied", msg)
+
+    def test_other_owner_still_named(self):
+        from pam2pc import owner
+        ws = self.tmp / "ws"
+        ws.mkdir()
+        with mock.patch.object(owner.Path, "iterdir", side_effect=PermissionError(13, "denied")), \
+                mock.patch.object(owner, "path_owner_sid", return_value="S-1-5-21-9"):
+            with self.assertRaisesRegex(owner.OwnerError, "belongs to another Windows user"):
+                owner.claim_workspace(ws)
+
+
 @unittest.skipUnless(sys.platform == "win32", "Windows only")
 class WindowsOnly(unittest.TestCase):
     def test_dpapi_roundtrip(self):

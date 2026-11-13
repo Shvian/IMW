@@ -176,6 +176,27 @@ def path_owner_sid(path):
         kernel32.LocalFree(p_sd)
 
 
+def _access_denied(ws, me, exc):
+    """Explain an 'access denied' honestly: only blame another user when the folder really
+    belongs to one; otherwise show what Windows refused and the usual causes."""
+    what = f"{exc.filename} ({exc.strerror or exc})" if getattr(exc, "filename", None) else str(exc)
+    try:
+        folder_owner = path_owner_sid(ws)
+    except Exception:  # noqa: BLE001
+        folder_owner = None
+    if folder_owner and folder_owner not in (me["sid"], ADMINISTRATORS_SID):
+        return (f"{ws} belongs to another Windows user ({folder_owner}), so you can't open it. Use your "
+                "own workspace folder (-w) or sign in to Windows as its owner.")
+    hint = ""
+    if sys.platform == "win32":
+        hint = (" Common causes on Windows: Controlled folder access (Windows Security > Virus & threat "
+                "protection > Ransomware protection) blocking Python in Documents or Desktop; antivirus; "
+                "OneDrive sync; or files in the folder left with other permissions. Check with: icacls "
+                f"\"{ws}\" /T. Or start with a workspace outside Documents, e.g. -w C:\\Workbench\\ws.")
+    return (f"Windows refused access to {what}, although you ({me['display']}) "
+            f"{'own' if folder_owner == me['sid'] else 'may own'} the workspace folder {ws}.{hint}")
+
+
 def claim_workspace(ws):
     """Make sure ws belongs to the current user: record it on first use, refuse anyone else,
     and (re)apply owner-only permissions to the whole folder."""
@@ -186,9 +207,8 @@ def claim_workspace(ws):
         ws.mkdir(parents=True, exist_ok=True)
         existing = json.loads(marker.read_text(encoding="utf-8")) if marker.exists() else None
         entries = {p.name for p in ws.iterdir()}
-    except PermissionError:
-        raise OwnerError(f"{ws} belongs to another Windows user, so you can't open it. Use your own "
-                         "workspace folder (-w) or sign in to Windows as its owner.")
+    except PermissionError as exc:
+        raise OwnerError(_access_denied(ws, me, exc)) from None
     except ValueError:
         raise OwnerError(f"{marker} is damaged. Only the workspace owner can repair it.")
     if existing and existing.get("sid") != me["sid"]:
