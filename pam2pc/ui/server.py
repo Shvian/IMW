@@ -33,7 +33,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from .. import __version__
+from .. import __version__, csvsafe
 from ..adapters import ADAPTERS, AdapterError, detect_adapter, get_adapter
 from ..config import (ALL_PERMISSIONS, DEFAULT_CONFIG, PERMISSION_PRESETS, config_diff,
                       all_roles, config_from_dict, load_config, resolve_role)
@@ -95,10 +95,13 @@ def build_where(body):
             params.append(val)
     search = ((body.get("filters") or {}).get("search") or "").strip()
     if search:
-        like = f"%{search}%"
-        parts.append("(account_name LIKE ? OR username LIKE ? OR address LIKE ? OR folder LIKE ? "
-                     "OR record_id LIKE ? OR target_safe LIKE ?)")
-        params += [like] * 6
+        # % and _ are wildcards in LIKE; the search is plain text, so escape them (a bulk edit
+        # of the rows found for "svc_" must not also change "svc1").
+        escaped = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        like = f"%{escaped}%"
+        cols = ("account_name", "username", "address", "folder", "record_id", "target_safe")
+        parts.append("(" + " OR ".join(f"{c} LIKE ? ESCAPE '\\'" for c in cols) + ")")
+        params += [like] * len(cols)
     return " AND ".join(parts), params
 
 
@@ -189,11 +192,16 @@ def looks_like_permissions(path):
             and not any("password" in h for h in header))
 
 
-def secure_delete(path):
-    """Overwrite then delete. Best effort: SSDs and some file systems keep old copies."""
+def secure_delete(path, chunk=1 << 20):
+    """Overwrite then delete. Best effort: SSDs and some file systems keep old copies.
+    Writes zeros in 1 MB blocks, so a large file does not need its size in memory."""
     size = path.stat().st_size
+    zeros = b"\0" * min(chunk, size or 1)
     with open(path, "r+b") as fh:
-        fh.write(b"\0" * size)
+        left = size
+        while left > 0:
+            n = fh.write(zeros[:min(left, len(zeros))])
+            left -= n
         fh.flush()
         os.fsync(fh.fileno())
     path.unlink()
@@ -643,7 +651,7 @@ class App:
         w = csv.writer(buf)
         w.writerow(cols)
         for r in rows:
-            w.writerow(["'" + str(v) if isinstance(v, str) and v[:1] in "=+-@" else v for v in r])
+            w.writerow(csvsafe.row(r))
         return "\ufeff" + buf.getvalue()
 
     def api_open_folder(self, body):
@@ -742,19 +750,25 @@ class App:
     def api_end(self, body):
         if body.get("confirm") != "END SESSION":
             raise UiError("Type END SESSION to confirm.")
-        deleted = False
-        if body.get("delete_db"):
-            for suffix in ("", "-wal", "-shm", "-journal"):
-                f = Path(str(self.db_path) + suffix)
-                if f.exists():
-                    secure_delete(f)
-                    deleted = True
-        else:
+        if not body.get("delete_db"):
             self._audit_if_db("end_session", database="kept")
+        # End the session first: whatever happens to the files, nobody stays signed in and
+        # the server stops.
         self.sid, self.unlocked = None, False
         if self.httpd:
             threading.Timer(0.5, self.httpd.shutdown).start()
-        return {"ended": True, "database_deleted": deleted}
+        deleted, failed = False, []
+        if body.get("delete_db"):
+            for suffix in ("", "-wal", "-shm", "-journal"):
+                f = Path(str(self.db_path) + suffix)
+                try:
+                    if f.exists():
+                        secure_delete(f)
+                        deleted = True
+                except OSError as exc:      # e.g. Windows still holds a lock on the file
+                    log.warning("could not delete %s: %s", f, exc)
+                    failed.append(f.name)
+        return {"ended": True, "database_deleted": deleted and not failed, "not_deleted": failed}
 
     ROUTES = {
         ("GET", "/api/state"): "api_state", ("POST", "/api/ingest"): "api_ingest",

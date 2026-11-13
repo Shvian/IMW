@@ -25,6 +25,7 @@ from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 
+from . import csvsafe
 from .model import Grant, SourceRecord
 from .owner import OwnerError, current_identity, restrict
 from .protect import ProtectError, get_protector, new_salt
@@ -218,16 +219,18 @@ class Store:
         for rec in records:
             if sanitize_record(rec):
                 self.last_sanitized += 1
-            base = rec.record_id
-            seen[base] = seen.get(base, 0) + 1
-            if seen[base] > 1:
-                rec.source_id = f"{rec.source_id}#{seen[base]}"
-                rec.notes.append("duplicate id in the source; suffixed in Record_ID")
+            # Permissions are looked up by the id as written in the source, so resolve them
+            # before a duplicate id gets its #N suffix.
             if rec.grants is None and perms is not None:
                 grants, rec.access_source = perms.resolve(rec)
                 rec.grants = list(grants)
             elif rec.grants is not None:
                 rec.access_source = rec.access_source or "source"
+            base = rec.record_id
+            seen[base] = seen.get(base, 0) + 1
+            if seen[base] > 1:
+                rec.source_id = f"{rec.source_id}#{seen[base]}"
+                rec.notes.append("duplicate id in the source; suffixed in Record_ID")
             secret_enc = None
             if rec.secret and store_secrets:
                 secret_enc = self.protector.protect(rec.secret, rec.record_id)
@@ -391,12 +394,12 @@ class Store:
         count = 0
         with open(path, newline="", encoding=encoding) as fh:
             for row in csv.DictReader(fh):
-                rid = (row.get("Record_ID") or "").strip()
+                rid = csvsafe.unescape((row.get("Record_ID") or "").strip())
                 if rid not in current:
                     continue
                 vals = {}
                 for col, fld in cols.items():
-                    new = (row.get(col) or "").strip()
+                    new = csvsafe.unescape((row.get(col) or "").strip())
                     if fld == "migrate":
                         if new and new.upper() != current[rid][fld].upper():
                             vals[fld] = new.upper()

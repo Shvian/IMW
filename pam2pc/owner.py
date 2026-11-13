@@ -19,6 +19,7 @@ does not give away a password.
 """
 
 import getpass
+import logging
 import json
 import os
 import socket
@@ -27,6 +28,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+log = logging.getLogger("pam2pc.owner")
 OWNER_FILE = ".owner"
 SYSTEM_SID = "S-1-5-18"
 
@@ -114,15 +116,21 @@ def restrict(path, sid=None, recursive=False):
     path = Path(path)
     if sys.platform == "win32":
         sid = sid or current_identity()["sid"]
-        inherit = "(OI)(CI)" if path.is_dir() else ""
-        cmd = ["icacls", str(path), "/inheritance:r", "/grant:r", f"*{sid}:{inherit}F",
-               "/grant:r", f"*{SYSTEM_SID}:{inherit}F"]
-        if recursive and path.is_dir():
-            cmd.append("/T")
-        cmd += ["/C", "/Q"]
-        done = subprocess.run(cmd, capture_output=True, text=True)
-        if done.returncode != 0:
-            raise OwnerError(f"could not restrict access to {path}: {(done.stdout + done.stderr).strip()}")
+        is_dir = path.is_dir()
+        inherit = "(OI)(CI)" if is_dir else ""
+        # The explicit grant goes on this folder (or file) only. Never combine an (OI)(CI) grant
+        # with /T: icacls drops those ACEs on files and, with inheritance removed, leaves every
+        # file with an EMPTY permission list that nobody can open.
+        cmds = [["icacls", str(path), "/inheritance:r", "/grant:r", f"*{sid}:{inherit}F",
+                 "/grant:r", f"*{SYSTEM_SID}:{inherit}F", "/C", "/Q"]]
+        if recursive and is_dir and any(path.iterdir()):
+            # Everything inside inherits owner + SYSTEM from the folder (also repairs files
+            # that an earlier version left with an empty permission list).
+            cmds.append(["icacls", str(path / "*"), "/reset", "/T", "/C", "/Q"])
+        for cmd in cmds:
+            done = subprocess.run(cmd, capture_output=True, text=True)
+            if done.returncode != 0:
+                raise OwnerError(f"could not restrict access to {path}: {(done.stdout + done.stderr).strip()}")
         return "owner and SYSTEM only"
     mode_dir, mode_file = 0o700, 0o600
     targets = [path]
@@ -151,6 +159,16 @@ def path_owner_sid(path):
     from ctypes import wintypes
     advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    advapi32.GetNamedSecurityInfoW.argtypes = [
+        wintypes.LPCWSTR, ctypes.c_int, wintypes.DWORD,                     # name, SE_FILE_OBJECT, info
+        ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(ctypes.c_void_p),    # owner, group
+        ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(ctypes.c_void_p),    # dacl, sacl
+        ctypes.POINTER(ctypes.c_void_p)]                                     # security descriptor
+    advapi32.GetNamedSecurityInfoW.restype = wintypes.DWORD
+    advapi32.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.LPWSTR)]
+    advapi32.ConvertSidToStringSidW.restype = wintypes.BOOL
+    kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+    kernel32.LocalFree.restype = ctypes.c_void_p
     p_owner, p_sd = ctypes.c_void_p(), ctypes.c_void_p()
     rc = advapi32.GetNamedSecurityInfoW(str(path), 1, 1, ctypes.byref(p_owner), None, None, None, ctypes.byref(p_sd))
     if rc != 0:
@@ -160,10 +178,31 @@ def path_owner_sid(path):
         if not advapi32.ConvertSidToStringSidW(p_owner, ctypes.byref(out)):
             raise OwnerError("ConvertSidToStringSidW failed")
         sid = out.value
-        kernel32.LocalFree(out)
+        kernel32.LocalFree(ctypes.cast(out, ctypes.c_void_p))
         return sid
     finally:
         kernel32.LocalFree(p_sd)
+
+
+def _access_denied(ws, me, exc):
+    """Explain an 'access denied' honestly: only blame another user when the folder really
+    belongs to one; otherwise show what Windows refused and the usual causes."""
+    what = f"{exc.filename} ({exc.strerror or exc})" if getattr(exc, "filename", None) else str(exc)
+    try:
+        folder_owner = path_owner_sid(ws)
+    except Exception:  # noqa: BLE001
+        folder_owner = None
+    if folder_owner and folder_owner not in (me["sid"], ADMINISTRATORS_SID):
+        return (f"{ws} belongs to another Windows user ({folder_owner}), so you can't open it. Use your "
+                "own workspace folder (-w) or sign in to Windows as its owner.")
+    hint = ""
+    if sys.platform == "win32":
+        hint = (" Common causes on Windows: Controlled folder access (Windows Security > Virus & threat "
+                "protection > Ransomware protection) blocking Python in Documents or Desktop; antivirus; "
+                "OneDrive sync; or files in the folder left with other permissions. Check with: icacls "
+                f"\"{ws}\" /T. Or start with a workspace outside Documents, e.g. -w C:\\Workbench\\ws.")
+    return (f"Windows refused access to {what}, although you ({me['display']}) "
+            f"{'own' if folder_owner == me['sid'] else 'may own'} the workspace folder {ws}.{hint}")
 
 
 def claim_workspace(ws):
@@ -173,12 +212,21 @@ def claim_workspace(ws):
     me = current_identity()
     marker = ws / OWNER_FILE
     try:
-        ws.mkdir(parents=True, exist_ok=True)
-        existing = json.loads(marker.read_text(encoding="utf-8")) if marker.exists() else None
-        entries = {p.name for p in ws.iterdir()}
-    except PermissionError:
-        raise OwnerError(f"{ws} belongs to another Windows user, so you can't open it. Use your own "
-                         "workspace folder (-w) or sign in to Windows as its owner.")
+        try:
+            ws.mkdir(parents=True, exist_ok=True)
+            existing = json.loads(marker.read_text(encoding="utf-8")) if marker.exists() else None
+            entries = {p.name for p in ws.iterdir()}
+        except PermissionError as exc:
+            # Earlier versions could leave files in the owner's own workspace with an empty
+            # permission list. The folder's owner may always reset them, so repair and retry once.
+            if sys.platform != "win32" or path_owner_sid(ws) != me["sid"]:
+                raise
+            log.warning("access denied in your own workspace (%s); resetting its permissions", exc)
+            restrict(ws, me["sid"], recursive=True)
+            existing = json.loads(marker.read_text(encoding="utf-8")) if marker.exists() else None
+            entries = {p.name for p in ws.iterdir()}
+    except PermissionError as exc:
+        raise OwnerError(_access_denied(ws, me, exc)) from None
     except ValueError:
         raise OwnerError(f"{marker} is damaged. Only the workspace owner can repair it.")
     if existing and existing.get("sid") != me["sid"]:
@@ -206,6 +254,9 @@ def _win_peer_pid(client_ip, client_port, server_port):
     import ctypes
     from ctypes import wintypes
     iphlpapi = ctypes.WinDLL("iphlpapi")
+    iphlpapi.GetExtendedTcpTable.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.DWORD), wintypes.BOOL,
+                                             wintypes.ULONG, ctypes.c_int, wintypes.ULONG]
+    iphlpapi.GetExtendedTcpTable.restype = wintypes.DWORD
     size = wintypes.DWORD(0)
     TCP_TABLE_OWNER_PID_CONNECTIONS, AF_INET = 4, 2
     iphlpapi.GetExtendedTcpTable(None, ctypes.byref(size), False, AF_INET, TCP_TABLE_OWNER_PID_CONNECTIONS, 0)
@@ -221,8 +272,11 @@ def _win_peer_pid(client_ip, client_port, server_port):
         raise OwnerError("GetExtendedTcpTable kept growing")
     raw = buf.raw
     count = struct.unpack_from("<I", raw, 0)[0]
+    MIB_TCP_STATE_ESTAB = 5
     for i in range(count):
         state, laddr, lport, raddr, rport, pid = struct.unpack_from("<6I", raw, 4 + i * 24)
+        if state != MIB_TCP_STATE_ESTAB:      # TIME_WAIT and other closed rows report pid 0
+            continue
         if (socket.ntohs(lport & 0xFFFF) == client_port and socket.ntohs(rport & 0xFFFF) == server_port
                 and socket.inet_ntoa(struct.pack("<I", laddr)) == client_ip):
             return pid

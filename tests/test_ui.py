@@ -168,7 +168,7 @@ class UiServer(Base):
         self.assertIn("same content as load #2", state["inputs"][2]["repeat"])
         st, r = self.req("POST", "/api/config", {"patch": {"default_platform": "WinServerLocal"}})
         self.assertEqual(st, 200, r)
-        self.assertEqual(json.loads((self.ws / "config.json").read_text()), {"default_platform": "WinServerLocal"})
+        self.assertEqual(json.loads((self.ws / "config.json").read_text()), {"default_platform": "WinServerLocal", "config_version": 2})
         self.assertEqual(self.req("POST", "/api/config", {"patch": {"safe_rules": [
             {"safe_pattern": "(", "managingCPM": "x"}]}})[0], 400)
 
@@ -178,7 +178,7 @@ class UiServer(Base):
         self.assertEqual(self.req("POST", "/api/config", {"config": user})[0], 200)
         self.assertEqual(self.req("POST", "/api/config", {"config": {"group_rules": [{"safe": "X"}]}})[0], 400)
         saved = json.loads((self.ws / "config.json").read_text())
-        self.assertEqual(set(saved), {"group_rules", "fallback_strategy"})        # only the changes are kept
+        self.assertEqual(set(saved), {"group_rules", "fallback_strategy", "config_version"})        # only the changes are kept
         for bad in ({"custom_roles": {"Full": ["listAccounts"]}},
                     {"custom_roles": {"X": ["listAccounts", "requestsAuthorizationLevel1", "requestsAuthorizationLevel2"]}},
                     {"permission_map": {"View": "Nobody"}}):

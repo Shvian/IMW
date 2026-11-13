@@ -270,10 +270,32 @@ class Session:
     def get(self, system):
         return self._creds.get(system, "")
 
+    @staticmethod
+    def _forms(v):
+        """The secret as it may appear in output: raw, repr()/JSON-escaped, URL-encoded, and
+        those escapes applied twice (an exception message inside a repr or JSON string)."""
+        forms = {v}
+        for _ in range(2):
+            for f in list(forms):
+                forms.add(repr(f)[1:-1])
+                forms.add(json.dumps(f)[1:-1])
+                forms.add(json.dumps(f, ensure_ascii=False)[1:-1])
+                forms.add(f.replace("\\", "\\\\").replace("'", "\\'"))
+                forms.add(f.replace("\\", "\\\\").replace('"', '\\"'))
+        for f in list(forms):
+            forms.add(urllib.parse.quote(f, safe=""))
+            forms.add(urllib.parse.quote(f))
+            forms.add(urllib.parse.quote_plus(f))
+        return sorted(forms, key=len, reverse=True)
+
     def redact(self, text):
         for v in list(self._creds.values()):
             if v and len(v) >= 4:
-                text = text.replace(v, "********")
+                for form in self._forms(v):
+                    text = text.replace(form, "********")
+                    if "%" in form:   # the same with lower-case %xx escapes
+                        text = text.replace(re.sub(r"%[0-9A-F]{2}", lambda m: m.group(0).lower(), form),
+                                            "********")
         return text
 
 

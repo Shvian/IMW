@@ -311,6 +311,10 @@ def config_diff(cfg, base=None):
                 out[key] = sub
         elif key not in base or base[key] != value:
             out[key] = value
+    if base is DEFAULT_CONFIG:
+        # Always record which version the file was written for, so upgrade_config can
+        # bring it forward when the defaults change in a later version.
+        out["config_version"] = cfg.get("config_version") or CONFIG_VERSION
     return out
 
 

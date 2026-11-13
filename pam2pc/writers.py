@@ -8,7 +8,7 @@ import platform as _platform
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import __version__
+from . import __version__, csvsafe
 from .config import ALL_PERMISSIONS, all_roles
 from .transform import safe_settings
 
@@ -56,7 +56,7 @@ def write_categories(out, header, rows):
                 pp["cols"][c] += 1
     cat_path = out / "FileCategories.csv"
     with _open(cat_path) as fh:
-        w = csv.writer(fh)
+        w = csvsafe.SafeWriter(csv.writer(fh))
         w.writerow(["column", "fileCategory", "accountsWithValue", "accountsTotal", "platforms", "description"])
         for c in cols:
             fc, desc = _category(c)
@@ -64,7 +64,7 @@ def write_categories(out, header, rows):
             w.writerow([c, fc, used[c], len(rows), "; ".join(plats), desc])
     plat_path = out / "PlatformProperties.csv"
     with _open(plat_path) as fh:
-        w = csv.writer(fh)
+        w = csvsafe.SafeWriter(csv.writer(fh))
         w.writerow(["platformId", "column", "fileCategory", "accountsWithValue", "accountsOnPlatform"])
         for plat in sorted(per_platform):
             v = per_platform[plat]
@@ -114,7 +114,7 @@ def write_review(plan, out_dir):
 
     accounts = out / "Accounts_Review.csv"
     with _open(accounts) as fh:
-        w = csv.writer(fh, quoting=csv.QUOTE_ALL)
+        w = csvsafe.SafeWriter(csv.writer(fh, quoting=csv.QUOTE_ALL))
         w.writerow(["Record_ID", "Migrate", "Status", "Notes", "Target_Safe", "Proposed_Safe_Name",
                     "Valid_Safe_Name", "Safe_Name_Issues", "Safe_Mapping_Source", "Platform_ID",
                     "Platform_Source", "Account_Name", "Address", "Username", "Secret_Type",
@@ -132,7 +132,7 @@ def write_review(plan, out_dir):
 
     safes = out / "Safes_Review.csv"
     with _open(safes) as fh:
-        w = csv.writer(fh)
+        w = csvsafe.SafeWriter(csv.writer(fh))
         w.writerow(["Target_Safe", "Length", "Valid_Safe_Name", "Proposed_Safe_Names",
                     "Safe_Name_Issues", "Mapping_Sources", "Accounts", "Accounts_To_Upload"])
         for name, s in plan.safes.items():
@@ -142,7 +142,7 @@ def write_review(plan, out_dir):
 
     members = out / "SafeMembers_Review.csv"
     with _open(members) as fh:
-        w = csv.writer(fh)
+        w = csvsafe.SafeWriter(csv.writer(fh))
         w.writerow(["Target_Safe", "Source_Member", "Member_Name", "Search_In", "Member_Type",
                     "Source_Permission", "Role", "Accounts_With_Access", "Notes"])
         for (safe, _), m in plan.members.items():
@@ -154,6 +154,9 @@ def write_review(plan, out_dir):
 # --------------------------------------------------------------------------- #
 # Upload files
 # --------------------------------------------------------------------------- #
+# Safes.csv, SafeMembers.csv and Accounts.csv are written exactly as the API should get them,
+# without csvsafe escaping (that would change the data, e.g. a password starting with '-').
+# They are not for Excel; the CLI and Workbench say so.
 def write_upload(plan, cfg, out_dir, include_secrets):
     out = Path(out_dir) / "upload"
     upload_safes = [n for n, s in plan.safes.items() if s["migrating"]]

@@ -34,6 +34,17 @@ class DpapiProtector:
         self._ct, self._Blob = ctypes, Blob
         self._crypt32 = ctypes.WinDLL("crypt32", use_last_error=True)
         self._kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        # Full prototypes, so 64-bit Python passes every pointer and flag at its real width.
+        pblob = ctypes.POINTER(Blob)
+        for fn in (self._crypt32.CryptProtectData, self._crypt32.CryptUnprotectData):
+            fn.restype = wintypes.BOOL
+        self._crypt32.CryptProtectData.argtypes = [pblob, wintypes.LPCWSTR, pblob, ctypes.c_void_p,
+                                                   ctypes.c_void_p, wintypes.DWORD, pblob]
+        # Argument 2 of CryptUnprotectData is an optional LPWSTR* out-pointer; we pass None.
+        self._crypt32.CryptUnprotectData.argtypes = [pblob, ctypes.c_void_p, pblob,
+                                                     ctypes.c_void_p, ctypes.c_void_p, wintypes.DWORD, pblob]
+        self._kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+        self._kernel32.LocalFree.restype = ctypes.c_void_p
         self._salt = salt
 
     def _blob(self, data):
@@ -42,21 +53,30 @@ class DpapiProtector:
 
     def _call(self, fn, data, entropy, protect):
         ct = self._ct
-        inb, _b1 = self._blob(data)
-        ent, _b2 = self._blob(entropy)
+        inb, b1 = self._blob(data)
+        ent, b2 = self._blob(entropy)
         out = self._Blob()
         flags = 0x1  # CRYPTPROTECT_UI_FORBIDDEN
-        if protect:
-            ok = fn(ct.byref(inb), "pam2pc", ct.byref(ent), None, None, flags, ct.byref(out))
-        else:
-            ok = fn(ct.byref(inb), None, ct.byref(ent), None, None, flags, ct.byref(out))
-        if not ok:
-            raise ProtectError(f"DPAPI call failed (Windows error {ct.get_last_error()}). A database "
-                               "can only be decrypted by the Windows account that created it.")
         try:
-            return ct.string_at(out.pbData, out.cbData)
+            if protect:
+                ok = fn(ct.byref(inb), "pam2pc", ct.byref(ent), None, None, flags, ct.byref(out))
+            else:
+                ok = fn(ct.byref(inb), None, ct.byref(ent), None, None, flags, ct.byref(out))
+            if not ok:
+                raise ProtectError(f"DPAPI call failed (Windows error {ct.get_last_error()}). A database "
+                                   "can only be decrypted by the Windows account that created it.")
+            try:
+                return ct.string_at(out.pbData, out.cbData)
+            finally:
+                # Zero the Windows-side copy (the plaintext, when decrypting) before freeing it.
+                if out.pbData and out.cbData:
+                    ct.memset(out.pbData, 0, out.cbData)
+                self._kernel32.LocalFree(ct.cast(out.pbData, ct.c_void_p))
         finally:
-            self._kernel32.LocalFree(out.pbData)
+            # Our own input copies (the plaintext, when encrypting). The Python str/bytes the
+            # caller holds are immutable and cannot be wiped; Python frees them as usual.
+            ct.memset(b1, 0, len(b1))
+            ct.memset(b2, 0, len(b2))
 
     def protect(self, plaintext, record_id):
         blob = self._call(self._crypt32.CryptProtectData, plaintext.encode("utf-8"),

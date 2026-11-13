@@ -314,7 +314,7 @@ $("#end-go").onclick = async () => {
   try {
     const r = await api("/api/end", { confirm: "END SESSION", delete_db: $("#end-del").checked });
     document.body.innerHTML = `<p style='padding:30px'>Session ended and the Workbench has stopped.
-      ${r.database_deleted ? "The database was securely deleted." : "The database is still on disk, encrypted for your Windows account. Start the Workbench again to open it."}
+      ${(r.not_deleted || []).length ? "Some database files could not be deleted (" + esc(r.not_deleted.join(", ")) + "), probably because Windows still had them open. They stay encrypted for your Windows account; delete them from the workspace folder." : r.database_deleted ? "The database was securely deleted." : "The database is still on disk, encrypted for your Windows account. Start the Workbench again to open it."}
       You can close this tab.</p>`;
   } catch (e) { $("#end-msg").innerHTML = `<span style="color:var(--err)">${esc(e.message)}</span>`; }
 };

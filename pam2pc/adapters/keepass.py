@@ -10,9 +10,9 @@ libraries); export to XML from KeePass first.
 """
 
 import csv
-import xml.etree.ElementTree as ET
 from collections import OrderedDict
 
+from .. import safexml
 from ..model import SourceRecord, split_folder
 from .base import Adapter, AdapterError, address_from_url, file_stem, matches_any, read_head
 from .rows import record_from_row
@@ -55,7 +55,10 @@ class KeePassAdapter(Adapter):
         kcfg = cfg["sources"]["keepass"]
         skip = {g.lower() for g in kcfg["skip_groups"]}
         stem = file_stem(path)
-        root = ET.parse(path).getroot()
+        try:
+            root = safexml.parse(path).getroot()
+        except safexml.UnsafeXmlError as exc:
+            raise AdapterError(f"{path}: {exc}") from None
         if root.tag != "KeePassFile":
             raise AdapterError(f"{path} is not a KeePass XML export")
         recycle = (root.findtext("Meta/RecycleBinUUID") or "").strip()

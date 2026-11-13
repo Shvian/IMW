@@ -10,6 +10,7 @@ from collections import OrderedDict, defaultdict
 from dataclasses import dataclass, field
 from typing import List
 
+from . import csvsafe
 from .adapters.base import address_from_url
 from .config import all_roles, resolve_role
 from .model import Grant, split_folder
@@ -360,9 +361,9 @@ def load_overrides(path, encoding="utf-8-sig"):
     out = {}
     with open(path, newline="", encoding=encoding) as fh:
         for row in csv.DictReader(fh):
-            rid = (row.get("Record_ID") or "").strip()
+            rid = csvsafe.unescape((row.get("Record_ID") or "").strip())
             if rid:
-                out[rid] = {k: (v or "").strip() for k, v in row.items() if k}
+                out[rid] = {k: csvsafe.unescape((v or "").strip()) for k, v in row.items() if k}
     log.info("overrides: %d rows from %s", len(out), path)
     return out
 
@@ -402,20 +403,16 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
     perms = perms or Permissions()
     overrides = overrides or {}
     plans = []
-    seen_ids = defaultdict(int)
+    records = list(records)
+    all_ids = {r.record_id for r in records}
+    used_ids, dup_count = set(), defaultdict(lambda: 1)
     namer = Namer(cfg)
     convention_folders = defaultdict(set)
 
     for rec in records:
         p = AccountPlan(rec=rec)
         p.warnings.extend(rec.notes)
-        seen_ids[rec.record_id] += 1
-        if seen_ids[rec.record_id] > 1:
-            rec.source_id = f"{rec.source_id}#{seen_ids[rec.record_id]}"
-            p.warnings.append("duplicate id in the source; suffixed in Record_ID")
-        ov = overrides.get(rec.record_id, {})
-
-        # Access
+        # Access (looked up by the source's own id, before a duplicate id is suffixed)
         if rec.grants is not None:
             p.grants, p.access_source = list(rec.grants), rec.access_source or "source"
         elif perms.loaded:
@@ -423,6 +420,19 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
             p.grants = list(p.grants)
         else:
             p.access_source = "none"
+        # Only a real duplicate in this run is suffixed. Records from the database are already
+        # unique (Store.ingest added any #N), so they are never suffixed again, and a second
+        # build_plan over the same records changes nothing.
+        if rec.record_id in used_ids:
+            base, n = rec.source_id, dup_count[rec.record_id] + 1
+            rec.source_id = f"{base}#{n}"
+            while rec.record_id in used_ids or rec.record_id in all_ids:
+                n += 1
+                rec.source_id = f"{base}#{n}"
+            dup_count[f"{rec.source}:{rec.source_file}:{base}"] = n
+            p.warnings.append("duplicate id in the source; suffixed in Record_ID")
+        used_ids.add(rec.record_id)
+        ov = overrides.get(rec.record_id, {})
         if not p.grants:
             p.warnings.append("no access groups found; Safe gets no members from the source")
 
@@ -471,6 +481,10 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
         if p.by_convention:
             convention_folders[safe.lower()].add(rec.folder_path)
 
+        # Address first: the account name template may use {address}.
+        if cfg.get("url_address_to_host") and "://" in rec.address:
+            rec.address = address_from_url(rec.address)
+
         # Account name
         name = account_name_for(rec, p, cfg)
         if changed(ov.get("Account_Name"), ACCOUNT_NAME_INVALID.sub("_", name).strip()):
@@ -484,8 +498,6 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
             p.warnings.append(f"forbidden characters in account name ({bad}) replaced with _")
         p.account_name = clean
 
-        if cfg.get("url_address_to_host") and "://" in rec.address:
-            rec.address = address_from_url(rec.address)
         if not rec.username:
             p.errors.append("no username")
         if not rec.address:
@@ -507,7 +519,6 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
             cleaned[p.proposed_safe] = sanitize_safe_name(p.proposed_safe, cfg)
     final = resolve_collisions({k: v[0] for k, v in cleaned.items()}, cfg)
 
-    names_in_safe = defaultdict(int)
     dupes = defaultdict(list)
     for p in plans:
         _, valid, issues = cleaned[p.proposed_safe]
@@ -521,13 +532,9 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
             p.warnings.insert(0, "Safe name changed: " + "; ".join(p.safe_issues))
         if not p.uploadable:
             continue
-        key = (p.safe.lower(), p.account_name.lower())
-        names_in_safe[key] += 1
-        if names_in_safe[key] > 1:
-            p.account_name = f"{p.account_name[:ACCOUNT_NAME_MAX - 4]}_{names_in_safe[key]}"
-            p.warnings.append("duplicate account name in Safe; suffixed")
         dupes[(p.safe.lower(), p.rec.username.lower(), p.rec.address.lower(),
                p.rec.secret_type)].append(p)
+    _unique_account_names(plans)
     for group in dupes.values():
         if len(group) > 1:
             for x in group:
@@ -537,6 +544,33 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
                                   + ", ".join(others[:3]) + more)
 
     return Plan(plans, _safes(plans, cfg), _members(plans, cfg, member_edits), list(member_edits or []))
+
+
+def _unique_account_names(plans):
+    """Account names must be unique within a Safe. The first account keeps its name; later
+    duplicates get _2, _3, ... skipping any name already used (or still to come) in that Safe."""
+    taken = defaultdict(set)                      # every name the uploadable accounts start with
+    for p in plans:
+        if p.uploadable:
+            taken[p.safe.lower()].add(p.account_name.lower())
+    claimed = defaultdict(set)
+    for p in plans:
+        if not p.uploadable:
+            continue
+        safe = p.safe.lower()
+        if p.account_name.lower() not in claimed[safe]:
+            claimed[safe].add(p.account_name.lower())
+            continue
+        n = 2
+        while True:
+            suffix = f"_{n}"
+            cand = f"{p.account_name[:ACCOUNT_NAME_MAX - len(suffix)]}{suffix}"
+            if cand.lower() not in taken[safe] and cand.lower() not in claimed[safe]:
+                break
+            n += 1
+        claimed[safe].add(cand.lower())
+        p.account_name = cand
+        p.warnings.append("duplicate account name in Safe; suffixed")
 
 
 def account_name_for(rec, p, cfg):
