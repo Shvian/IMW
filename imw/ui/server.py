@@ -12,6 +12,8 @@ Security model
   * No API returns a secret value. Secrets are only decrypted by the Output step
     when "include secrets" is chosen, straight into upload/Accounts.csv.
   * Runs in-process as the signed-in user, so DPAPI works as for the CLI.
+  * The page's script is served as /app.js and /theme.js; the Content-Security-Policy
+    allows no inline script, so markup that slipped past esc() still cannot run code.
 """
 
 import csv
@@ -49,6 +51,8 @@ from ..owner import claim_workspace, peer_is_owner
 log = logging.getLogger("imw.ui")
 PRODUCT = "Idira Migration Workbench"
 STATIC = Path(__file__).parent / "static"
+# The only files served besides index.html (a fixed list: no path from the request reaches the disk).
+STATIC_SCRIPTS = {"/app.js": "app.js", "/theme.js": "theme.js"}
 IDLE_SECONDS = 10 * 60          # auto-lock
 MAX_FAILURES = 5                # then a growing wait between attempts
 PAGE_SIZE = 200
@@ -549,14 +553,17 @@ class App:
         in_export = {r["member"].lower(): r["n"] for r in grants}
         people = {}
         for m in members:
-            key = (m["source_member"] or m["member_name"]).lower()
-            p = people.setdefault(key, {
-                "key": key, "source_member": m["source_member"], "member_name": m["member_name"],
-                "member_type": m["member_type"], "search_in": m["search_in"],
-                "directory_source": m["directory_source"], "export_accounts": in_export.get(key, 0),
-                "edited": key in overrides, "override": overrides.get(key), "safes": []})
-            p["safes"].append({"safe_name": m["safe_name"], "role": m["role"], "accounts": m["accounts"],
-                               "source_permission": m["source_permission"], "notes": m["notes"]})
+            # A merged row lists several source members ("CORP\\X | LEGACY\\X"); each one is
+            # its own person here, so a change (keyed by source member) reaches the right one.
+            for source in (m["source_member"] or m["member_name"]).split(" | "):
+                key = source.lower()
+                p = people.setdefault(key, {
+                    "key": key, "source_member": source, "member_name": m["member_name"],
+                    "member_type": m["member_type"], "search_in": m["search_in"],
+                    "directory_source": m["directory_source"], "export_accounts": in_export.get(key, 0),
+                    "edited": key in overrides, "override": overrides.get(key), "safes": []})
+                p["safes"].append({"safe_name": m["safe_name"], "role": m["role"], "accounts": m["accounts"],
+                                   "source_permission": m["source_permission"], "notes": m["notes"]})
         default_type = normalize_member_type(cfg["default_member_type"])
         for r in grants:
             key = r["member"].lower()
@@ -867,8 +874,8 @@ def make_handler(app, port, scheme="https"):
             self.send_header("X-Frame-Options", "DENY")
             self.send_header("Referrer-Policy", "no-referrer")
             self.send_header("Content-Security-Policy",
-                             "default-src 'self'; script-src 'self' 'unsafe-inline'; "
-                             "style-src 'self' 'unsafe-inline'; frame-ancestors 'none'")
+                             "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+                             "object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
             for k, v in (headers or {}).items():
                 self.send_header(k, v)
             self.end_headers()
@@ -950,6 +957,11 @@ def make_handler(app, port, scheme="https"):
                                       "text/html; charset=utf-8")
                 return self._send(HTTPStatus.OK, (STATIC / "index.html").read_bytes(),
                                   "text/html; charset=utf-8")
+            if method == "GET" and url.path in STATIC_SCRIPTS:
+                if not self._session_ok():
+                    return self._send(HTTPStatus.UNAUTHORIZED, b"", "text/plain")
+                return self._send(HTTPStatus.OK, (STATIC / STATIC_SCRIPTS[url.path]).read_bytes(),
+                                  "text/javascript; charset=utf-8")
             if not url.path.startswith("/api/"):
                 return self._send(HTTPStatus.NOT_FOUND, {"error": "not found"})
             if not self._session_ok():

@@ -12,6 +12,9 @@ from .base import column_lookup, first_value, matches_any
 ACCESS_SPLIT = re.compile(r"[;\n]+")
 
 
+EXTRA_COL = re.compile(r"^Extra_\d+$")
+
+
 def parse_access(text):
     """'CORP\\A=Owner; CORP\\B=View' (or ':' / '|' instead of '=') -> [Grant]."""
     grants = []
@@ -94,5 +97,10 @@ def record_from_row(row, cfg, *, source, source_file, row_ref, row_number,
             if str(val).strip():
                 rec.notes.append(f"attachment field '{col}' not migrated")
             continue
-        rec.extra[col] = "" if val is None else str(val)
+        val = "" if val is None else str(val)
+        if not val.strip() and EXTRA_COL.match(col):
+            # Values past the header row get synthetic Extra_N names; a stray blank cell far to
+            # the right of a sheet would otherwise add thousands of empty columns.
+            continue
+        rec.extra[col] = val
     return rec

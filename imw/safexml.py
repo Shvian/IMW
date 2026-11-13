@@ -34,17 +34,17 @@ def check(data):
         raise ET.ParseError(str(exc)) from None
 
 
-def check_file(path, chunk=1 << 20):
-    p = _checker()
-    try:
-        with open(path, "rb") as fh:
-            while True:
-                block = fh.read(chunk)
-                p.Parse(block, not block)
-                if not block:
-                    break
-    except expat.ExpatError as exc:
-        raise ET.ParseError(f"{path}: {exc}") from None
+MAX_FILE_BYTES = 512 * 1024 * 1024   # same limit as one part of an .xlsx
+
+
+def read_capped(path, limit=None):
+    """The file's bytes, read once; refuse a file larger than limit."""
+    limit = MAX_FILE_BYTES if limit is None else limit
+    with open(path, "rb") as fh:
+        data = fh.read(limit + 1)
+    if len(data) > limit:
+        raise ValueError(f"{path}: larger than {limit // (1024 * 1024)} MB; split the export")
+    return data
 
 
 def fromstring(data):
@@ -53,5 +53,10 @@ def fromstring(data):
 
 
 def parse(path):
-    check_file(path)
-    return ET.parse(path)
+    """Read the file once, check it, then build the tree from the same bytes (no second
+    read, so the file cannot change between the check and the parse)."""
+    data = read_capped(path)
+    try:
+        return ET.ElementTree(fromstring(data))
+    except ET.ParseError as exc:
+        raise ET.ParseError(f"{path}: {exc}") from None

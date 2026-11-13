@@ -29,7 +29,7 @@ def _read_xml(z, name, path):
                          "as CSV and load that instead.")
     try:
         return safexml.fromstring(z.read(name))
-    except safexml.UnsafeXmlError as exc:
+    except (safexml.UnsafeXmlError, safexml.ET.ParseError) as exc:
         raise ValueError(f"{path}: {name}: {exc}") from None
 
 
@@ -108,7 +108,11 @@ def read_rows(path, sheet=""):
             t = c.get("t", "n")
             v = c.findtext("m:v", default="", namespaces=NS)
             if t == "s":
-                val = shared[int(v)] if v else ""
+                try:
+                    val = shared[int(v)] if v else ""
+                except (ValueError, IndexError):
+                    raise ValueError(f"{path}: cell {c.get('r')} points at a shared string that "
+                                     "does not exist; the file is damaged") from None
             elif t == "inlineStr":
                 is_ = c.find("m:is", NS)
                 val = _text(is_) if is_ is not None else ""

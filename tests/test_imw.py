@@ -159,13 +159,25 @@ class KeePass(Base):
         self.assertEqual(len(recs), 4)                         # history entries not duplicated
         web = names["root@web02"]
         self.assertEqual(web.folder, ("Linux", "Web Servers: DMZ/Edge"))
-        self.assertEqual(web.address, "web02.example.com")
+        # The adapter keeps the full URL; mapping turns it into the host when url_address_to_host
+        # is on (the default), and keeps it when it is off.
+        self.assertEqual(web.address, "ssh://web02.example.com:22")
         self.assertEqual(web.secret, "Kp!root-web02")
         self.assertEqual(web.extra["Port"], "22")
         self.assertTrue(any("web02_notes.txt" in n for n in web.notes))
         key = names["deploy key build01"]
         self.assertEqual(key.secret_type, "key")
         self.assertNotIn("SSH Private Key", key.extra)
+
+    def test_url_address_to_host_setting(self):
+        cfg = load_config(SAMPLES / "config_generic.json")
+        def address(on):
+            c = dict(cfg, url_address_to_host=on)
+            recs = list(get_adapter("keepass").read(SAMPLES / "keepass_export.xml", c))
+            plan = build_plan(recs, c)
+            return {p.rec.name: p.rec.address for p in plan.accounts}["root@web02"]
+        self.assertEqual(address(True), "web02.example.com")
+        self.assertEqual(address(False), "ssh://web02.example.com:22")
 
     def test_xml_end_to_end(self):
         out = self.convert(SAMPLES / "keepass_export.xml", config=SAMPLES / "config_generic.json",

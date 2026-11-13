@@ -376,9 +376,9 @@ def load_overrides(path, encoding="utf-8-sig"):
     out = {}
     with open(path, newline="", encoding=encoding) as fh:
         for row in csv.DictReader(fh):
-            rid = csvsafe.unescape((row.get("Record_ID") or "").strip())
+            rid = csvsafe.unescape((row.get("Record_ID") or "").strip()).strip()
             if rid:
-                out[rid] = {k: csvsafe.unescape((v or "").strip()) for k, v in row.items() if k}
+                out[rid] = {k: csvsafe.unescape((v or "").strip()).strip() for k, v in row.items() if k}
     log.info("overrides: %d rows from %s", len(out), path)
     return out
 
@@ -448,6 +448,12 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
             dup_count[f"{rec.source}:{rec.source_file}:{base}"] = n
             p.warnings.append("duplicate id in the source; suffixed in Record_ID")
         used_ids.add(rec.record_id)
+        # Address first, so platform and Safe rules, the account name template ({address}) and
+        # the output all see the same value. Sources keep the full URL; the review file's
+        # Source.* columns keep it too. Records are reloaded from the database for every
+        # mapping, so changing the setting needs no new ingest.
+        if cfg.get("url_address_to_host") and "://" in rec.address:
+            rec.address = address_from_url(rec.address)
         ov = overrides.get(rec.record_id, {})
         if not p.grants:
             p.warnings.append("no access groups found; Safe gets no members from the source")
@@ -497,9 +503,6 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
         if p.by_convention:
             convention_folders[safe.lower()].add(rec.folder_path)
 
-        # Address first: the account name template may use {address}.
-        if cfg.get("url_address_to_host") and "://" in rec.address:
-            rec.address = address_from_url(rec.address)
 
         # Account name
         name = account_name_for(rec, p, cfg)
@@ -633,6 +636,14 @@ def safe_settings(name, info, cfg):
     return body
 
 
+def _member_names(m):
+    """Every name a per-Safe edit may use for a member: its target name, the name the rules
+    gave it before you renamed it, and each source member name."""
+    names = {m.get("member_name") or "", m.get("rule_name") or ""}
+    names.update(m.get("sources") or [m.get("source_name") or ""])
+    return {n.lower() for n in names if n}
+
+
 def apply_member_edits(members, plans, edits):
     """Your member changes on the Safes page: remove a member from a Safe, or add one.
     Adding a member that is already on the Safe changes its role (and its type or searchIn
@@ -647,8 +658,7 @@ def apply_member_edits(members, plans, edits):
             names[p.safe.lower()] = p.safe
     for e in edits:
         safe_l, name_l = e["safe_name"].lower(), e["member_name"].lower()
-        found = [k for k, m in members.items() if k[0].lower() == safe_l and
-                 name_l in (m["member_name"].lower(), m["source_name"].lower())]
+        found = [k for k, m in members.items() if k[0].lower() == safe_l and name_l in _member_names(m)]
         why = f": {e['reason']}" if e.get("reason") else ""
         if e["action"] == "add" and found:
             for key in found[1:]:
@@ -670,7 +680,7 @@ def apply_member_edits(members, plans, edits):
                 "member_type": normalize_member_type(e.get("member_type")), "role": e.get("role") or "",
                 "permission": "(added by you)", "accounts": uploading[safe_l], "seen": set(),
                 "member_name": e["member_name"], "search_in": e.get("search_in") or "",
-                "directory_source": "added by you",
+                "directory_source": "added by you", "rule_name": "", "sources": [e["member_name"]],
                 "notes": ["added by you" + why]}
     return members
 
@@ -761,7 +771,10 @@ def _safes(plans, cfg=None):
 
 
 def _members(plans, cfg, edits=None, overrides=None):
-    """Strongest role per (Safe, member) over the accounts that migrate, then your member edits."""
+    """Strongest role per (Safe, member) over the accounts that migrate. Order matters:
+    the rules give each source member its target name, your member changes (overrides)
+    rename it everywhere, rows that now share a target name on one Safe merge (the API
+    takes one row per Safe and member), and last your per-Safe edits apply."""
     members = OrderedDict()
     for p in plans:
         if not p.uploadable:
@@ -771,11 +784,22 @@ def _members(plans, cfg, edits=None, overrides=None):
             key = (p.safe, g.member.lower())
             m = members.setdefault(key, {"source_name": g.member, "type": g.member_type,
                                          "role": role, "permission": g.permission,
-                                         "accounts": 0, "seen": set()})
-            m["accounts"] += 1
+                                         "accounts": 0, "seen": set(), "ids": set()})
+            if id(p) not in m["ids"]:
+                m["ids"].add(id(p))
+                m["accounts"] += 1
             m["seen"].add(g.permission or "(blank)")
             if role_rank(role, cfg) > role_rank(m["role"], cfg):
                 m["role"], m["permission"] = role, g.permission
+    for m in members.values():
+        m["member_type"] = normalize_member_type(m["type"], normalize_member_type(cfg["default_member_type"]))
+        m["member_name"], m["search_in"], m["directory_source"] = member_target(
+            m["source_name"], cfg, m["member_type"])
+        m["rule_name"] = m["member_name"]
+        m["sources"] = [m["source_name"]]
+        m["notes"] = []
+    apply_member_overrides(members, overrides)
+    members = _merge_members(members, cfg)
     for m in members.values():
         notes = []
         if len(m["seen"]) > 1:
@@ -785,10 +809,38 @@ def _members(plans, cfg, edits=None, overrides=None):
             notes.append(f"no role for permission '{m['permission']}'; add it to permission_map")
         elif m["role"] not in all_roles(cfg):
             notes.append(f"role '{m['role']}' is not a preset or custom role")
-        m["notes"] = notes
-        m["member_type"] = normalize_member_type(m["type"], normalize_member_type(cfg["default_member_type"]))
-        m["member_name"], m["search_in"], m["directory_source"] = member_target(
-            m["source_name"], cfg, m["member_type"])
+        m["notes"] = notes + m["notes"]
+        m.pop("ids", None)
     apply_member_edits(members, plans, edits)
-    apply_member_overrides(members, overrides)
     return members
+
+
+def _merge_members(members, cfg):
+    """One row per (Safe, target member name). Two source members can end up with the same
+    name, e.g. CORP\\SQL-Admins and LEGACY\\SQL-Admins once the domain is stripped, or
+    because you renamed one to the other. The merged row keeps the strongest role and lists
+    every source member (joined with ' | ')."""
+    out = OrderedDict()
+    for (safe, _), m in members.items():
+        key = (safe, (m["member_name"] or m["source_name"]).lower())
+        cur = out.get(key)
+        if cur is None:
+            out[key] = m
+            continue
+        cur["sources"].extend(m["sources"])
+        cur["source_name"] = " | ".join(cur["sources"])
+        new_ids = m["ids"] - cur["ids"]
+        cur["ids"] |= new_ids
+        cur["accounts"] += len(new_ids)
+        cur["seen"] |= m["seen"]
+        if role_rank(m["role"], cfg) > role_rank(cur["role"], cfg):
+            cur["role"], cur["permission"] = m["role"], m["permission"]
+        note = "merged source members " + ", ".join(cur["sources"]) + " (same target name on this Safe)"
+        if (m["search_in"] or "") != (cur["search_in"] or ""):
+            note += (f"; CHECK: they point at different directories ('{cur['search_in'] or 'any'}' and "
+                     f"'{m['search_in'] or 'any'}'), so they may be different groups. The first is used")
+        if m["member_type"] != cur["member_type"]:
+            note += f"; member types differ ({cur['member_type']}/{m['member_type']}), {cur['member_type']} used"
+        cur["notes"] = [n for n in cur["notes"] if not n.startswith("merged source members")] + [note]
+        cur["notes"].extend(n for n in m["notes"] if n not in cur["notes"])
+    return out
