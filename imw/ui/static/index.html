@@ -244,8 +244,8 @@ let STATE = {}, PAGE = "overview", LAST_OUT = "";
 const REVIEW = { view: "review", filters: {}, page: 0, sort: "target_safe", desc: false, selected: new Set(), data: null };
 
 async function api(path, body) {
-  const opts = body === undefined ? { headers: { "X-Pam2pc": "1" } }
-    : { method: "POST", headers: { "Content-Type": "application/json", "X-Pam2pc": "1" }, body: JSON.stringify(body) };
+  const opts = body === undefined ? { headers: { "X-IMW": "1" } }
+    : { method: "POST", headers: { "Content-Type": "application/json", "X-IMW": "1" }, body: JSON.stringify(body) };
   $("#busy").classList.toggle("hidden", body === undefined || path === "/api/ping");
   try {
     const r = await fetch(path, opts);
@@ -284,7 +284,7 @@ function showLogin(why) {
   $("#login-pw").value = ""; $("#login-pw").type = "password"; $("#login-pw").focus();
 }
 async function checkSession() {
-  const r = await fetch("/api/session", { headers: { "X-Pam2pc": "1" } });
+  const r = await fetch("/api/session", { headers: { "X-IMW": "1" } });
   if (r.status === 401) { document.body.innerHTML = "<p style='padding:30px'>Session ended. Restart the Workbench to get a new link.</p>"; return null; }
   return r.json();
 }
@@ -1487,7 +1487,7 @@ PAGES.activity = async () => {
   // Fetched by the page itself, then saved: works the same with a self-signed certificate.
   document.querySelectorAll("[data-export]").forEach(a => a.onclick = async (e) => {
     e.preventDefault();
-    const r = await fetch(`/api/export/${a.dataset.export}.csv`, { headers: { "X-Pam2pc": "1" } });
+    const r = await fetch(`/api/export/${a.dataset.export}.csv`, { headers: { "X-IMW": "1" } });
     if (r.status === 423) return showLogin("Locked after inactivity. Sign in again to continue.");
     if (!r.ok) return alert("Export failed: " + r.statusText);
     const name = (r.headers.get("Content-Disposition") || "").match(/filename="([^"]+)"/);

@@ -32,7 +32,7 @@ from .protect import ProtectError, get_protector, new_salt
 from .transform import _changed, build_plan, rebuild_totals, safe_settings, sanitize_record
 from .writers import write_manifest, write_review, write_upload
 
-log = logging.getLogger("pam2pc.store")
+log = logging.getLogger("imw.store")
 SCHEMA_VERSION = "1"
 
 SCHEMA = """

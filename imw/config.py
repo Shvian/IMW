@@ -91,7 +91,7 @@ DEFAULT_CONFIG = {
     # Naming convention (fallback_strategy "convention", or {convention} / {env} /
     # {folder_abbrev} / {tech} / {flavor} / {acct} in a rule's Safe name). Layers follow
     # the CyberArk convention: environment, location/BU/app (from the folders),
-    # technology, flavor, account type. See pam2pc/naming.py for the built-in codes.
+    # technology, flavor, account type. See imw/naming.py for the built-in codes.
     "safe_convention": {
         # Records with folders: the folder structure, each level abbreviated, in order.
         # Environment words (Prod, Dev...) stay where they are unless the template has {env}.
@@ -355,7 +355,7 @@ def load_config(path=None):
 
 def write_default_config(path):
     out = OrderedDict()
-    out["_comment"] = ("pam2pc config. Only keep the keys you change; everything else uses the "
+    out["_comment"] = ("Idira Migration Workbench config. Only keep the keys you change; everything else uses the "
                        "built-in default. See README for each key.")
     out.update(copy.deepcopy(DEFAULT_CONFIG))
     out["folder_rules"] = [{"folder_prefix": "\\Infrastructure\\Network", "safe": "NET-Devices"}]

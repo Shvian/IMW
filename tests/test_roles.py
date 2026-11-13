@@ -2,10 +2,10 @@
 
 import unittest
 
-from pam2pc.config import (_V1_PERMISSION_MAP, _V1_ROLE_PERMISSIONS, ALL_PERMISSIONS, PERMISSION_PRESETS,
+from imw.config import (_V1_PERMISSION_MAP, _V1_ROLE_PERMISSIONS, ALL_PERMISSIONS, PERMISSION_PRESETS,
                            CONFIG_VERSION, all_roles, config_diff, config_from_dict, load_config, resolve_role)
-from pam2pc.model import Grant, SourceRecord, split_folder
-from pam2pc.transform import build_plan
+from imw.model import Grant, SourceRecord, split_folder
+from imw.transform import build_plan
 
 
 def rec(folder, grants):

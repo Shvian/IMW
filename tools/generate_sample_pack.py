@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Build a FAKE sample data pack for trying pam2pc and the Migration Workbench.
+Build a FAKE sample data pack for trying the Idira Migration Workbench.
 
 Writes a ready-to-use workspace:
 
@@ -11,7 +11,7 @@ Writes a ready-to-use workspace:
   <out>/inbox/it_inventory.xlsx          spreadsheet inventory, one account per row
   <out>/SAMPLE_DATA_README.txt           what is in it, and the problems planted on purpose
 
-Then:  python -m pam2pc ui --workspace <out>
+Then:  python -m imw ui --workspace <out>
 
 Every name, host and password is invented (example.com / corp.example.com). The
 data deliberately contains the problems a real migration has, so each review
@@ -288,10 +288,10 @@ CONFIG = {
     "account_property_map": {"Port": "Port", "Database": "Database"},
 }
 
-README = """pam2pc SAMPLE DATA PACK - every name, host and password here is FAKE.
+README = """IDIRA MIGRATION WORKBENCH SAMPLE DATA PACK - every name, host and password here is FAKE.
 
 Start the Workbench on this folder:
-    python -m pam2pc ui --workspace "{out}"
+    python -m imw ui --workspace "{out}"
 (on Linux/macOS add --insecure-plaintext-secrets; on Windows secrets are encrypted with DPAPI)
 
 inbox/
@@ -336,7 +336,7 @@ def main():
     (out / "config.json").write_text(json.dumps(CONFIG, indent=2), encoding="utf-8")
     (out / "SAMPLE_DATA_README.txt").write_text(README.format(out=out, d=d, k=k, x=x), encoding="utf-8")
     print(f"Wrote sample workspace to {out.resolve()}: {d} Delinea, {k} KeePass, {x} spreadsheet records.")
-    print(f"Start it with: python -m pam2pc ui --workspace \"{out}\"")
+    print(f"Start it with: python -m imw ui --workspace \"{out}\"")
 
 
 if __name__ == "__main__":

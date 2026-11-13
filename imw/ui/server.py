@@ -1,4 +1,4 @@
-"""Local web UI for the staging database: python -m pam2pc ui
+"""Local web UI for the staging database: python -m imw ui
 
 Security model
   * Listens on 127.0.0.1 only, over HTTPS with a self-signed certificate made for this
@@ -46,7 +46,7 @@ from .auth import get_authenticator
 from .tls import fingerprint, server_context, trust_certificate
 from ..owner import claim_workspace, peer_is_owner
 
-log = logging.getLogger("pam2pc.ui")
+log = logging.getLogger("imw.ui")
 PRODUCT = "Idira Migration Workbench"
 STATIC = Path(__file__).parent / "static"
 IDLE_SECONDS = 10 * 60          # auto-lock
@@ -728,7 +728,7 @@ class App:
             if sys.platform == "win32":
                 os.startfile(str(path))   # noqa: S606 - opens Explorer on our own folder
                 opened = True
-            elif os.environ.get("PAM2PC_UI_NO_OPEN") != "1":
+            elif os.environ.get("IMW_UI_NO_OPEN") != "1":
                 tool = "open" if sys.platform == "darwin" else "xdg-open"
                 if shutil.which(tool):
                     subprocess.Popen([tool, str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -850,7 +850,7 @@ def make_handler(app, port, scheme="https"):
     secure = "; Secure" if scheme == "https" else ""
 
     class Handler(BaseHTTPRequestHandler):
-        server_version = "pam2pc-ui"
+        server_version = "IMW"
         sys_version = ""
         timeout = 60      # a browser that opens a connection and stops talking does not hold a thread
 
@@ -877,7 +877,7 @@ def make_handler(app, port, scheme="https"):
         def _cookie(self):
             for part in (self.headers.get("Cookie") or "").split(";"):
                 k, _, v = part.strip().partition("=")
-                if k == "pam2pc_sid":
+                if k == "imw_sid":
                     return v
             return None
 
@@ -887,7 +887,7 @@ def make_handler(app, port, scheme="https"):
             origin = self.headers.get("Origin")
             if origin and origin not in {f"{scheme}://{h}" for h in allowed_hosts}:
                 return "bad origin"
-            if mutating and self.headers.get("X-Pam2pc") != "1":
+            if mutating and self.headers.get("X-IMW") != "1":
                 return "missing header"
             return None
 
@@ -940,13 +940,13 @@ def make_handler(app, port, scheme="https"):
                         app.launch_token = None
                         app.sid = secrets.token_urlsafe(32)
                         app.unlocked = False
-                        cookie = f"pam2pc_sid={app.sid}; HttpOnly; SameSite=Strict; Path=/{secure}"
+                        cookie = f"imw_sid={app.sid}; HttpOnly; SameSite=Strict; Path=/{secure}"
                         return self._send(HTTPStatus.SEE_OTHER, b"", "text/plain",
                                           {"Location": "/", "Set-Cookie": cookie})
                 if not self._session_ok():
                     return self._send(HTTPStatus.UNAUTHORIZED,
                                       b"<p>Session ended or not started. Close this tab and run "
-                                      b"<code>python -m pam2pc ui</code> again to get a new link.</p>",
+                                      b"<code>python -m imw ui</code> again to get a new link.</p>",
                                       "text/html; charset=utf-8")
                 return self._send(HTTPStatus.OK, (STATIC / "index.html").read_bytes(),
                                   "text/html; charset=utf-8")
@@ -967,7 +967,7 @@ def make_handler(app, port, scheme="https"):
                     return self._send(exc.status, {"error": str(exc)})
                 stamp = time.strftime("%Y%m%d-%H%M%S")
                 return self._send(HTTPStatus.OK, text.encode("utf-8"), "text/csv; charset=utf-8",
-                                  {"Content-Disposition": f'attachment; filename="pam2pc_{what}_{stamp}.csv"'})
+                                  {"Content-Disposition": f'attachment; filename="imw_{what}_{stamp}.csv"'})
             name = App.OPEN_ROUTES.get((method, url.path))
             if name:
                 self._unlocked(touch=False)          # applies the idle lock before answering

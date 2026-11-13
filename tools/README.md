@@ -4,7 +4,7 @@
 
 ```
 python tools/generate_sample_pack.py --out sample_workspace
-python -m pam2pc ui --workspace sample_workspace
+python -m imw ui --workspace sample_workspace
 ```
 
 The pack is a Workbench workspace. It holds a starter `config.json` and an `inbox/` with four files:
@@ -30,7 +30,7 @@ Everything in it is fake. It deliberately contains the problems a real migration
 `generate_synthetic_delinea.py` creates realistic **synthetic** Delinea Secret Server data, so the pipeline can be tested without access to Delinea. It writes three files:
 - a multi-template export with Secret IDs (metadata only by default)
 - a permissions report
-- a matching pam2pc config
+- a matching Workbench config
 
 The data deliberately includes the messy cases: an unmapped template, duplicate names, missing addresses, unpermissioned folders, mixed permissions and secret-level overrides.
 
@@ -51,5 +51,5 @@ Group order for `--groups`:
 `--with-values` adds fake password values, to mimic a full export. Convert the output with:
 
 ```
-python -m pam2pc convert -i synthetic/delinea_export_synthetic.csv -p synthetic/delinea_permissions_synthetic.csv -c synthetic/mapping_config_synthetic.json -o synthetic_out
+python -m imw convert -i synthetic/delinea_export_synthetic.csv -p synthetic/delinea_permissions_synthetic.csv -c synthetic/mapping_config_synthetic.json -o synthetic_out
 ```

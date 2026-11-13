@@ -4,10 +4,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pam2pc.config import config_from_dict, load_config
-from pam2pc.model import Grant, SourceRecord, split_folder
-from pam2pc.naming import Namer, default_layers
-from pam2pc.transform import Permissions, build_plan, member_target, safe_settings
+from imw.config import config_from_dict, load_config
+from imw.model import Grant, SourceRecord, split_folder
+from imw.naming import Namer, default_layers
+from imw.transform import Permissions, build_plan, member_target, safe_settings
 
 
 def rec(folder, username="admin", address="h1.corp.example.com", grants=None, extra=None, name=""):
@@ -41,7 +41,7 @@ class DirectorySources(unittest.TestCase):
         self.assertEqual(member_target("jdoe", cfg, "User"), ("jdoe", "abc-guid", "Users"))
 
     def test_member_types(self):
-        from pam2pc.transform import normalize_member_type
+        from imw.transform import normalize_member_type
         self.assertEqual([normalize_member_type(v) for v in ("user", "GROUPS", "Role", "", "weird")],
                          ["User", "Group", "Role", "Group", "Group"])
         self.assertEqual(normalize_member_type("", "User"), "User")

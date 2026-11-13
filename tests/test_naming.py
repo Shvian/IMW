@@ -2,12 +2,12 @@
 
 import unittest
 
-from test_pam2pc import SAMPLES, Base, read_csv  # noqa: F401
+from test_imw import SAMPLES, Base, read_csv  # noqa: F401
 
-from pam2pc.config import config_from_dict, load_config
-from pam2pc.model import SourceRecord, split_folder
-from pam2pc.naming import Namer
-from pam2pc.transform import build_plan
+from imw.config import config_from_dict, load_config
+from imw.model import SourceRecord, split_folder
+from imw.naming import Namer
+from imw.transform import build_plan
 
 
 def rec(folder, username="admin", type_=""):
@@ -111,7 +111,7 @@ class ConventionInPlan(Base):
         self.assertEqual([p.safe for p in plan.accounts], ["P-WIN-SVR-LA", "P-WIN-SVR-LS"])
 
     def test_folder_rules_beat_group_rules_by_default(self):
-        from pam2pc.model import Grant
+        from imw.model import Grant
         r = rec("\\Applications\\Payments", "svc_pay", "Windows Account")
         r.grants = [Grant("CORP\\Payments-Team", "Owner")]
         user = {"group_rules": [{"group": "CORP\\Payments-Team", "safe": "ROLE-PAY"}],
@@ -127,7 +127,7 @@ class ConventionInPlan(Base):
         cfg = config_from_dict({"group_rules": [
             {"group_pattern": "^CORP\\\\APP-(.+)-Owners$", "safe": "{env}-{1}-{tech}-{flavor}-{acct}"}]})
         r = rec("\\Production\\Payments", "svc_pay", "Windows Account")
-        from pam2pc.model import Grant
+        from imw.model import Grant
         r.grants = [Grant("CORP\\APP-PAY-Owners", "Owner")]
         plan = build_plan([r], cfg)
         self.assertEqual(plan.accounts[0].safe, "P-PAY-SVR-WIN-LS")

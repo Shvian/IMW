@@ -1,13 +1,13 @@
 """HTTPS for the Workbench with a self-signed certificate, standard library only.
 
 The certificate is made on the computer the Workbench runs on, in pure Python (RSA 2048,
-SHA-256), because Windows has no openssl and pam2pc installs nothing. Its subject is this
+SHA-256), because Windows has no openssl and the Workbench installs nothing. Its subject is this
 computer's name, and its alternative names (SAN) are this computer's host name and full DNS
 name, localhost, 127.0.0.1 and ::1. It is valid for 397 days, is remade when the computer's
 name no longer matches, and is kept in <workspace>/tls/ so you can trust it once:
 
   workbench.crt         the certificate (public). Double-click it, or run
-                        "python -m pam2pc ui --trust-cert", to trust it for your Windows user.
+                        "python -m imw ui --trust-cert", to trust it for your Windows user.
   workbench.key.dpapi   the private key, encrypted with Windows DPAPI for your user.
                         On other systems (tests only) workbench.key.pem, readable by you only.
 
@@ -271,6 +271,7 @@ def cert_expiry(cert_pem):
 
 def _dpapi():
     from ..protect import DpapiProtector
+    # The old name stays in this key: changing it would make existing certificates unreadable.
     return DpapiProtector(b"pam2pc-workbench-tls")
 
 

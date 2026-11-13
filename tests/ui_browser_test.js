@@ -1,14 +1,14 @@
-// End-to-end browser test of the pam2pc UI (needs Node.js + Playwright).
+// End-to-end browser test of the Idira Migration Workbench UI (needs Node.js + Playwright).
 //
-//   PAM2PC_UI_TEST_PASSWORD=test-pass PAM2PC_UI_NO_OPEN=1 \
-//     python -m pam2pc ui -w <ws> --no-browser --insecure-plaintext-secrets > ui.log &
+//   IMW_UI_TEST_PASSWORD=test-pass IMW_UI_NO_OPEN=1 \
+//     python -m imw ui -w <ws> --no-browser --insecure-plaintext-secrets > ui.log &
 //   (copy samples/delinea_export.csv, delinea_permissions.csv, keepass_export.xml,
 //    accounts_by_group.xlsx into <ws>/inbox first)
 //   node tests/ui_browser_test.js ui.log [screenshot-folder]
 const { chromium } = require('playwright');
 const fs = require('fs');
 
-const PASSWORD = process.env.PAM2PC_UI_TEST_PASSWORD || 'test-pass';
+const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
 
 (async () => {
   const log = fs.readFileSync(process.argv[2], 'utf8');

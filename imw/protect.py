@@ -59,7 +59,7 @@ class DpapiProtector:
         flags = 0x1  # CRYPTPROTECT_UI_FORBIDDEN
         try:
             if protect:
-                ok = fn(ct.byref(inb), "pam2pc", ct.byref(ent), None, None, flags, ct.byref(out))
+                ok = fn(ct.byref(inb), "Idira Migration Workbench", ct.byref(ent), None, None, flags, ct.byref(out))
             else:
                 ok = fn(ct.byref(inb), None, ct.byref(ent), None, None, flags, ct.byref(out))
             if not ok:

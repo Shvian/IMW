@@ -4,10 +4,10 @@ import csv
 import sys
 import unittest
 
-from test_pam2pc import SAMPLES, Base, read_csv  # noqa: F401
+from test_imw import SAMPLES, Base, read_csv  # noqa: F401
 
-from pam2pc.protect import DpapiProtector, ProtectError, new_salt
-from pam2pc.store import Store, StoreError
+from imw.protect import DpapiProtector, ProtectError, new_salt
+from imw.store import Store, StoreError
 
 
 class StoreFlow(Base):

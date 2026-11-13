@@ -16,7 +16,7 @@ from .config import all_roles, resolve_role
 from .model import Grant, split_folder
 from .naming import Namer
 
-log = logging.getLogger("pam2pc.transform")
+log = logging.getLogger("imw.transform")
 
 NO_PLATFORM = "(none)"          # an edit that removes the platform on purpose
 NO_NAME = "(none)"              # an edit that leaves the account name empty: Privilege Cloud names it

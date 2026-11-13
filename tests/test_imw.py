@@ -1,4 +1,4 @@
-"""Tests for pam2pc. Run: python -m unittest discover -s tests   (from the repo root)."""
+"""Tests for the Idira Migration Workbench (imw package). Run: python -m unittest discover -s tests   (from the repo root)."""
 
 import csv
 import io
@@ -15,10 +15,10 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 
-from pam2pc import cli  # noqa: E402
-from pam2pc.adapters import AdapterError, detect_adapter, get_adapter  # noqa: E402
-from pam2pc.config import load_config  # noqa: E402
-from pam2pc.transform import _changed, build_plan, resolve_collisions, sanitize_safe_name  # noqa: E402
+from imw import cli  # noqa: E402
+from imw.adapters import AdapterError, detect_adapter, get_adapter  # noqa: E402
+from imw.config import load_config  # noqa: E402
+from imw.transform import _changed, build_plan, resolve_collisions, sanitize_safe_name  # noqa: E402
 from xlsx_writer import SAMPLE, write_xlsx  # noqa: E402
 
 SAMPLES = ROOT / "samples"
