@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<KeePassFile>
+	<Meta>
+		<Generator>KeePass</Generator>
+		<DatabaseName>Ops Vault</DatabaseName>
+		<RecycleBinEnabled>True</RecycleBinEnabled>
+		<RecycleBinUUID>cmVjeWNsZWJpbjAwMDAwMA==</RecycleBinUUID>
+	</Meta>
+	<Root>
+		<Group>
+			<UUID>cm9vdDAwMDAwMDAwMDAwMA==</UUID>
+			<Name>Ops Vault</Name>
+			<Group>
+				<UUID>bGludXgwMDAwMDAwMDAwMA==</UUID>
+				<Name>Linux</Name>
+				<Group>
+					<UUID>d2ViMDAwMDAwMDAwMDAwMA==</UUID>
+					<Name>Web Servers: DMZ/Edge</Name>
+					<Entry>
+						<UUID>ZW50cnkwMDAwMDAwMDAwMQ==</UUID>
+						<String><Key>Title</Key><Value>root@web02</Value></String>
+						<String><Key>UserName</Key><Value>root</Value></String>
+						<String><Key>Password</Key><Value ProtectGeneral="True">Kp!root-web02</Value></String>
+						<String><Key>URL</Key><Value>ssh://web02.example.com:22</Value></String>
+						<String><Key>Notes</Key><Value>DMZ web node</Value></String>
+						<String><Key>Port</Key><Value>22</Value></String>
+						<Binary><Key>web02_notes.txt</Key><Value Ref="0" /></Binary>
+						<History>
+							<Entry>
+								<UUID>ZW50cnkwMDAwMDAwMDAwMQ==</UUID>
+								<String><Key>Title</Key><Value>root@web02</Value></String>
+								<String><Key>Password</Key><Value>old-password</Value></String>
+							</Entry>
+						</History>
+					</Entry>
+				</Group>
+				<Entry>
+					<UUID>ZW50cnkwMDAwMDAwMDAwMg==</UUID>
+					<String><Key>Title</Key><Value>deploy key build01</Value></String>
+					<String><Key>UserName</Key><Value>deploy</Value></String>
+					<String><Key>Password</Key><Value></Value></String>
+					<String><Key>URL</Key><Value>build01.example.com</Value></String>
+					<String><Key>SSH Private Key</Key><Value>-----BEGIN OPENSSH PRIVATE KEY-----
+FAKEKEYDATA
+-----END OPENSSH PRIVATE KEY-----</Value></String>
+				</Entry>
+			</Group>
+			<Group>
+				<UUID>d2ViYXBwczAwMDAwMDAwMA==</UUID>
+				<Name>Network</Name>
+				<Entry>
+					<UUID>ZW50cnkwMDAwMDAwMDAwMw==</UUID>
+					<String><Key>Title</Key><Value>fw01 admin GUI</Value></String>
+					<String><Key>UserName</Key><Value>admin</Value></String>
+					<String><Key>Password</Key><Value>Fw#01admin</Value></String>
+					<String><Key>URL</Key><Value>https://fw01.example.com/login</Value></String>
+				</Entry>
+				<Entry>
+					<UUID>ZW50cnkwMDAwMDAwMDAwNA==</UUID>
+					<String><Key>Title</Key><Value>switch core01</Value></String>
+					<String><Key>UserName</Key><Value></Value></String>
+					<String><Key>Password</Key><Value>Sw!tch01</Value></String>
+					<String><Key>URL</Key><Value>core01.example.com</Value></String>
+				</Entry>
+			</Group>
+			<Group>
+				<UUID>cmVjeWNsZWJpbjAwMDAwMA==</UUID>
+				<Name>Recycle Bin</Name>
+				<Entry>
+					<UUID>ZW50cnkwMDAwMDAwMDAwNQ==</UUID>
+					<String><Key>Title</Key><Value>deleted entry</Value></String>
+					<String><Key>UserName</Key><Value>gone</Value></String>
+					<String><Key>Password</Key><Value>gone</Value></String>
+				</Entry>
+			</Group>
+		</Group>
+	</Root>
+</KeePassFile>

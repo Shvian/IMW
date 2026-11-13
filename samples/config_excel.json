@@ -1,0 +1,17 @@
+{
+  "_comment": "Sample config for accounts_by_group.xlsx: one row per account and AD group.",
+  "group_rules": [
+    {"group": "CORP\\PAM-Unix-Admins", "safe": "UNIX-Batch", "min_role": "Owner"}
+  ],
+  "fallback_strategy": "unmapped",
+  "directory_map": {"CORP": "corp.example.com", "*": "Vault"},
+  "account_property_map": {"Port": "Port"},
+  "sources": {
+    "table": {
+      "sheet": "Accounts",
+      "header_row": 2,
+      "group_column": "AD Group",
+      "permission_column": "Access Level"
+    }
+  }
+}

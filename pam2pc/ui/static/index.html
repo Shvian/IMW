@@ -1,0 +1,638 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pam2pc Migration Workbench</title>
+<style>
+:root {
+  --bg: #f5f6f8; --panel: #fff; --ink: #1d2433; --muted: #5d6677; --line: #dde1e8;
+  --accent: #2357d9; --accent-ink: #fff; --ok: #1b7f4a; --warn: #a15c00; --err: #b42318;
+  --ok-bg: #e6f4ec; --warn-bg: #fff3e0; --err-bg: #fdecea; --sel: #eaf0ff;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.45 "Segoe UI", system-ui, sans-serif; color: var(--ink); background: var(--bg); }
+header { background: #16213a; color: #fff; padding: 10px 20px; display: flex; align-items: center; gap: 16px; }
+header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+header .sub { color: #aab4c8; font-size: 12px; }
+header .spacer { flex: 1; }
+.layout { display: flex; min-height: calc(100vh - 44px); }
+nav { width: 230px; background: var(--panel); border-right: 1px solid var(--line); padding: 14px 10px; flex-shrink: 0; }
+nav button { display: flex; width: 100%; align-items: center; gap: 10px; text-align: left; border: 0; background: none;
+  padding: 9px 10px; border-radius: 6px; font: inherit; color: var(--ink); cursor: pointer; }
+nav button:hover { background: var(--bg); }
+nav button.active { background: var(--sel); color: var(--accent); font-weight: 600; }
+nav .num { width: 22px; height: 22px; border-radius: 50%; background: var(--line); display: inline-flex;
+  align-items: center; justify-content: center; font-size: 12px; font-weight: 600; flex-shrink: 0; }
+nav button.active .num { background: var(--accent); color: #fff; }
+nav hr { border: 0; border-top: 1px solid var(--line); margin: 10px 0; }
+main { flex: 1; padding: 20px 24px; min-width: 0; }
+h2 { margin: 0 0 4px; font-size: 20px; }
+.lead { color: var(--muted); margin: 0 0 16px; max-width: 900px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+.card h3 { margin: 0 0 10px; font-size: 15px; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+.stat { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+.stat b { display: block; font-size: 22px; }
+.stat span { color: var(--muted); font-size: 12px; }
+button.btn, a.btn { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  padding: 7px 14px; border-radius: 6px; cursor: pointer; text-decoration: none; }
+button.btn:hover { border-color: #b8c0cc; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button.danger { color: var(--err); border-color: #f0c2bd; }
+button:disabled { opacity: .5; cursor: default; }
+select, input[type=text], input[type=search], textarea { font: inherit; padding: 6px 8px; border: 1px solid var(--line);
+  border-radius: 6px; background: #fff; color: var(--ink); }
+textarea { width: 100%; font-family: Consolas, monospace; font-size: 12px; }
+label.inline { display: inline-flex; gap: 6px; align-items: center; }
+table { border-collapse: collapse; width: 100%; background: var(--panel); }
+th, td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+th { background: #f0f2f6; font-weight: 600; font-size: 12px; position: sticky; top: 0; cursor: default; white-space: nowrap; }
+th.sort { cursor: pointer; }
+tr.clickable:hover td { background: #f8f9fc; cursor: pointer; }
+tr.selected td { background: var(--sel); }
+td.notes { color: var(--muted); font-size: 12px; max-width: 380px; }
+.tablewrap { max-height: 60vh; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+.pill { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+.pill.OK { background: var(--ok-bg); color: var(--ok); }
+.pill.REVIEW { background: var(--warn-bg); color: var(--warn); }
+.pill.ERROR { background: var(--err-bg); color: var(--err); }
+.pill.N { background: #eee; color: #555; }
+.msg { padding: 10px 12px; border-radius: 6px; margin: 10px 0; }
+.msg.ok { background: var(--ok-bg); color: var(--ok); }
+.msg.err { background: var(--err-bg); color: var(--err); }
+.msg.warn { background: var(--warn-bg); color: var(--warn); }
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+code { background: #f0f2f6; padding: 1px 5px; border-radius: 4px; font-size: 12px; word-break: break-all; }
+.drawer { position: fixed; right: 0; top: 0; bottom: 0; width: 480px; max-width: 100vw; background: var(--panel);
+  border-left: 1px solid var(--line); box-shadow: -6px 0 20px rgba(0,0,0,.08); padding: 18px; overflow: auto; z-index: 10; }
+.drawer dl { display: grid; grid-template-columns: 140px 1fr; gap: 4px 10px; margin: 0; }
+.drawer dt { color: var(--muted); }
+.drawer dd { margin: 0; word-break: break-word; }
+.editor td input, .editor td select { width: 100%; }
+.editor td.x { width: 40px; }
+.roles td.c { text-align: center; }
+.roles .tick { color: var(--ok); font-weight: 700; }
+.roles th input { width: auto; }
+.hidden { display: none !important; }
+.actionbar { position: sticky; bottom: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  padding: 10px; margin-top: 10px; }
+.busy { position: fixed; inset: 0; background: rgba(255,255,255,.6); display: flex; align-items: center; justify-content: center;
+  font-weight: 600; z-index: 20; }
+</style>
+</head>
+<body>
+<header>
+  <h1>pam2pc Migration Workbench</h1>
+  <span class="sub" id="hdr-sub"></span>
+  <span class="spacer"></span>
+  <button class="btn" id="logout" style="background:transparent;color:#fff;border-color:#45526e">End session</button>
+</header>
+<div class="layout">
+  <nav id="nav">
+    <button data-page="overview"><span class="num">⌂</span>Overview</button>
+    <hr>
+    <button data-page="load"><span class="num">1</span>Load exports</button>
+    <button data-page="rules"><span class="num">2</span>Mapping rules</button>
+    <button data-page="review"><span class="num">3</span>Review &amp; change</button>
+    <button data-page="safes"><span class="num">4</span>Safes &amp; members</button>
+    <button data-page="output"><span class="num">5</span>Create upload files</button>
+    <hr>
+    <button data-page="activity"><span class="num">≡</span>Activity log</button>
+  </nav>
+  <main id="main"></main>
+</div>
+<div id="drawer" class="drawer hidden"></div>
+<div id="busy" class="busy hidden">Working…</div>
+
+<script>
+"use strict";
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let STATE = {}, PAGE = "overview", LAST_OUT = "";
+const REVIEW = { view: "review", filters: {}, page: 0, sort: "target_safe", desc: false, selected: new Set(), data: null };
+
+async function api(path, body) {
+  const opts = body === undefined ? { headers: { "X-Pam2pc": "1" } }
+    : { method: "POST", headers: { "Content-Type": "application/json", "X-Pam2pc": "1" }, body: JSON.stringify(body) };
+  $("#busy").classList.toggle("hidden", body === undefined);
+  try {
+    const r = await fetch(path, opts);
+    const data = await r.json().catch(() => ({ error: "Unexpected response" }));
+    if (r.status === 401) { document.body.innerHTML = "<p style='padding:30px'>Session ended. Restart the UI to get a new link.</p>"; throw new Error("session"); }
+    if (!r.ok) throw new Error(data.error || r.statusText);
+    return data;
+  } finally { $("#busy").classList.add("hidden"); }
+}
+function msg(el, kind, text) { el.innerHTML = `<div class="msg ${kind}">${esc(text)}</div>`; }
+
+async function refresh() {
+  STATE = await api("/api/state");
+  $("#hdr-sub").textContent = STATE.has_db
+    ? `${STATE.records} records · secrets ${({dpapi: "encrypted (DPAPI)", none: "not stored", plain: "PLAINTEXT (test mode)"})[STATE.protector] || ""}`
+    : "No data loaded yet";
+}
+function go(page) {
+  PAGE = page;
+  document.querySelectorAll("#nav button").forEach(b => b.classList.toggle("active", b.dataset.page === page));
+  closeDrawer();
+  PAGES[page]().catch(e => { if (e.message !== "session") msg($("#main"), "err", e.message); });
+}
+document.querySelectorAll("#nav button").forEach(b => b.onclick = () => go(b.dataset.page));
+$("#logout").onclick = async () => { await api("/api/logout", {}); document.body.innerHTML = "<p style='padding:30px'>Session ended. You can close this tab.</p>"; };
+
+const PAGES = {};
+
+/* ---------------- Overview ---------------- */
+PAGES.overview = async () => {
+  await refresh();
+  const m = $("#main");
+  if (!STATE.has_db) {
+    m.innerHTML = `<h2>Welcome</h2><p class="lead">This workbench turns exports from Delinea, KeePass, spreadsheets and other PAM tools into files ready to upload to Privilege Cloud. Nothing here connects to any system.</p>
+      <div class="card"><h3>Get started</h3><ol>
+        <li>Copy your export files into <code>${esc(STATE.inbox)}</code></li>
+        <li>Go to <b>1. Load exports</b> and load them.</li>
+        <li>Set up <b>2. Mapping rules</b>, check the results in <b>3. Review &amp; change</b>, then <b>5. Create upload files</b>.</li></ol>
+        <button class="btn primary" onclick="go('load')">Load exports</button></div>`;
+    return;
+  }
+  const c = STATE.status_counts || {};
+  let next = "";
+  if (STATE.stale) next = `<div class="msg warn">Some loaded records haven't been mapped yet. Open <b>2. Mapping rules</b> and click Save &amp; apply.</div>`;
+  else if (c.ERROR) next = `<div class="msg warn">${c.ERROR} accounts have errors and won't be uploaded. Open <b>3. Review &amp; change</b> → "Errors".</div>`;
+  m.innerHTML = `<h2>Overview</h2><p class="lead">Where the migration stands right now.</p>
+    <div class="stats">
+      <div class="stat"><b>${STATE.records}</b><span>records loaded</span></div>
+      <div class="stat"><b>${STATE.to_upload}</b><span>will be uploaded</span></div>
+      <div class="stat"><b style="color:var(--warn)">${c.REVIEW || 0}</b><span>need a look</span></div>
+      <div class="stat"><b style="color:var(--err)">${c.ERROR || 0}</b><span>errors (not uploaded)</span></div>
+      <div class="stat"><b>${STATE.excluded}</b><span>excluded by you</span></div>
+      <div class="stat"><b>${STATE.safes}</b><span>Safes (${STATE.invalid_safes} renamed)</span></div>
+      <div class="stat"><b>${STATE.edits}</b><span>accounts you changed</span></div>
+    </div>${next}
+    <div class="card" style="margin-top:16px"><h3>Loaded files</h3>
+    <table><tr><th>#</th><th>Source</th><th>File</th><th>Records</th><th>Loaded</th><th>By</th></tr>
+    ${STATE.inputs.map(i => `<tr><td>${i.id}</td><td>${esc(i.source)}</td><td class="small">${esc(i.path)}</td><td>${i.records}</td><td>${esc(i.loaded_utc)}</td><td>${esc(i.loaded_by)}</td></tr>`).join("")}</table></div>
+    <p class="muted small">Workspace: <code>${esc(STATE.workspace)}</code> · last mapped ${esc(STATE.mapped || "never")}</p>`;
+};
+
+/* ---------------- 1. Load ---------------- */
+PAGES.load = async () => {
+  await refresh();
+  const files = STATE.inbox_files;
+  const srcOpts = (sel) => `<option value="">Auto-detect${sel ? " (" + esc(sel) + ")" : ""}</option>` +
+    Object.entries(STATE.sources).map(([k, d]) => `<option value="${k}">${esc(k)}: ${esc(d)}</option>`).join("");
+  $("#main").innerHTML = `<h2>1. Load exports</h2>
+    <p class="lead">Copy export files into the inbox folder, tick the ones to load, then click Load. ${STATE.protector === "plain" ? "" : "Secrets are encrypted as they are stored, so you can securely delete each export straight after loading it."} Loading a file again replaces its earlier records and keeps your changes.</p>
+    <div class="card"><h3>Inbox: <code>${esc(STATE.inbox)}</code></h3>
+    ${files.length ? `<table><tr><th></th><th>File</th><th>Size</th><th>Type</th><th>Use as permissions file</th><th></th></tr>
+      ${files.map((f, i) => `<tr><td><input type="checkbox" class="pick" data-i="${i}" ${f.guess && !f.permissions ? "checked" : ""}></td>
+        <td>${esc(f.name)}</td><td>${(f.size / 1024).toFixed(1)} KB</td>
+        <td><select class="src" data-i="${i}">${srcOpts(f.guess)}</select></td>
+        <td><input type="radio" name="perm" value="${esc(f.name)}" ${f.permissions && files.filter(x => x.permissions).length === 1 ? "checked" : ""}>${f.permissions ? ' <span class="muted small">looks like one</span>' : ""}</td>
+        <td><button class="btn danger del" data-name="${esc(f.name)}">Securely delete</button></td></tr>`).join("")}
+      <tr><td></td><td colspan="3" class="muted small">A permissions file lists groups per folder or record (columns: Folder Path, Secret Name, Secret ID, Group, Permission). Use one when the export itself has no access data, as with Delinea and KeePass.</td>
+      <td><input type="radio" name="perm" value="" ${files.filter(x => x.permissions).length === 1 ? "" : "checked"}> none</td><td></td></tr></table>
+      <div class="row" style="margin-top:12px"><button class="btn primary" id="go-load">Load selected files</button>
+      <button class="btn" id="re">Refresh list</button></div>`
+      : `<p class="muted">The inbox is empty. Copy your export files into the folder above, then <button class="btn" id="re">Refresh</button></p>`}
+    <div id="load-msg"></div></div>`;
+  $("#re").onclick = () => go("load");
+  document.querySelectorAll(".pick").forEach(cb => {
+    const radio = () => document.querySelector(`input[name=perm][value="${CSS.escape(files[cb.dataset.i].name)}"]`);
+    cb.onchange = () => { if (cb.checked && radio().checked) document.querySelector("input[name=perm][value='']").checked = true; };
+  });
+  document.querySelectorAll(".del").forEach(b => b.onclick = async () => {
+    if (!confirm(`Overwrite and delete ${b.dataset.name}? This can't be undone.`)) return;
+    try { await api("/api/inbox/delete", { name: b.dataset.name }); go("load"); } catch (e) { msg($("#load-msg"), "err", e.message); }
+  });
+  const btn = $("#go-load");
+  if (btn) btn.onclick = async () => {
+    const perm = document.querySelector("input[name=perm]:checked").value;
+    const picks = [...document.querySelectorAll(".pick:checked")].map(cb => ({
+      name: files[cb.dataset.i].name, source: document.querySelector(`.src[data-i="${cb.dataset.i}"]`).value }))
+      .filter(f => f.name !== perm);
+    try {
+      const r = await api("/api/ingest", { files: picks, permissions: perm });
+      await refresh();
+      $("#load-msg").innerHTML = `<div class="msg ok">${r.results.map(x => `${esc(x.name)}: ${x.records} records loaded as ${esc(x.source)}${x.replaced ? ` (${x.replaced} replaced)` : ""}`).join("<br>")}
+        <br>Mapping rules applied. ${STATE.protector === "dpapi" ? "You can now securely delete the export files." : ""}</div>
+        <button class="btn primary" onclick="go('rules')">Next: mapping rules</button>`;
+    } catch (e) { msg($("#load-msg"), "err", e.message); }
+  };
+};
+
+/* ---------------- 2. Rules ---------------- */
+const PERM_GROUPS = [
+  ["Access", [["useAccounts", "Use accounts"], ["retrieveAccounts", "Retrieve accounts"], ["listAccounts", "List accounts"]]],
+  ["Account management", [["addAccounts", "Add accounts"], ["updateAccountContent", "Update account content"],
+    ["updateAccountProperties", "Update account properties"], ["initiateCPMAccountManagementOperations", "Initiate CPM account management operations"],
+    ["specifyNextAccountContent", "Specify next account content"], ["renameAccounts", "Rename accounts"],
+    ["deleteAccounts", "Delete accounts"], ["unlockAccounts", "Unlock accounts"]]],
+  ["Safe management", [["manageSafe", "Manage Safe"], ["manageSafeMembers", "Manage Safe members"], ["backupSafe", "Backup Safe"]]],
+  ["Monitoring", [["viewAuditLog", "View audit log"], ["viewSafeMembers", "View Safe members"]]],
+  ["Workflow", [["requestsAuthorizationLevel1", "Authorize account requests, level 1"],
+    ["requestsAuthorizationLevel2", "Authorize account requests, level 2"], ["accessWithoutConfirmation", "Access Safe without confirmation"]]],
+  ["Advanced", [["createFolders", "Create folders"], ["deleteFolders", "Delete folders"], ["moveAccountsAndFolders", "Move accounts and folders"]]],
+];
+let ROLE_NAMES = () => [];
+function editorTable(id, cols, rows) {
+  return `<table class="editor" id="${id}"><tr>${cols.map(c => `<th>${esc(c.label)}</th>`).join("")}<th></th></tr>
+    ${rows.map(r => editorRow(cols, r)).join("")}</table>
+    <button class="btn small" data-add="${id}">+ Add row</button>`;
+}
+function roleOptions(value, blank) {
+  const names = ROLE_NAMES();
+  const opts = (blank ? [""] : []).concat(names);
+  if (value && !names.includes(value)) opts.push(value);
+  return opts.map(o => `<option ${o === (value || "") ? "selected" : ""}>${esc(o)}</option>`).join("");
+}
+function editorRow(cols, r = {}) {
+  return `<tr>${cols.map(c => c.roles
+    ? `<td><select class="role-select" data-blank="${c.blank ? 1 : ""}" data-k="${c.key}">${roleOptions(r[c.key] || "", c.blank)}</select></td>`
+    : c.options
+    ? `<td><select data-k="${c.key}">${c.options.map(o => `<option ${o === (r[c.key] || "") ? "selected" : ""}>${esc(o)}</option>`).join("")}</select></td>`
+    : `<td><input type="text" data-k="${c.key}" value="${esc(r[c.key] || "")}" placeholder="${esc(c.ph || "")}"${c.list ? ` list="${c.list}"` : ""}></td>`).join("")}
+    <td class="x"><button class="btn small" title="Remove" onclick="this.closest('tr').remove()">✕</button></td></tr>`;
+}
+function readTable(id) {
+  return [...document.querySelectorAll(`#${id} tr`)].slice(1).map(tr => {
+    const o = {}; tr.querySelectorAll("[data-k]").forEach(i => { if (i.value.trim()) o[i.dataset.k] = i.value.trim(); }); return o;
+  }).filter(o => Object.keys(o).length);
+}
+const normName = (t) => String(t).toLowerCase().split(/[\s\-_/\\:;,.()\[\]{}"'&+]+/).filter(Boolean).join(" ");
+PAGES.rules = async () => {
+  const { config: cfg, hints, presets } = await api("/api/config");
+  const LEGACY = { owner: "Full", editor: "Accounts manager", user: "Read only", viewer: "List only" };
+  const GR = [{ key: "group", label: "Group (exact name)", ph: "CORP\\Unix-Admins", list: "dl-groups" },
+              { key: "group_pattern", label: "…or pattern (advanced)", ph: "^CORP\\\\APP-(.+)-Owners$" },
+              { key: "safe", label: "Target Safe", ph: "UNIX-Admins or APP-{1}" },
+              { key: "min_role", label: "Only if role at least", roles: true, blank: true }];
+  const FR = [{ key: "folder_prefix", label: "Folder (and everything under it)", ph: "\\IT\\Network", list: "dl-folders" },
+              { key: "safe", label: "Target Safe", ph: "NET-Devices or {convention}" }];
+  const PM = [{ key: "type", label: "Record type / template", list: "dl-types" }, { key: "platform", label: "Platform ID", ph: "WinDomain" }];
+  const DM = [{ key: "domain", label: "Domain prefix in group names", ph: "CORP (* = everything else)" }, { key: "dir", label: "Directory (searchIn)", ph: "corp.example.com" }];
+  const AB = [{ key: "word", label: "Word or phrase" }, { key: "code", label: "Code (1-4 letters)", ph: "e.g. BOS" }];
+  const PR = [{ key: "role", label: "Source permission word" }, { key: "to", label: "Privilege Cloud role", roles: true }];
+  const platRows = Object.entries(cfg.platform_map).map(([type, platform]) => ({ type, platform }));
+  hints.types_without_platform.forEach(t => { if (t && !platRows.some(r => r.type.toLowerCase() === t.toLowerCase())) platRows.unshift({ type: t, platform: "" }); });
+  const fixRole = (r) => r ? (LEGACY[String(r).toLowerCase()] && !(cfg.custom_roles || {})[r] ? LEGACY[String(r).toLowerCase()] : r) : "";
+  const migrateRules = (rules) => rules.map(r => ({ ...r, min_role: fixRole(r.min_role || (r.min_permission ? ({owner:"Owner",edit:"Editor",view:"User",list:"Viewer"})[String(r.min_permission).toLowerCase()] || "" : "")) }));
+  const folderNames = new Set((hints.folders || []).flatMap(f => f.name.split("\\").filter(Boolean)).map(normName));
+  const abbr = cfg.safe_convention.abbreviations || {};
+  let folderAbbr = Object.fromEntries(Object.entries(abbr).filter(([w]) => folderNames.has(normName(w))));
+  const otherAbbr = Object.entries(abbr).filter(([w]) => !folderNames.has(normName(w))).map(([word, code]) => ({ word, code }));
+  let customRoles = Object.entries({ ...(cfg.role_permissions || {}), ...(cfg.custom_roles || {}) }).filter(([n]) => !presets[n]).map(([name, perms]) => ({ name, perms: new Set(perms) }));
+  ROLE_NAMES = () => Object.keys(presets).concat(customRoles.map(r => r.name.trim()).filter(Boolean));
+  const fb = [["convention", "the folder structure, abbreviated (\\Applications\\Storefront\\Prod → APP-SF-P)"],
+              ["folder_leaf", "the last folder only (Prod)"], ["folder_path", "the whole folder path (Applications-Storefront-Prod)"],
+              ["unmapped", "nothing: use UNMAPPED so I decide"]];
+  $("#main").innerHTML = `<h2>2. Mapping rules</h2>
+    <p class="lead">These rules decide each account's Safe, platform and Safe members. Click <b>Save &amp; apply</b> to re-run them on everything loaded; your manual changes in step 3 always win over these rules.</p>
+    <datalist id="dl-groups">${(hints.groups || []).map(g => `<option value="${esc(g.name)}">${g.accounts} accounts</option>`).join("")}</datalist>
+    <datalist id="dl-folders">${(hints.folders || []).map(g => `<option value="${esc(g.name)}">${g.accounts} accounts</option>`).join("")}</datalist>
+    <datalist id="dl-types">${(hints.types || []).map(g => `<option value="${esc(g.name)}">${g.accounts} accounts</option>`).join("")}</datalist>
+    <div class="card"><h3>Safe from folder <span class="muted small">(the default: object-oriented Safes that follow your existing folders)</span></h3>
+      <div class="row"><label class="inline">Name each Safe after
+        <select id="fallback">${fb.map(([v, l]) => `<option value="${v}" ${cfg.fallback_strategy === v ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>
+        <label class="inline">Prefix every Safe with <input type="text" id="prefix" value="${esc(cfg.safe_name.prefix || "")}" size="8" placeholder="MIG-"></label></div>
+      <h4 style="margin:12px 0 6px">Exceptions: send a folder somewhere else <span class="muted small">(the most specific folder wins)</span></h4>
+      ${editorTable("t-fr", FR, cfg.folder_rules)}
+      <p class="muted small">Safe names are always cut to ${cfg.safe_name.max_length} characters, and the characters <code>${esc(cfg.safe_name.invalid_chars)}</code> become "${esc(cfg.safe_name.replacement)}".</p></div>
+    <div class="card"><h3>Safe naming convention</h3>
+      <p class="muted small">Your existing structure comes first: an account with folders gets a Safe named after its folder levels, in order, each one abbreviated.
+        Only accounts with no folders (flat KeePass files, spreadsheets) get the CyberArk example layers instead.</p>
+      <div class="row"><label class="inline">Accounts with folders <input type="text" id="conv-template" size="34" value="${esc(cfg.safe_convention.template)}"></label>
+        <label class="inline">Accounts with no folders <input type="text" id="conv-flat" size="34" value="${esc(cfg.safe_convention.template_no_folders || "")}"></label></div>
+      <div class="row"><label class="inline">Default environment <input type="text" id="conv-env" size="3" value="${esc(cfg.safe_convention.default_environment || "")}" placeholder="P"></label>
+        <label class="inline">Leave out folder levels <input type="text" id="conv-skip" size="30" value="${esc((cfg.safe_convention.skip_folder_levels || []).join(", "))}" placeholder="e.g. Root"></label></div>
+      <details style="margin:8px 0"><summary class="small">What can go in a template</summary>
+      <table class="small" style="margin:8px 0"><tr><th>Placeholder</th><th>Comes from</th><th>Examples</th></tr>
+        <tr><td><code>{folder}</code></td><td>every folder level, abbreviated, in order (<code>{folder_leaf}</code> = last level only)</td><td>APP-SF-P, BOS-HR</td></tr>
+        <tr><td><code>{env}</code></td><td>a folder word like Production, Dev, Test, QA (else the default environment). With <code>{env}</code> in the template the code moves to that spot; without it, it stays in place in the folder part</td><td>P, D, T, Q</td></tr>
+        <tr><td><code>{tech}</code></td><td>the platform</td><td>SVR, DB, NET, DOM, WKS</td></tr>
+        <tr><td><code>{flavor}</code></td><td>the platform</td><td>WIN, UNX, SQL, ORC, CSC</td></tr>
+        <tr><td><code>{acct}</code></td><td>the platform, refined by username (root, sa, svc_*, enable)</td><td>LA, DA, LS, DS, RT, SA, EN</td></tr></table>
+      <p class="muted small">Add <code>-{flavor}</code> or <code>-{acct}</code> to the folder template to split a folder's accounts into separate Safes by technology or account type.
+        A code already used earlier in the name is not repeated. If a name is too long, long folder names become initials first, then the top folder levels are left out.</p></details>
+      <h4 style="margin:12px 0 6px">Folder abbreviations <span class="muted small">(taken from the folders you loaded; type a code to change one)</span></h4>
+      <div id="conv-folders"><p class="muted small">${STATE.has_db ? "Loading…" : "Load some exports to see your folder names here."}</p></div>
+      <details style="margin-top:10px" ${otherAbbr.length ? "open" : ""}><summary class="small">Other words and phrases</summary>
+      ${editorTable("t-ab", AB, otherAbbr)}</details>
+      <div class="row" style="margin-top:10px"><button class="btn" id="conv-preview">Preview names</button><span class="muted small">uses the settings on this page, nothing is saved</span></div>
+      <div id="conv-out"></div></div>
+    <div class="card"><h3>Optional: Safe from access groups <span class="muted small">(role-oriented; empty unless you add rules)</span></h3>
+      <p class="muted small">Role-oriented Safes don't scale as well as folder (object) Safes, so these rules only apply to the groups you list.
+        Checked top to bottom; the first match wins.</p>
+      ${editorTable("t-gr", GR, migrateRules(cfg.group_rules))}
+      <p><label class="inline"><input type="checkbox" id="gr-first" ${cfg.group_rules_first ? "checked" : ""}> Check these before the folder exceptions above</label></p>
+      <p class="muted small">In the Safe name you can use {1} for the pattern's first ( ) part, {folder_leaf} or {folder_path} for the record's folder,
+        {convention} for the full naming-convention name, or single layers such as <code>{env}-APP-{1}-{flavor}</code>.</p></div>
+    <div class="card"><h3>Platforms</h3>
+      ${hints.types_without_platform.length ? `<div class="msg warn">These record types have no platform yet, so their accounts can't be uploaded: ${hints.types_without_platform.map(esc).join(", ")}. Fill in the Platform ID below.</div>` : ""}
+      ${editorTable("t-pm", PM, platRows)}
+      <p><label class="inline">Platform for anything not listed <input type="text" id="defplat" value="${esc(cfg.default_platform || "")}" placeholder="leave empty to flag as error"></label></p></div>
+    <div class="card"><h3>Safe members</h3>
+      <p class="muted small">How source permissions turn into Privilege Cloud permission presets or your own custom roles, and where to find the groups.</p>
+      <div class="row" style="align-items:flex-start;gap:24px">
+        <div style="flex:1;min-width:300px">${editorTable("t-pr", PR, Object.entries(cfg.permission_map).map(([role, to]) => ({ role, to: fixRole(to) })))}</div>
+        <div style="flex:1;min-width:300px">${editorTable("t-dm", DM, Object.entries(cfg.directory_map).map(([domain, dir]) => ({ domain, dir })))}
+          <p><label class="inline"><input type="checkbox" id="strip" ${cfg.strip_domain_prefix ? "checked" : ""}> Drop "CORP\\" from member names</label></p></div>
+      </div>
+      <h4 style="margin:14px 0 6px">Roles and their permissions</h4>
+      <p class="muted small">The five Privilege Cloud presets are fixed. Make a custom role to choose every permission yourself; give it a name and pick it in the table above.</p>
+      <div class="row"><label class="inline">New custom role starting from <select id="role-from">${["(nothing ticked)"].concat(Object.keys(presets)).map(n => `<option>${esc(n)}</option>`).join("")}</select></label>
+        <button class="btn small" id="role-add">+ New custom role</button></div>
+      <div class="tablewrap" style="margin-top:8px" id="roles"></div></div>
+    <details class="card"><summary><b>Advanced: edit the full settings as JSON</b></summary>
+      <p class="muted small">Only change these if you know what you need. Anything you set here is kept unless the forms above change the same setting.</p>
+      <textarea id="json" rows="16">${esc(JSON.stringify(cfg, null, 2))}</textarea></details>
+    <div class="actionbar row"><button class="btn primary" id="save">Save &amp; apply rules</button><span id="rules-msg"></span></div>`;
+  const tables = { "t-gr": GR, "t-fr": FR, "t-pm": PM, "t-dm": DM, "t-pr": PR, "t-ab": AB };
+  document.querySelectorAll("[data-add]").forEach(b => b.onclick = () =>
+    $(`#${b.dataset.add}`).insertAdjacentHTML("beforeend", editorRow(tables[b.dataset.add])));
+
+  // ---- roles matrix
+  const refreshRoleSelects = () => document.querySelectorAll("select.role-select").forEach(sel => {
+    const v = sel.value; sel.innerHTML = roleOptions(v, !!sel.dataset.blank); });
+  const renderRoles = () => {
+    const presetNames = Object.keys(presets);
+    $("#roles").innerHTML = `<table class="small roles"><tr><th>Permission</th>
+      ${presetNames.map(n => `<th title="Privilege Cloud preset">${esc(n)}</th>`).join("")}
+      ${customRoles.map((r, i) => `<th><input type="text" class="role-name" data-i="${i}" value="${esc(r.name)}" placeholder="Role name" size="12">
+        <button class="btn small" data-del="${i}" title="Delete this custom role">✕</button></th>`).join("")}</tr>
+      ${PERM_GROUPS.map(([group, perms]) => `<tr><td colspan="${1 + presetNames.length + customRoles.length}" class="muted"><b>${esc(group)}</b></td></tr>` +
+        perms.map(([key, label]) => `<tr><td>${esc(label)}</td>
+          ${presetNames.map(n => `<td class="c">${presets[n].includes(key) ? '<span class="tick" title="Granted by this preset">✓</span>' : ""}</td>`).join("")}
+          ${customRoles.map((r, i) => `<td class="c"><input type="checkbox" class="role-perm" data-i="${i}" data-p="${key}" ${r.perms.has(key) ? "checked" : ""}></td>`).join("")}</tr>`).join("")).join("")}
+    </table>`;
+    document.querySelectorAll(".role-name").forEach(inp => inp.oninput = () => { customRoles[+inp.dataset.i].name = inp.value; refreshRoleSelects(); });
+    document.querySelectorAll(".role-perm").forEach(cb => cb.onchange = () => {
+      const s = customRoles[+cb.dataset.i].perms; cb.checked ? s.add(cb.dataset.p) : s.delete(cb.dataset.p); });
+    document.querySelectorAll("[data-del]").forEach(b => b.onclick = () => { customRoles.splice(+b.dataset.del, 1); renderRoles(); refreshRoleSelects(); });
+  };
+  $("#role-add").onclick = () => {
+    const from = $("#role-from").value;
+    let name = "Custom role", n = 1;
+    while (ROLE_NAMES().includes(name)) name = `Custom role ${++n}`;
+    customRoles.push({ name, perms: new Set(presets[from] || []) });
+    renderRoles(); refreshRoleSelects();
+    const inputs = document.querySelectorAll(".role-name"); inputs[inputs.length - 1].select();
+  };
+  renderRoles();
+
+  // ---- folder abbreviations
+  const readFolderCodes = () => {
+    document.querySelectorAll("#conv-folders input[data-folder]").forEach(i => {
+      const code = i.value.trim(); if (code) folderAbbr[i.dataset.folder] = code; else delete folderAbbr[i.dataset.folder]; });
+    return folderAbbr;
+  };
+  const renderFolderCodes = (rows) => {
+    if (!rows.length) return;
+    const yours = {}; Object.entries(folderAbbr).forEach(([w, c]) => yours[normName(w)] = [w, c]);
+    $("#conv-folders").innerHTML = `<div class="tablewrap" style="max-height:40vh"><table class="small editor"><tr><th>Folder name</th><th>Accounts</th><th>Code</th><th></th></tr>
+      ${rows.map(r => { const mine = yours[normName(r.folder)];
+        return `<tr><td>${esc(r.folder)}</td><td>${r.accounts}</td>
+        <td><input type="text" data-folder="${esc(mine ? mine[0] : r.folder)}" value="${esc(mine ? mine[1] : "")}" placeholder="${esc(mine ? "" : r.code)}"></td>
+        <td class="small">${r.clash ? `<span class="pill ERROR">same code as ${esc(r.clash)}</span>` : r.automatic && !mine ? '<span class="muted">automatic</span>' : ""}</td></tr>`; }).join("")}</table></div>
+      <div class="row" style="margin-top:6px"><button class="btn small" id="conv-keep">Keep all the suggested codes</button>
+        <span class="muted small">writes them into your settings so they stay the same later</span></div>`;
+    $("#conv-keep").onclick = () => document.querySelectorAll("#conv-folders input[data-folder]").forEach(i => { if (!i.value) i.value = i.placeholder; });
+  };
+
+  const collect = () => {
+    let base;
+    try { base = JSON.parse($("#json").value); } catch (e) { throw new Error("The advanced JSON is not valid: " + e.message); }
+    const abbrOut = { ...readFolderCodes() };
+    readTable("t-ab").filter(r => r.word && r.code).forEach(r => abbrOut[r.word] = r.code);
+    base.safe_convention = { ...(base.safe_convention || {}), template: $("#conv-template").value.trim(),
+      template_no_folders: $("#conv-flat").value.trim(),
+      default_environment: $("#conv-env").value.trim(),
+      skip_folder_levels: $("#conv-skip").value.split(",").map(x => x.trim()).filter(Boolean),
+      abbreviations: abbrOut };
+    base.group_rules = readTable("t-gr").map(r => { const o = { safe: r.safe }; if (r.group) o.group = r.group; else if (r.group_pattern) o.group_pattern = r.group_pattern; if (r.min_role) o.min_role = r.min_role; return o; });
+    base.group_rules_first = $("#gr-first").checked;
+    base.folder_rules = readTable("t-fr");
+    base.fallback_strategy = $("#fallback").value;
+    base.safe_name = { ...(base.safe_name || {}), prefix: $("#prefix").value.trim() };
+    base.platform_map = Object.fromEntries(readTable("t-pm").filter(r => r.type && r.platform).map(r => [r.type, r.platform]));
+    base.default_platform = $("#defplat").value.trim();
+    base.permission_map = Object.fromEntries(readTable("t-pr").filter(r => r.role && r.to).map(r => [r.role, r.to]));
+    base.custom_roles = Object.fromEntries(customRoles.map(r => [r.name.trim(), PERM_GROUPS.flatMap(g => g[1].map(p => p[0])).filter(p => r.perms.has(p))]));
+    delete base.role_permissions;
+    base.directory_map = Object.fromEntries(readTable("t-dm").filter(r => r.domain && r.dir).map(r => [r.domain, r.dir]));
+    base.strip_domain_prefix = $("#strip").checked;
+    delete base.min_permission;
+    return base;
+  };
+  const preview = async () => {
+    let base;
+    try { base = collect(); } catch (e) { return msg($("#conv-out"), "err", e.message); }
+    const r = await api("/api/naming/preview", { config: base });
+    renderFolderCodes(r.folder_codes || []);
+    $("#conv-out").innerHTML = r.samples.length ? `<div class="tablewrap" style="margin-top:10px;max-height:40vh"><table>
+      <tr><th>Source folder</th><th>Platform</th><th>Safe name</th><th>Length</th><th>Notes</th></tr>
+      ${r.samples.map(x => `<tr><td class="small">${esc(x.folder)}</td><td>${esc(x.platform)}</td><td><b>${esc(x.name)}</b></td><td>${x.length}</td><td class="notes">${esc(x.notes)}</td></tr>`).join("")}</table></div>`
+      : '<p class="muted">Load some exports to see a preview.</p>';
+  };
+  $("#conv-preview").onclick = () => preview().catch(e => msg($("#conv-out"), "err", e.message));
+  if (STATE.has_db) preview().catch(() => {});
+  $("#save").onclick = async () => {
+    let base;
+    try { base = collect(); } catch (e) { return msg($("#rules-msg"), "err", e.message); }
+    try {
+      const r = await api("/api/config", { config: base });
+      await refresh();
+      $("#rules-msg").innerHTML = `<span class="msg ok">Saved${r.mapped ? ` and applied: ${STATE.to_upload} accounts will be uploaded, ${(STATE.status_counts || {}).ERROR || 0} errors` : ""}.</span> ${r.mapped ? `<button class="btn" onclick="go('review')">Next: review</button>` : ""}`;
+    } catch (e) { msg($("#rules-msg"), "err", e.message); }
+  };
+};
+
+/* ---------------- 3. Review ---------------- */
+PAGES.review = async () => {
+  await refresh();
+  if (!STATE.has_db) return msg($("#main"), "warn", "Load some exports first (step 1).");
+  $("#main").innerHTML = `<h2>3. Review &amp; change</h2>
+    <p class="lead">Pick a list from the menu, narrow it down with the filters, tick accounts and change them. Click a row to see everything about that account. Your changes are kept even when the rules or exports change.</p>
+    <div class="card row" id="filters">
+      <label class="inline"><b>Show</b> <select id="view">${Object.entries(STATE.views).map(([k, v]) => `<option value="${k}" ${k === REVIEW.view ? "selected" : ""}>${esc(v)}</option>`).join("")}</select></label>
+      <select id="f-safe"></select><select id="f-platform"></select><select id="f-source"></select><select id="f-status"></select>
+      <input type="search" id="f-search" placeholder="Search name, user, address, folder…" size="28" value="${esc(REVIEW.filters.search || "")}">
+      <button class="btn" id="clear">Clear filters</button>
+    </div>
+    <div id="list"></div>
+    <div class="actionbar">
+      <div class="row"><b id="selinfo">0 selected</b>
+        <label class="inline"><input type="checkbox" id="allmatch"> apply to <u>all</u> accounts in this list</label>
+        <span class="muted">|</span>
+        <button class="btn" data-act="exclude">Exclude from migration</button>
+        <button class="btn" data-act="include">Include again</button>
+        <button class="btn" data-act="safe">Move to Safe…</button>
+        <button class="btn" data-act="platform">Set platform…</button>
+        <button class="btn" data-act="rename">Rename…</button>
+        <button class="btn danger" data-act="undo">Undo my changes</button>
+        <input type="text" id="reason" placeholder="Reason (optional, kept in the log)" size="30">
+      </div><div id="act-msg"></div></div>`;
+  $("#view").onchange = () => { REVIEW.view = $("#view").value; REVIEW.page = 0; loadList(); };
+  ["safe", "platform", "source", "status"].forEach(k => $(`#f-${k}`).onchange = () => { REVIEW.filters[k] = $(`#f-${k}`).value; REVIEW.page = 0; loadList(); });
+  let t; $("#f-search").oninput = () => { clearTimeout(t); t = setTimeout(() => { REVIEW.filters.search = $("#f-search").value; REVIEW.page = 0; loadList(); }, 300); };
+  $("#clear").onclick = () => { REVIEW.filters = {}; $("#f-search").value = ""; REVIEW.page = 0; loadList(); };
+  $("#allmatch").onchange = updateSel;
+  document.querySelectorAll("[data-act]").forEach(b => b.onclick = () => act(b.dataset.act));
+  await loadList();
+};
+async function loadList() {
+  const d = await api("/api/accounts", { view: REVIEW.view, filters: REVIEW.filters, page: REVIEW.page, sort: REVIEW.sort, desc: REVIEW.desc });
+  REVIEW.data = d; REVIEW.selected.clear();
+  const labels = { safe: "All Safes", platform: "All platforms", source: "All sources", status: "Any status" };
+  for (const k of Object.keys(labels)) {
+    const cur = REVIEW.filters[k] || "";
+    $(`#f-${k}`).innerHTML = `<option value="">${labels[k]}</option>` + d.facets[k].map(v => `<option ${v === cur ? "selected" : ""} value="${esc(v)}">${esc(v || "(empty)")}</option>`).join("");
+  }
+  const cols = [["target_safe", "Safe"], ["account_name", "Account"], ["username", "Username"], ["address", "Address"], ["platform_id", "Platform"], ["status", "Status"], ["folder", "Source folder"]];
+  const pages = Math.ceil(d.total / d.page_size);
+  $("#list").innerHTML = `<p class="muted small">${d.total} accounts${pages > 1 ? ` · page ${d.page + 1} of ${pages}
+      <button class="btn small" ${d.page ? "" : "disabled"} id="prev">‹ Prev</button> <button class="btn small" ${d.page + 1 < pages ? "" : "disabled"} id="next">Next ›</button>` : ""}</p>
+    <div class="tablewrap"><table><thead><tr><th><input type="checkbox" id="selall" title="Select this page"></th>
+      ${cols.map(([k, l]) => `<th class="sort" data-k="${k}">${l}${REVIEW.sort === k ? (REVIEW.desc ? " ▼" : " ▲") : ""}</th>`).join("")}<th>Notes</th></tr></thead>
+    <tbody>${d.rows.map((r, i) => `<tr class="clickable" data-i="${i}">
+      <td><input type="checkbox" class="sel" data-id="${esc(r.record_id)}"></td>
+      <td>${esc(r.target_safe)}</td><td>${esc(r.account_name)}</td><td>${esc(r.username)}</td><td>${esc(r.address)}</td>
+      <td>${esc(r.platform_id) || '<span class="pill ERROR">none</span>'}</td>
+      <td><span class="pill ${r.status}">${r.status}</span>${r.migrate === "N" ? ' <span class="pill N">excluded</span>' : ""}</td>
+      <td class="small">${esc(r.folder)}</td><td class="notes">${esc(r.notes)}</td></tr>`).join("") || `<tr><td colspan="9" class="muted">Nothing in this list.</td></tr>`}</tbody></table></div>`;
+  if ($("#prev")) { $("#prev").onclick = () => { REVIEW.page--; loadList(); }; $("#next").onclick = () => { REVIEW.page++; loadList(); }; }
+  document.querySelectorAll("th.sort").forEach(th => th.onclick = () => { REVIEW.desc = REVIEW.sort === th.dataset.k ? !REVIEW.desc : false; REVIEW.sort = th.dataset.k; loadList(); });
+  $("#selall").onchange = () => document.querySelectorAll(".sel").forEach(cb => { cb.checked = $("#selall").checked; toggle(cb); });
+  document.querySelectorAll(".sel").forEach(cb => { cb.onclick = (e) => e.stopPropagation(); cb.onchange = () => toggle(cb); });
+  document.querySelectorAll("tr.clickable").forEach(tr => tr.onclick = () => showRecord(d.rows[tr.dataset.i].record_id));
+  updateSel();
+}
+function toggle(cb) { cb.checked ? REVIEW.selected.add(cb.dataset.id) : REVIEW.selected.delete(cb.dataset.id); cb.closest("tr").classList.toggle("selected", cb.checked); updateSel(); }
+function updateSel() {
+  const all = $("#allmatch").checked;
+  $("#selinfo").textContent = all ? `All ${REVIEW.data ? REVIEW.data.total : 0} in this list` : `${REVIEW.selected.size} selected`;
+}
+async function act(kind) {
+  const all = $("#allmatch").checked;
+  const count = all ? REVIEW.data.total : REVIEW.selected.size;
+  if (!count) return msg($("#act-msg"), "err", "Tick some accounts first, or tick “apply to all accounts in this list”.");
+  let values;
+  if (kind === "exclude") values = { migrate: "N" };
+  else if (kind === "include") values = { migrate: "Y" };
+  else if (kind === "undo") { if (!confirm(`Remove all your changes from ${count} accounts?`)) return; values = { migrate: "", target_safe: "", platform_id: "", account_name: "" }; }
+  else if (kind === "safe") { const v = prompt(`Move ${count} accounts to which Safe?`); if (!v) return; values = { target_safe: v }; }
+  else if (kind === "platform") { const v = prompt(`Platform ID for ${count} accounts?`); if (!v) return; values = { platform_id: v }; }
+  else if (kind === "rename") { if (count !== 1) return msg($("#act-msg"), "err", "Rename one account at a time."); const v = prompt("New account name?"); if (!v) return; values = { account_name: v }; }
+  if (all && count > 20 && !confirm(`This changes ${count} accounts. Continue?`)) return;
+  const body = all ? { view: REVIEW.view, filters: REVIEW.filters, values, reason: $("#reason").value }
+                   : { ids: [...REVIEW.selected], values, reason: $("#reason").value };
+  try {
+    const r = await api("/api/edit", body);
+    $("#allmatch").checked = false;
+    await loadList(); await refresh();
+    msg($("#act-msg"), "ok", `Changed ${r.changed} accounts. Rules re-applied.`);
+  } catch (e) { msg($("#act-msg"), "err", e.message); }
+}
+function closeDrawer() { $("#drawer").classList.add("hidden"); }
+async function showRecord(id) {
+  const r = await api("/api/record", { id });
+  const p = r.plan || {};
+  const dl = (o) => `<dl>${Object.entries(o).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>`;
+  $("#drawer").innerHTML = `<div class="row"><h3 style="margin:0;flex:1">${esc(p.account_name || r.name)}</h3><button class="btn" onclick="closeDrawer()">Close</button></div>
+    <p><span class="pill ${p.status}">${esc(p.status)}</span> ${p.migrate === "N" ? '<span class="pill N">excluded</span>' : ""}</p>
+    ${p.notes ? `<div class="msg warn small">${esc(p.notes)}</div>` : ""}
+    <h4>Target in Privilege Cloud</h4>${dl({ Safe: p.target_safe, "Safe chosen by": p.safe_mapping_source, "Original Safe name": p.proposed_safe,
+      Platform: p.platform_id, "Platform chosen by": p.platform_source, "Account name": p.account_name, Address: p.address, Username: p.username,
+      "Secret type": p.secret_type, "Secret present": p.has_secret === "Y" ? "yes (hidden)" : "no" })}
+    <h4>Access groups</h4>${r.grants.length ? `<table><tr><th>Group</th><th>Permission</th></tr>${r.grants.map(g => `<tr><td>${esc(g.member)}</td><td>${esc(g.permission)}</td></tr>`).join("")}</table>` : '<p class="muted">None</p>'}
+    <h4>Your changes</h4>${r.edits.length ? `<table><tr><th>Field</th><th>Value</th><th>When / who</th><th>Reason</th></tr>${r.edits.map(e => `<tr><td>${esc(e.field)}</td><td>${esc(e.value)}</td><td class="small">${esc(e.changed_utc)}<br>${esc(e.changed_by)}</td><td>${esc(e.reason)}</td></tr>`).join("")}</table>` : '<p class="muted">None</p>'}
+    <h4>From the source</h4>${dl({ "Record ID": r.record_id, Source: r.source, "Where": r.source_ref, Type: r.type, Folder: r.folder, Name: r.name, ...r.extra })}`;
+  $("#drawer").classList.remove("hidden");
+}
+
+/* ---------------- 4. Safes ---------------- */
+PAGES.safes = async () => {
+  await refresh();
+  if (!STATE.has_db) return msg($("#main"), "warn", "Load some exports first (step 1).");
+  const d = await api("/api/safes");
+  $("#main").innerHTML = `<h2>4. Safes &amp; members</h2>
+    <p class="lead">The Safes the upload will create, and who gets access. To change these, adjust the rules (step 2) or move accounts (step 3).</p>
+    <div class="card"><h3>Safes (${d.safes.length})</h3><div class="tablewrap"><table><tr><th>Safe</th><th>Length</th><th>Name OK?</th><th>Original name(s)</th><th>Why changed</th><th>Chosen by</th><th>Accounts</th><th>To upload</th></tr>
+      ${d.safes.map(s => `<tr><td><a href="#" data-safe="${esc(s.safe_name)}">${esc(s.safe_name)}</a></td><td>${s.length}</td><td>${s.valid_safe_name === "TRUE" ? "✓" : '<span class="pill REVIEW">renamed</span>'}</td>
+        <td class="small">${esc(s.proposed_names)}</td><td class="small">${esc(s.issues)}</td><td class="small">${esc(s.mapping_sources)}</td><td>${s.accounts}</td><td>${s.accounts_to_upload}</td></tr>`).join("")}</table></div></div>
+    <div class="card"><h3>Members (${d.members.length})</h3><div class="tablewrap"><table><tr><th>Safe</th><th>Member</th><th>Directory</th><th>Type</th><th>Source permission</th><th>Role</th><th>Accounts</th><th>Notes</th></tr>
+      ${d.members.map(m => `<tr><td>${esc(m.safe_name)}</td><td>${esc(m.member_name)}</td><td>${esc(m.search_in)}</td><td>${esc(m.member_type)}</td><td>${esc(m.source_permission)}</td>
+        <td>${m.role === "UNMAPPED" ? '<span class="pill ERROR">no role</span>' : esc(m.role)}</td><td>${m.accounts}</td><td class="notes">${esc(m.notes)}</td></tr>`).join("")}</table></div></div>`;
+  document.querySelectorAll("[data-safe]").forEach(a => a.onclick = (e) => { e.preventDefault(); REVIEW.view = "all"; REVIEW.filters = { safe: a.dataset.safe }; REVIEW.page = 0; go("review"); });
+};
+
+/* ---------------- 5. Output ---------------- */
+PAGES.output = async () => {
+  await refresh();
+  if (!STATE.has_db) return msg($("#main"), "warn", "Load some exports first (step 1).");
+  const facets = (await api("/api/accounts", { view: "all", page: 0 })).facets;
+  const secretsOk = STATE.protector !== "none";
+  $("#main").innerHTML = `<h2>5. Create upload files</h2>
+    <p class="lead">This writes the review files plus <code>Safes.csv</code>, <code>SafeMembers.csv</code> and <code>Accounts.csv</code> for the Privilege Cloud API. Accounts with errors or excluded by you are always left out.</p>
+    <div class="card">
+      <h3>What to include</h3>
+      <p><label class="inline"><input type="radio" name="scope" value="all" checked> Everything (${STATE.to_upload} accounts)</label></p>
+      <p><label class="inline"><input type="radio" name="scope" value="filter"> Only a wave:</label>
+        <select id="o-safe"><option value="">any Safe</option>${facets.safe.map(v => `<option>${esc(v)}</option>`).join("")}</select>
+        <select id="o-platform"><option value="">any platform</option>${facets.platform.map(v => `<option>${esc(v)}</option>`).join("")}</select>
+        <select id="o-source"><option value="">any source</option>${facets.source.map(v => `<option>${esc(v)}</option>`).join("")}</select></p>
+      <h3>Secrets</h3>
+      <p><label class="inline"><input type="radio" name="sec" value="0" checked> <b>Dry run</b>: leave the secret column empty (safe to share and check)</label></p>
+      <p><label class="inline"><input type="radio" name="sec" value="1" ${secretsOk ? "" : "disabled"}> <b>Upload-ready</b>: decrypt the secrets into Accounts.csv</label>
+        ${secretsOk ? "" : '<span class="muted small">(this database holds no secrets)</span>'}</p>
+      <div id="sec-confirm" class="msg warn hidden">Accounts.csv will hold <b>plaintext secrets</b>. Keep it on this machine's encrypted disk, don't open it in Excel, and delete it after the upload (button below).<br>
+        Type <b>INCLUDE SECRETS</b> to confirm: <input type="text" id="confirm" size="18"></div>
+      <h3>Name</h3>
+      <p class="row"><input type="text" id="o-name" placeholder="e.g. wave1-windows" size="28"> <label class="inline"><input type="checkbox" id="o-replace"> Replace if it exists</label></p>
+      <button class="btn primary" id="extract">Create files</button><div id="out-msg"></div>
+    </div>
+    <div class="card"><h3>Earlier outputs in <code>${esc(STATE.output)}</code></h3>
+      ${STATE.outputs.length ? `<table><tr><th>Name</th><th>Created</th><th>Accounts</th><th>Secrets</th><th></th></tr>
+        ${STATE.outputs.map(o => `<tr><td>${esc(o.name)}</td><td>${esc(o.created)}</td><td>${o.counts.accounts ?? ""}</td>
+          <td>${o.secrets && o.has_upload ? '<span class="pill ERROR">plaintext</span>' : o.secrets ? "deleted" : "none"}</td>
+          <td>${o.has_upload ? `<button class="btn danger" data-del="${esc(o.name)}">Securely delete upload files</button>` : ""}</td></tr>`).join("")}</table>` : '<p class="muted">None yet.</p>'}</div>`;
+  if (LAST_OUT) { $("#out-msg").innerHTML = LAST_OUT; LAST_OUT = ""; }
+  document.querySelectorAll("input[name=sec]").forEach(r => r.onchange = () => $("#sec-confirm").classList.toggle("hidden", r.value !== "1" || !r.checked));
+  ["safe", "platform", "source"].forEach(k => $(`#o-${k}`).onchange = () => { document.querySelector("input[name=scope][value=filter]").checked = true; });
+  document.querySelectorAll("[data-del]").forEach(b => b.onclick = async () => {
+    if (!confirm(`Overwrite and delete the upload files of ${b.dataset.del}? The review files and manifest are kept.`)) return;
+    try { await api("/api/output/delete", { name: b.dataset.del, what: "upload" }); go("output"); } catch (e) { msg($("#out-msg"), "err", e.message); }
+  });
+  $("#extract").onclick = async () => {
+    const scope = document.querySelector("input[name=scope]:checked").value;
+    const include = document.querySelector("input[name=sec]:checked").value === "1";
+    const filters = { safe: $("#o-safe").value, platform: $("#o-platform").value, source: $("#o-source").value };
+    try {
+      const r = await api("/api/extract", { scope, view: "all", filters, include_secrets: include, confirm: $("#confirm").value,
+                                            name: $("#o-name").value, replace: $("#o-replace").checked });
+      LAST_OUT = `<div class="msg ok">Created <b>${esc(r.name)}</b>: ${r.counts.safes} Safes, ${r.counts.members} members, ${r.counts.accounts} accounts${include ? " (with secrets)" : " (dry run)"}.<br>
+        Folder: <code>${esc(r.path)}</code><br>${r.files.map(esc).join(" · ")}</div>`;
+      go("output");
+    } catch (e) { msg($("#out-msg"), "err", e.message); }
+  };
+};
+
+/* ---------------- Activity ---------------- */
+PAGES.activity = async () => {
+  if (!STATE.has_db) await refresh();
+  if (!STATE.has_db) return msg($("#main"), "warn", "Nothing has happened yet.");
+  const d = await api("/api/audit");
+  $("#main").innerHTML = `<h2>Activity log</h2><p class="lead">Everything done to this database, newest first.</p>
+    <div class="card"><h3>Actions</h3><div class="tablewrap"><table><tr><th>When (UTC)</th><th>Who</th><th>What</th><th>Details</th></tr>
+      ${d.audit.map(a => `<tr><td class="small">${esc(a.ts)}</td><td>${esc(a.user)}</td><td>${esc(a.action)}</td><td class="notes">${esc(a.detail)}</td></tr>`).join("")}</table></div></div>
+    <div class="card"><h3>Your changes to accounts</h3><div class="tablewrap"><table><tr><th>Account</th><th>Field</th><th>Value</th><th>When</th><th>Who</th><th>Reason</th></tr>
+      ${d.edits.map(e => `<tr><td class="small">${esc(e.record_id)}</td><td>${esc(e.field)}</td><td>${esc(e.value)}</td><td class="small">${esc(e.changed_utc)}</td><td>${esc(e.changed_by)}</td><td>${esc(e.reason)}</td></tr>`).join("") || '<tr><td colspan="6" class="muted">None</td></tr>'}</table></div></div>`;
+};
+
+go("overview");
+</script>
+</body>
+</html>

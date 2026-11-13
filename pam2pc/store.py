@@ -1,0 +1,409 @@
+"""Local staging database (SQLite, standard library).
+
+Workflow:
+  ingest   load exports into the database once (secrets encrypted with DPAPI)
+  map      apply the config rules; results go into plan_* tables you can query
+  set      record deliberate changes (Migrate, Safe, platform, account name)
+  query    read-only SQL or built-in reports
+  extract  write review and upload CSVs, optionally for a subset (a wave)
+
+Secrets live only in records.secret_enc, encrypted. Everything else is plain so
+it can be queried. Queries can never read secret_enc: the read-only connection
+returns NULL for it.
+"""
+
+import base64
+import csv
+import getpass
+import hashlib
+import json
+import logging
+import os
+import platform as _platform
+import sqlite3
+import sys
+from collections import OrderedDict
+from datetime import datetime, timezone
+from pathlib import Path
+
+from .model import Grant, SourceRecord
+from .protect import ProtectError, get_protector, new_salt
+from .transform import _changed, build_plan, rebuild_totals
+from .writers import write_manifest, write_review, write_upload
+
+log = logging.getLogger("pam2pc.store")
+SCHEMA_VERSION = "1"
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS inputs (
+  id INTEGER PRIMARY KEY, source TEXT, path TEXT, sha256 TEXT, records INTEGER,
+  permissions_path TEXT, permissions_sha256 TEXT, loaded_utc TEXT, loaded_by TEXT);
+CREATE TABLE IF NOT EXISTS records (
+  record_id TEXT PRIMARY KEY, input_id INTEGER, source TEXT, source_file TEXT, source_id TEXT,
+  source_ref TEXT, name TEXT, folder TEXT, folder_json TEXT, type TEXT, address TEXT,
+  username TEXT, secret_type TEXT, has_secret INTEGER, secret_enc TEXT, has_grants INTEGER,
+  access_source TEXT, target_safe TEXT, target_platform TEXT, extra_json TEXT, notes_json TEXT);
+CREATE TABLE IF NOT EXISTS grants (record_id TEXT, member TEXT, permission TEXT, member_type TEXT);
+CREATE INDEX IF NOT EXISTS grants_record ON grants(record_id);
+CREATE TABLE IF NOT EXISTS edits (
+  record_id TEXT, field TEXT, value TEXT, changed_utc TEXT, changed_by TEXT, reason TEXT,
+  PRIMARY KEY (record_id, field));
+CREATE TABLE IF NOT EXISTS plan_accounts (
+  record_id TEXT PRIMARY KEY, migrate TEXT, status TEXT, notes TEXT, target_safe TEXT,
+  proposed_safe TEXT, valid_safe_name TEXT, safe_name_issues TEXT, safe_mapping_source TEXT,
+  platform_id TEXT, platform_source TEXT, account_name TEXT, address TEXT, username TEXT,
+  secret_type TEXT, has_secret TEXT, source TEXT, source_ref TEXT, source_type TEXT, folder TEXT,
+  access_groups TEXT, access_source TEXT);
+CREATE TABLE IF NOT EXISTS plan_safes (
+  safe_name TEXT PRIMARY KEY, length INTEGER, valid_safe_name TEXT, proposed_names TEXT,
+  issues TEXT, mapping_sources TEXT, accounts INTEGER, accounts_to_upload INTEGER);
+CREATE TABLE IF NOT EXISTS plan_members (
+  safe_name TEXT, source_member TEXT, member_name TEXT, search_in TEXT, member_type TEXT,
+  source_permission TEXT, role TEXT, accounts INTEGER, notes TEXT);
+CREATE TABLE IF NOT EXISTS audit (
+  id INTEGER PRIMARY KEY, ts TEXT, user TEXT, host TEXT, action TEXT, detail TEXT);
+CREATE VIEW IF NOT EXISTS accounts AS SELECT * FROM plan_accounts;
+"""
+
+EDIT_FIELDS = OrderedDict([("migrate", "Migrate"), ("target_safe", "Target_Safe"),
+                           ("platform_id", "Platform_ID"), ("account_name", "Account_Name")])
+
+REPORTS = OrderedDict([
+    ("summary", "SELECT status, migrate, COUNT(*) AS accounts FROM accounts GROUP BY status, migrate "
+                "ORDER BY status, migrate"),
+    ("inputs", "SELECT id, source, path, records, loaded_utc, loaded_by, sha256 FROM inputs ORDER BY id"),
+    ("safes", "SELECT * FROM plan_safes ORDER BY safe_name"),
+    ("invalid-safes", "SELECT * FROM plan_safes WHERE valid_safe_name = 'FALSE' ORDER BY safe_name"),
+    ("errors", "SELECT record_id, notes, target_safe, platform_id, account_name, source_ref "
+               "FROM accounts WHERE status = 'ERROR' ORDER BY record_id"),
+    ("review", "SELECT record_id, notes, target_safe, platform_id, account_name, source_ref "
+               "FROM accounts WHERE status = 'REVIEW' ORDER BY record_id"),
+    ("no-access", "SELECT record_id, folder, target_safe, account_name FROM accounts "
+                  "WHERE access_groups = '' ORDER BY folder"),
+    ("members", "SELECT * FROM plan_members ORDER BY safe_name, member_name"),
+    ("platforms", "SELECT platform_id, source_type, COUNT(*) AS accounts FROM accounts "
+                  "GROUP BY platform_id, source_type ORDER BY platform_id"),
+    ("edits", "SELECT * FROM edits ORDER BY changed_utc"),
+    ("audit", "SELECT * FROM audit ORDER BY id"),
+])
+
+
+class StoreError(Exception):
+    pass
+
+
+def _now():
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _user():
+    try:
+        return getpass.getuser()
+    except Exception:  # noqa: BLE001
+        return "unknown"
+
+
+def sha256_file(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+class Store:
+    def __init__(self, path, create=False, protector=None):
+        self.path = Path(path)
+        if not self.path.exists() and not create:
+            raise StoreError(f"database {self.path} does not exist; run 'ingest' first")
+        new = not self.path.exists()
+        self.db = sqlite3.connect(str(self.path))
+        self.db.row_factory = sqlite3.Row
+        self.db.execute("PRAGMA foreign_keys = ON")
+        self.db.executescript(SCHEMA)
+        if new:
+            if os.name == "posix":
+                os.chmod(self.path, 0o600)
+            self._set_meta("schema_version", SCHEMA_VERSION)
+            self._set_meta("created_utc", _now())
+            self._set_meta("created_by", f"{_user()}@{_platform.node()}")
+            self._set_meta("salt", base64.b64encode(new_salt()).decode())
+            self._set_meta("protector", protector or "dpapi")
+            self.db.commit()
+        self._protector = None
+
+    # -- meta / audit -----------------------------------------------------
+    def _set_meta(self, key, value):
+        self.db.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)", (key, value))
+
+    def meta(self, key, default=None):
+        row = self.db.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+        return row[0] if row else default
+
+    def audit(self, action, **detail):
+        self.db.execute("INSERT INTO audit(ts, user, host, action, detail) VALUES (?,?,?,?,?)",
+                        (_now(), _user(), _platform.node(), action, json.dumps(detail, default=str)))
+
+    @property
+    def protector(self):
+        if self._protector is None:
+            name = self.meta("protector")
+            if name == "none":
+                raise StoreError("this database was created with --no-secrets and holds no secrets")
+            self._protector = get_protector(name, base64.b64decode(self.meta("salt")))
+        return self._protector
+
+    # -- ingest -----------------------------------------------------------
+    def ingest(self, source, path, records, perms=None, perms_path=None):
+        store_secrets = self.meta("protector") != "none"
+        cur = self.db.execute(
+            "INSERT INTO inputs(source, path, sha256, records, permissions_path, permissions_sha256, "
+            "loaded_utc, loaded_by) VALUES (?,?,?,?,?,?,?,?)",
+            (source, str(Path(path).resolve()), sha256_file(path), len(records),
+             str(Path(perms_path).resolve()) if perms_path else None,
+             sha256_file(perms_path) if perms_path else None, _now(), _user()))
+        input_id = cur.lastrowid
+        seen = {}
+        replaced = 0
+        for rec in records:
+            base = rec.record_id
+            seen[base] = seen.get(base, 0) + 1
+            if seen[base] > 1:
+                rec.source_id = f"{rec.source_id}#{seen[base]}"
+                rec.notes.append("duplicate id in the source; suffixed in Record_ID")
+            if rec.grants is None and perms is not None:
+                grants, rec.access_source = perms.resolve(rec)
+                rec.grants = list(grants)
+            elif rec.grants is not None:
+                rec.access_source = rec.access_source or "source"
+            secret_enc = None
+            if rec.secret and store_secrets:
+                secret_enc = self.protector.protect(rec.secret, rec.record_id)
+            rid = rec.record_id
+            if self.db.execute("SELECT 1 FROM records WHERE record_id = ?", (rid,)).fetchone():
+                replaced += 1
+            self.db.execute("DELETE FROM grants WHERE record_id = ?", (rid,))
+            self.db.execute(
+                "INSERT OR REPLACE INTO records VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (rid, input_id, rec.source, rec.source_file, rec.source_id, rec.source_ref, rec.name,
+                 rec.folder_path, json.dumps(list(rec.folder)), rec.type, rec.address, rec.username,
+                 rec.secret_type, 1 if rec.secret.strip() else 0, secret_enc,
+                 0 if rec.grants is None else 1, rec.access_source or "none", rec.target_safe,
+                 rec.target_platform, json.dumps(rec.extra), json.dumps(rec.notes)))
+            for g in rec.grants or []:
+                self.db.execute("INSERT INTO grants VALUES (?,?,?,?)",
+                                (rid, g.member, g.permission, g.member_type))
+            rec.secret = ""  # drop the plaintext as soon as it is stored
+        self.audit("ingest", source=source, path=str(path), records=len(records), replaced=replaced,
+                   permissions=str(perms_path or ""), secrets_stored=store_secrets)
+        self.db.commit()
+        return len(records), replaced
+
+    # -- load -------------------------------------------------------------
+    def load_records(self, with_secrets=False):
+        grants = {}
+        for g in self.db.execute("SELECT * FROM grants"):
+            grants.setdefault(g["record_id"], []).append(Grant(g["member"], g["permission"], g["member_type"]))
+        out = []
+        for r in self.db.execute("SELECT * FROM records ORDER BY input_id, rowid"):
+            rec = SourceRecord(source=r["source"], source_file=r["source_file"], source_id=r["source_id"],
+                               source_ref=r["source_ref"], name=r["name"],
+                               folder=tuple(json.loads(r["folder_json"])), type=r["type"],
+                               address=r["address"], username=r["username"],
+                               secret_type=r["secret_type"], has_secret=bool(r["has_secret"]),
+                               grants=grants.get(r["record_id"], []) if r["has_grants"] else None,
+                               access_source=r["access_source"] if r["has_grants"] else "",
+                               target_safe=r["target_safe"], target_platform=r["target_platform"],
+                               extra=OrderedDict(json.loads(r["extra_json"])),
+                               notes=json.loads(r["notes_json"]))
+            if with_secrets and r["secret_enc"]:
+                rec.secret = self.protector.unprotect(r["secret_enc"], r["record_id"])
+            out.append(rec)
+        return out
+
+    def overrides(self):
+        ov = {}
+        for e in self.db.execute("SELECT record_id, field, value FROM edits"):
+            ov.setdefault(e["record_id"], {})[EDIT_FIELDS[e["field"]]] = e["value"]
+        return ov
+
+    # -- map --------------------------------------------------------------
+    def stored_config(self):
+        text = self.meta("config")
+        if text is None:
+            raise StoreError("no config stored yet; run 'map' first")
+        return json.loads(text)
+
+    def plan(self, cfg, with_secrets=False):
+        return build_plan(self.load_records(with_secrets), cfg, None, self.overrides(), explicit=True)
+
+    def map(self, cfg, cfg_path=None):
+        plan = self.plan(cfg)
+        self.db.execute("DELETE FROM plan_accounts")
+        self.db.execute("DELETE FROM plan_safes")
+        self.db.execute("DELETE FROM plan_members")
+        for p in plan.accounts:
+            r = p.rec
+            self.db.execute(
+                "INSERT INTO plan_accounts VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (r.record_id, p.migrate, p.status, "; ".join(p.errors + p.warnings), p.safe,
+                 p.proposed_safe, "TRUE" if p.valid_safe else "FALSE", "; ".join(p.safe_issues),
+                 p.safe_source, p.platform, p.platform_source, p.account_name, r.address, r.username,
+                 r.secret_type, "Y" if r.has_secret else "N", r.source, r.source_ref, r.type,
+                 r.folder_path, "; ".join(f"{g.member}={g.permission}" for g in p.grants),
+                 p.access_source))
+        for name, s in plan.safes.items():
+            self.db.execute("INSERT INTO plan_safes VALUES (?,?,?,?,?,?,?,?)",
+                            (name, len(name), "TRUE" if s["valid"] else "FALSE",
+                             " | ".join(sorted(s["proposed"])), " | ".join(sorted(s["issues"])),
+                             " | ".join(sorted(s["sources"])), s["accounts"], s["migrating"]))
+        for (safe, _), m in plan.members.items():
+            self.db.execute("INSERT INTO plan_members VALUES (?,?,?,?,?,?,?,?,?)",
+                            (safe, m["source_name"], m["member_name"], m["search_in"], m["member_type"],
+                             m["permission"], m["role"] or "UNMAPPED", m["accounts"], "; ".join(m["notes"])))
+        self._set_meta("config", json.dumps(cfg))
+        self._set_meta("config_path", str(cfg_path or "(defaults)"))
+        self._set_meta("mapped_utc", _now())
+        self.audit("map", config=str(cfg_path or "(defaults)"), accounts=len(plan.accounts))
+        self.db.commit()
+        return plan
+
+    # -- edits ------------------------------------------------------------
+    def select_ids(self, where, params=()):
+        """Record ids from the accounts view matching a WHERE clause, read-only."""
+        ro = self.readonly()
+        try:
+            return [r[0] for r in ro.execute(f"SELECT record_id FROM accounts WHERE {where}", params)]
+        except sqlite3.Error as exc:
+            raise StoreError(f"bad --where clause: {exc}")
+        finally:
+            ro.close()
+
+    def set_edits(self, ids, values, reason=""):
+        known = {r[0] for r in self.db.execute("SELECT record_id FROM records")}
+        missing = [i for i in ids if i not in known]
+        if missing:
+            raise StoreError(f"unknown record id(s): {', '.join(missing[:5])}")
+        n = 0
+        for rid in ids:
+            for fld, val in values.items():
+                if val is None:
+                    continue
+                if val == "":
+                    self.db.execute("DELETE FROM edits WHERE record_id = ? AND field = ?", (rid, fld))
+                else:
+                    self.db.execute("INSERT OR REPLACE INTO edits VALUES (?,?,?,?,?,?)",
+                                    (rid, fld, val, _now(), _user(), reason))
+                n += 1
+        self.audit("set", records=len(ids), values=values, reason=reason)
+        self.db.commit()
+        return n
+
+    def import_review(self, path, encoding="utf-8-sig"):
+        """Take changed values from an edited Accounts_Review.csv as edits."""
+        current = {r["record_id"]: r for r in self.db.execute("SELECT * FROM plan_accounts")}
+        cols = {"Migrate": "migrate", "Target_Safe": "target_safe", "Platform_ID": "platform_id",
+                "Account_Name": "account_name"}
+        count = 0
+        with open(path, newline="", encoding=encoding) as fh:
+            for row in csv.DictReader(fh):
+                rid = (row.get("Record_ID") or "").strip()
+                if rid not in current:
+                    continue
+                vals = {}
+                for col, fld in cols.items():
+                    new = (row.get(col) or "").strip()
+                    if fld == "migrate":
+                        if new and new.upper() != current[rid][fld].upper():
+                            vals[fld] = new.upper()
+                    elif _changed(new, current[rid][fld]):
+                        vals[fld] = new
+                if vals:
+                    self.set_edits([rid], vals, reason=f"imported from {Path(path).name}")
+                    count += 1
+        return count
+
+    # -- query ------------------------------------------------------------
+    def readonly(self):
+        uri = self.path.resolve().as_uri() + "?mode=ro"
+        con = sqlite3.connect(uri, uri=True)
+
+        def deny_secret(action, arg1, arg2, dbname, source):
+            if action == sqlite3.SQLITE_ATTACH:
+                return sqlite3.SQLITE_DENY  # no writing into other database files
+            if action == sqlite3.SQLITE_READ and arg1 == "records" and arg2 == "secret_enc":
+                return sqlite3.SQLITE_IGNORE  # reads as NULL
+            return sqlite3.SQLITE_OK
+
+        con.set_authorizer(deny_secret)
+        return con
+
+    def query(self, sql, params=()):
+        con = self.readonly()
+        try:
+            cur = con.execute(sql, params)
+            cols = [d[0] for d in cur.description or []]
+            return cols, cur.fetchall()
+        except sqlite3.Error as exc:
+            raise StoreError(str(exc))
+        finally:
+            con.close()
+
+    def inputs_for_manifest(self):
+        return [{"source": r["source"], "path": r["path"], "sha256": r["sha256"],
+                 "loaded_utc": r["loaded_utc"]} for r in self.db.execute("SELECT * FROM inputs")]
+
+    def close(self):
+        self.db.close()
+
+
+def extract_plan(store, where=None, include_secrets=False, params=()):
+    cfg = store.stored_config()
+    if include_secrets and store.meta("protector") == "none":
+        raise StoreError("this database was created with --no-secrets, so it has no secrets to "
+                         "extract; ingest into a new database without --no-secrets")
+    if include_secrets:
+        try:
+            plan = store.plan(cfg, with_secrets=True)
+        except ProtectError as exc:
+            raise StoreError(str(exc))
+    else:
+        plan = store.plan(cfg)
+    if where:
+        keep = set(store.select_ids(where, params))
+        for p in plan.accounts:
+            p.in_scope = p.rec.record_id in keep
+        rebuild_totals(plan, cfg)
+    return plan, cfg
+
+
+def run_extract(store, out_dir, where=None, include_secrets=False, params=(), label=""):
+    """Write review + upload files and the manifest. Returns (plan, counts, files)."""
+    plan, cfg = extract_plan(store, where, include_secrets, params)
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    files = write_review(plan, out_dir)
+    upload_files, counts = write_upload(plan, cfg, out_dir, include_secrets)
+    files += upload_files
+    counts.update(records=len(plan.accounts), filter=label or where or "",
+                  database=str(store.path.resolve()))
+    write_manifest(out_dir, store.inputs_for_manifest(), files, counts, include_secrets,
+                   store.meta("config_path"))
+    store.audit("extract", output=str(out_dir.resolve()), where=label or where or "",
+                include_secrets=include_secrets, accounts=counts["accounts"])
+    store.db.commit()
+    return plan, counts, files
+
+
+def print_table(cols, rows, out=sys.stdout, max_width=60):
+    if not cols:
+        print("(no columns)", file=out)
+        return
+    text = [[("" if v is None else str(v)).replace("\n", " ")[:max_width] for v in row] for row in rows]
+    widths = [max([len(c)] + [len(r[i]) for r in text]) for i, c in enumerate(cols)]
+    print("  ".join(c.ljust(w) for c, w in zip(cols, widths)), file=out)
+    print("  ".join("-" * w for w in widths), file=out)
+    for r in text:
+        print("  ".join(v.ljust(w) for v, w in zip(r, widths)), file=out)
+    print(f"({len(rows)} rows)", file=out)

@@ -8,3 +8,14 @@ node_modules/
 /phase1_output/
 *.tmp
 run.lock
+/pam2pc_output/
+# Converter output can hold plaintext secrets: never commit it
+/run*/
+/final/
+/synthetic/
+/synthetic_out/
+# Staging databases hold encrypted secrets and all metadata: never commit them
+*.db
+*.db-journal
+/pam2pc_workspace/
+/sample_workspace/

@@ -1,0 +1,20 @@
+{
+  "_comment": "Sample config for the KeePass and spreadsheet samples. Only changed keys are listed.",
+  "group_rules": [
+    {"group": "CORP\\PAM-Windows-Admins", "safe": "WIN-Member-Servers", "min_role": "Owner"},
+    {"group": "CORP\\PAM-DBA", "safe": "DB-{folder_leaf}", "min_role": "Owner"}
+  ],
+  "folder_rules": [
+    {"folder_prefix": "Network", "safe": "NET-Devices"},
+    {"folder_prefix": "Linux", "safe": "UNIX-Servers"}
+  ],
+  "fallback_strategy": "folder_path",
+  "platform_rules": [
+    {"field": "folder", "pattern": "(?i)^\\\\Linux", "platform": "UnixSSH"},
+    {"field": "folder", "pattern": "(?i)^\\\\Network", "platform": "GenericWebApp"},
+    {"field": "folder", "pattern": "(?i)Oracle", "platform": "Oracle"},
+    {"field": "folder", "pattern": "(?i)\\\\SQL$", "platform": "MSSql"}
+  ],
+  "directory_map": {"CORP": "corp.example.com", "*": "Vault"},
+  "account_property_map": {"Port": "Port"}
+}
