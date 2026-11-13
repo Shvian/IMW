@@ -9,6 +9,9 @@ import unittest
 from test_pam2pc import SAMPLES, Base, read_csv  # noqa: F401
 
 from pam2pc.ui import server
+from pam2pc.ui.auth import TestAuth
+
+PASSWORD = "correct horse"
 
 
 class UiServer(Base):
@@ -26,7 +29,8 @@ class UiServer(Base):
             started.set()
 
         self.thread = threading.Thread(target=server.serve, kwargs=dict(
-            workspace=self.ws, port=0, open_browser=False, protector_flag="plain", ready=ready), daemon=True)
+            workspace=self.ws, port=0, open_browser=False, protector_flag="plain", ready=ready,
+            authenticator=TestAuth(PASSWORD)), daemon=True)
         with _Quiet():
             self.thread.start()
             started.wait(5)
@@ -36,7 +40,8 @@ class UiServer(Base):
         self.cookie = None
 
     def tearDown(self):
-        self.httpd.shutdown()
+        if not getattr(self, "ended", False):
+            self.httpd.shutdown()
         super().tearDown()
 
     def req(self, method, path, body=None, headers=None, host=None):
@@ -58,9 +63,42 @@ class UiServer(Base):
         except ValueError:
             return r.status, data
 
-    def login(self):
+    def login(self, unlock=True):
         status, _ = self.req("GET", f"/?t={self.token}")
         self.assertEqual(status, 303)
+        if unlock:
+            self.assertEqual(self.req("POST", "/api/unlock", {"password": PASSWORD})[0], 200)
+
+    def test_sign_in_and_lock(self):
+        self.login(unlock=False)
+        st, s = self.req("GET", "/api/session")
+        self.assertTrue(s["locked"])
+        self.assertEqual(self.req("GET", "/api/state")[0], 423)                    # locked until sign-in
+        self.assertEqual(self.req("POST", "/api/unlock", {"password": "nope"})[0], 400)
+        self.assertEqual(self.req("POST", "/api/unlock", {"password": PASSWORD})[0], 200)
+        self.assertEqual(self.req("GET", "/api/state")[0], 200)
+        self.assertEqual(self.req("POST", "/api/lock", {})[0], 200)
+        self.assertEqual(self.req("GET", "/api/state")[0], 423)
+        self.req("POST", "/api/unlock", {"password": PASSWORD})
+        app_last = server.time.time
+        try:                                                                      # idle for 11 minutes
+            server.time.time = lambda: app_last() + 11 * 60
+            self.assertEqual(self.req("GET", "/api/state")[0], 423)
+        finally:
+            server.time.time = app_last
+        for _ in range(server.MAX_FAILURES):
+            self.req("POST", "/api/unlock", {"password": "nope"})
+        self.assertEqual(self.req("POST", "/api/unlock", {"password": PASSWORD})[0], 429)  # slowed down
+
+    def test_end_session_can_delete_database(self):
+        self.login()
+        self.req("POST", "/api/ingest", {"files": [{"name": "keepass_export.xml", "source": ""}]})
+        self.assertTrue((self.ws / "migration.db").exists())
+        self.assertEqual(self.req("POST", "/api/end", {"confirm": "end"})[0], 400)
+        st, r = self.req("POST", "/api/end", {"confirm": "END SESSION", "delete_db": True})
+        self.assertEqual((st, r["database_deleted"]), (200, True))
+        self.assertFalse((self.ws / "migration.db").exists())
+        self.ended = True
 
     def test_guards(self):
         self.assertEqual(self.req("GET", "/api/state")[0], 401)
@@ -78,9 +116,18 @@ class UiServer(Base):
         self.login()
         st, r = self.req("POST", "/api/ingest", {"files": [{"name": "delinea_export.csv", "source": ""},
                                                            {"name": "keepass_export.xml", "source": ""}],
-                                                 "permissions": "delinea_permissions.csv"})
+                                                 "permissions": ["delinea_permissions.csv"]})
         self.assertEqual(st, 200, r)
         self.assertEqual([x["records"] for x in r["results"]], [8, 4])
+        st, r = self.req("POST", "/api/ingest", {"files": [{"name": "keepass_export.xml", "source": ""}]})
+        st, state = self.req("GET", "/api/state")
+        self.assertEqual(len(state["inputs"][0]["sha256"]), 64)
+        self.assertIn("same content as load #2", state["inputs"][2]["repeat"])
+        st, r = self.req("POST", "/api/config", {"patch": {"default_platform": "WinServerLocal"}})
+        self.assertEqual(st, 200, r)
+        self.assertEqual(json.loads((self.ws / "config.json").read_text()), {"default_platform": "WinServerLocal"})
+        self.assertEqual(self.req("POST", "/api/config", {"patch": {"safe_rules": [
+            {"safe_pattern": "(", "managingCPM": "x"}]}})[0], 400)
 
         st, cfg = self.req("GET", "/api/config")
         self.assertIn("Web Password", [t["name"] for t in cfg["hints"]["types"]])
@@ -135,6 +182,12 @@ class UiServer(Base):
         self.assertFalse((self.ws / "inbox" / "delinea_export.csv").exists())
         st, a = self.req("GET", "/api/audit")
         self.assertIn("extract", [x["action"] for x in a["audit"]])
+        self.assertIn("extract", [x["action"] for x in a["summary"]["by_action"]])
+        st, text = self.req("GET", "/api/export/audit.csv")
+        self.assertEqual(st, 200)
+        self.assertTrue(text.decode("utf-8-sig").startswith("id,ts,user,host,action,detail"))
+        st, text = self.req("GET", "/api/export/edits.csv")
+        self.assertTrue(text.decode("utf-8-sig").startswith("record_id,field,value"))
 
 
 class _Quiet:

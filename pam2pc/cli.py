@@ -224,9 +224,15 @@ def cmd_extract(args):
 
 
 def cmd_ui(args):
+    from .ui.auth import AuthError, get_authenticator
     from .ui.server import serve
     flag = "none" if args.no_secrets else ("plain" if args.insecure_plaintext_secrets else None)
-    return serve(args.workspace, args.port, not args.no_browser, flag)
+    try:
+        auth = get_authenticator()
+    except AuthError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    return serve(args.workspace, args.port, not args.no_browser, flag, authenticator=auth)
 
 
 def cmd_sources(_args):
@@ -295,7 +301,8 @@ def main(argv=None):
                         "auto-detection, e.g. keepass=vault.xml or table=accounts.xlsx")
     p.add_argument("--source", choices=sorted(ADAPTERS), help="Source for every --input without a prefix")
     p.add_argument("--config", "-c", help="Config JSON (see init-config)")
-    p.add_argument("--permissions", "-p", help="Permissions CSV: groups per folder or record")
+    p.add_argument("--permissions", "-p", action="append",
+                       help="Permissions CSV: groups per folder or record. Repeat to merge several files")
     p.add_argument("--overrides", help="An edited review/Accounts_Review.csv; changed Migrate, "
                                        "Target_Safe, Platform_ID and Account_Name values win")
     p.add_argument("--output-dir", "-o", default="pam2pc_output")
@@ -310,7 +317,8 @@ def main(argv=None):
                        help="Export file. Repeat for several files. Prefix with the source to skip "
                             "auto-detection, e.g. keepass=vault.xml or table=accounts.xlsx")
         p.add_argument("--source", choices=sorted(ADAPTERS), help="Source for every --input without a prefix")
-        p.add_argument("--permissions", "-p", help="Permissions CSV: groups per folder or record")
+        p.add_argument("--permissions", "-p", action="append",
+                       help="Permissions CSV: groups per folder or record. Repeat to merge several files")
         p.add_argument("--encoding", default="utf-8-sig", help="Text encoding of CSV inputs (try cp1252)")
 
     def add_db(p):

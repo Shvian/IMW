@@ -82,18 +82,63 @@ DEFAULT_PLATFORM_CODES = {
     "AWSAccessKeys": {"tech": "CLD", "flavor": "AWS", "acct": "LA"},
 }
 
-# Username patterns that refine the account type, checked in order.
-# "tech" / "flavor" (optional, regex for flavor) limit a rule to matching platforms.
-DEFAULT_ACCOUNT_TYPE_RULES = [
-    {"username": "^root$", "acct": "RT", "flavor": "^(UNX|LNX|HP|AIX|SOL)$"},
-    {"username": "(?i)^sa$", "acct": "SA", "tech": "DB"},
-    {"username": "(?i)^enable$", "acct": "EN", "tech": "NET"},
-    {"username": "(?i)^(svc|srv|service)[_.-]", "acct": "LS", "domain_acct": "DS"},
-]
-
-# Folder words that set the environment layer instead of becoming a folder code.
+# Placeholder layers. Each layer's value comes from its rules, checked in order; the first
+# rule whose conditions all match gives the code, otherwise the layer's default.
+# A condition looks at one field (see LAYER_FIELDS) and is a case-insensitive regex.
+LAYER_FIELDS = {
+    "folder_word": "a word or phrase in any folder level",
+    "folder_level": "any whole folder level",
+    "folder": "the whole folder path",
+    "platform": "the platform ID",
+    "username": "the username",
+    "address": "the address",
+    "name": "the account name",
+    "type": "the record type / template",
+    "source": "the source (delinea, keepass, table)",
+    "env": "the {env} code", "tech": "the {tech} code", "flavor": "the {flavor} code", "acct": "the {acct} code",
+    # plus "column:<name>" for any source column
+}
+BUILTIN_LAYERS = ("env", "tech", "flavor", "acct")
 ENV_WORDS = {"production", "prod", "prd", "development", "dev", "test", "testing", "tst", "qa", "uat",
              "quality assurance", "staging", "stage"}
+
+
+def _rule(field, pattern, code, field2="", pattern2=""):
+    r = {"field": field, "pattern": pattern, "code": code}
+    if field2:
+        r.update(field2=field2, pattern2=pattern2)
+    return r
+
+
+def _by_platform(key):
+    groups = {}
+    for platform, codes in DEFAULT_PLATFORM_CODES.items():
+        groups.setdefault(codes.get(key, ""), []).append(platform)
+    return [_rule("platform", "^(%s)$" % "|".join(p), code) for code, p in groups.items() if code]
+
+
+def default_layers():
+    """The built-in placeholder layers (editable copies go into safe_convention.layers)."""
+    unix = "^(UNX|LNX|HP|AIX|SOL)$"
+    svc = "^(svc|srv|service)[_.-]"
+    return {
+        "env": {"label": "Environment", "default": "", "rules": [
+            _rule("folder_word", "^(production|prod|prd)$", "P"),
+            _rule("folder_word", "^(development|dev)$", "D"),
+            _rule("folder_word", "^(test|testing|tst)$", "T"),
+            _rule("folder_word", "^(qa|uat|quality assurance)$", "Q"),
+            _rule("folder_word", "^(staging|stage)$", "S"),
+        ]},
+        "tech": {"label": "Technology", "default": "", "rules": _by_platform("tech")},
+        "flavor": {"label": "Flavor", "default": "", "rules": _by_platform("flavor")},
+        "acct": {"label": "Account type", "default": "", "rules": [
+            _rule("username", "^root$", "RT", "flavor", unix),
+            _rule("username", "^sa$", "SA", "tech", "^DB$"),
+            _rule("username", "^enable$", "EN", "tech", "^NET$"),
+            _rule("username", svc, "DS", "tech", "^DOM$"),
+            _rule("username", svc, "LS"),
+        ] + _by_platform("acct")},
+    }
 
 
 def norm(text):
@@ -113,14 +158,74 @@ class Namer:
         self.user_abbr = {norm(k): str(v).strip() for k, v in (conv.get("abbreviations") or {}).items()}
         self.abbr.update(self.user_abbr)
         self.skip_levels = {norm(s) for s in conv.get("skip_folder_levels") or []}
-        self.platform_codes = dict(DEFAULT_PLATFORM_CODES)
-        self.platform_codes.update(conv.get("platform_codes") or {})
-        self.pc_lower = {k.lower(): v for k, v in self.platform_codes.items()}
-        self.acct_rules = conv.get("account_type_rules") or DEFAULT_ACCOUNT_TYPE_RULES
         self.default_env = conv.get("default_environment", "")
         self.max_phrase = max(len(k.split()) for k in self.abbr)
-        self.env_words = ENV_WORDS | {w.lower() for w in conv.get("environment_words") or []}
+        self.layer_defs = self._layer_defs(conv)
         self.unknown = {}
+
+    def _layer_defs(self, conv):
+        layers = {k: dict(v) for k, v in (conv.get("layers") or default_layers()).items()}
+        for name, base in default_layers().items():
+            layers.setdefault(name, base)
+        # Older settings: extra platform codes and environment words still count.
+        for platform, codes in (conv.get("platform_codes") or {}).items():
+            for key in ("tech", "flavor", "acct"):
+                if codes.get(key) is not None:
+                    rule = _rule("platform", "^%s$" % re.escape(platform), codes[key])
+                    rules = list(layers[key]["rules"])
+                    at = next((i for i, r in enumerate(rules) if r.get("field") == "platform"), len(rules)) \
+                        if key == "acct" else 0
+                    rules.insert(at, rule)
+                    layers[key]["rules"] = rules
+        words = [w for w in conv.get("environment_words") or [] if w]
+        if words:
+            layers["env"]["rules"] = list(layers["env"]["rules"]) + [
+                _rule("folder_word", "^%s$" % re.escape(w.lower()), self.abbr.get(norm(w)) or self.auto(w)[:1])
+                for w in words]
+        compiled = {}
+        for name, layer in layers.items():
+            rules = []
+            for r in layer.get("rules") or []:
+                conds = [(r.get("field"), r.get("pattern")), (r.get("field2"), r.get("pattern2"))]
+                conds = [(f, re.compile(p or "", re.IGNORECASE)) for f, p in conds if f]
+                if conds:
+                    rules.append((conds, str(r.get("code") or "").strip()))
+            default = str(layer.get("default") or "").strip()
+            if name == "env" and not default:
+                default = self.default_env
+            compiled[name] = (rules, default)
+        return compiled
+
+    def _field(self, field, rec, platform, units, codes):
+        if field == "folder_word":
+            return [u for u, _ in units]
+        if field == "folder_level":
+            return list(self.levels(rec))
+        if field == "folder":
+            return ["\\" + "\\".join(rec.folder) if rec.folder else ""]
+        if field == "platform":
+            return [platform or ""]
+        if field in codes:
+            return [codes[field]]
+        if field.startswith("column:"):
+            want = field[7:].strip().lower()
+            return [str(v) for k, v in (rec.extra or {}).items() if k.lower() == want] or [""]
+        return [str(getattr(rec, field, "") or "")]
+
+    def layer_value(self, name, rec, platform, units, codes):
+        """(code, matched folder units) for one layer."""
+        rules, default = self.layer_defs.get(name, ([], ""))
+        for conds, code in rules:
+            hits = []
+            for field, rx in conds:
+                vals = [v for v in self._field(field, rec, platform, units, codes) if rx.search(v)]
+                if not vals:
+                    break
+                if field == "folder_word":
+                    hits.extend(vals)
+            else:
+                return code, hits
+        return default, []
 
     # -- words ----------------------------------------------------------------
     def auto(self, word):
@@ -176,31 +281,31 @@ class Namer:
         return [lvl for lvl in rec.folder if norm(lvl) not in self.skip_levels]
 
     def layers(self, rec, platform, with_type=False, env_in_place=False):
+        levels = [self.level_codes(level) for level in self.levels(rec)]
+        units = [pair for lvl in levels for pair in lvl]
+        codes = {}
+        env_units = set()
+        for name in list(BUILTIN_LAYERS) + [n for n in self.layer_defs if n not in BUILTIN_LAYERS]:
+            code, hits = self.layer_value(name, rec, platform, units, codes)
+            codes[name] = code
+            if name == "env":
+                env_units = {norm(h) for h in hits}
         folder = []          # list of levels, each a list of codes
-        env = ""
-        for level in self.levels(rec):
-            codes = []
-            for src, code in self.level_codes(level):
-                if norm(src) in self.env_words:
-                    env = env or code
+        for lvl in levels:
+            out = []
+            for src, code in lvl:
+                if norm(src) in env_units:
                     if not env_in_place:
                         continue
-                codes.append(code)
-            if codes:
-                folder.append(codes)
-        pc = self.pc_lower.get((platform or "").lower(), {})
-        acct = pc.get("acct", "")
-        for rule in self.acct_rules:
-            if rule.get("tech") and rule["tech"] != pc.get("tech"):
-                continue
-            if rule.get("flavor") and not re.search(rule["flavor"], pc.get("flavor", "")):
-                continue
-            if re.search(rule["username"], rec.username or ""):
-                acct = rule.get("domain_acct") if pc.get("tech") == "DOM" and rule.get("domain_acct") else rule["acct"]
-                break
-        return {"env": env or self.default_env, "folder": folder, "tech": pc.get("tech", ""),
-                "flavor": pc.get("flavor", ""), "acct": acct,
-                "type": [c for _, c in self.level_codes(rec.type)] if (with_type and rec.type) else []}
+                    code = codes["env"] or code
+                out.append(code)
+            if out:
+                folder.append(out)
+        if env_units and not codes["env"]:
+            codes["env"] = self.default_env
+        codes["folder"] = folder
+        codes["type"] = [c for _, c in self.level_codes(rec.type)] if (with_type and rec.type) else []
+        return codes
 
     def folder_code(self, level):
         """(code, automatic) for one whole folder name as it would appear in a Safe name."""

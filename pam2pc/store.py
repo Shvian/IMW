@@ -28,7 +28,7 @@ from pathlib import Path
 
 from .model import Grant, SourceRecord
 from .protect import ProtectError, get_protector, new_salt
-from .transform import _changed, build_plan, rebuild_totals
+from .transform import _changed, build_plan, rebuild_totals, safe_settings
 from .writers import write_manifest, write_review, write_upload
 
 log = logging.getLogger("pam2pc.store")
@@ -57,10 +57,11 @@ CREATE TABLE IF NOT EXISTS plan_accounts (
   access_groups TEXT, access_source TEXT);
 CREATE TABLE IF NOT EXISTS plan_safes (
   safe_name TEXT PRIMARY KEY, length INTEGER, valid_safe_name TEXT, proposed_names TEXT,
-  issues TEXT, mapping_sources TEXT, accounts INTEGER, accounts_to_upload INTEGER);
+  issues TEXT, mapping_sources TEXT, accounts INTEGER, accounts_to_upload INTEGER,
+  managing_cpm TEXT, description TEXT, retention TEXT);
 CREATE TABLE IF NOT EXISTS plan_members (
   safe_name TEXT, source_member TEXT, member_name TEXT, search_in TEXT, member_type TEXT,
-  source_permission TEXT, role TEXT, accounts INTEGER, notes TEXT);
+  source_permission TEXT, role TEXT, accounts INTEGER, notes TEXT, directory_source TEXT);
 CREATE TABLE IF NOT EXISTS audit (
   id INTEGER PRIMARY KEY, ts TEXT, user TEXT, host TEXT, action TEXT, detail TEXT);
 CREATE VIEW IF NOT EXISTS accounts AS SELECT * FROM plan_accounts;
@@ -121,6 +122,11 @@ class Store:
         self.db = sqlite3.connect(str(self.path))
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA foreign_keys = ON")
+        # Plan tables are rebuilt by every map, so an older layout is simply recreated.
+        for table, column in (("plan_safes", "managing_cpm"), ("plan_members", "directory_source")):
+            cols = [r[1] for r in self.db.execute(f"PRAGMA table_info({table})")]
+            if cols and column not in cols:
+                self.db.execute(f"DROP TABLE {table}")
         self.db.executescript(SCHEMA)
         if new:
             if os.name == "posix":
@@ -156,13 +162,14 @@ class Store:
 
     # -- ingest -----------------------------------------------------------
     def ingest(self, source, path, records, perms=None, perms_path=None):
+        perms_paths = [p for p in (perms_path if isinstance(perms_path, (list, tuple)) else [perms_path]) if p]
         store_secrets = self.meta("protector") != "none"
         cur = self.db.execute(
             "INSERT INTO inputs(source, path, sha256, records, permissions_path, permissions_sha256, "
             "loaded_utc, loaded_by) VALUES (?,?,?,?,?,?,?,?)",
             (source, str(Path(path).resolve()), sha256_file(path), len(records),
-             str(Path(perms_path).resolve()) if perms_path else None,
-             sha256_file(perms_path) if perms_path else None, _now(), _user()))
+             " | ".join(str(Path(p).resolve()) for p in perms_paths) or None,
+             " | ".join(sha256_file(p) for p in perms_paths) or None, _now(), _user()))
         input_id = cur.lastrowid
         seen = {}
         replaced = 0
@@ -196,7 +203,7 @@ class Store:
                                 (rid, g.member, g.permission, g.member_type))
             rec.secret = ""  # drop the plaintext as soon as it is stored
         self.audit("ingest", source=source, path=str(path), records=len(records), replaced=replaced,
-                   permissions=str(perms_path or ""), secrets_stored=store_secrets)
+                   permissions=" | ".join(map(str, perms_paths)), secrets_stored=store_secrets)
         self.db.commit()
         return len(records), replaced
 
@@ -254,14 +261,23 @@ class Store:
                  r.folder_path, "; ".join(f"{g.member}={g.permission}" for g in p.grants),
                  p.access_source))
         for name, s in plan.safes.items():
-            self.db.execute("INSERT INTO plan_safes VALUES (?,?,?,?,?,?,?,?)",
+            body = safe_settings(name, s, cfg)
+            if str(body.get("numberOfVersionsRetention", "")).strip():
+                retention = f"{body['numberOfVersionsRetention']} versions"
+            elif str(body.get("numberOfDaysRetention", "")).strip():
+                retention = f"{body['numberOfDaysRetention']} days"
+            else:
+                retention = ""
+            self.db.execute("INSERT INTO plan_safes VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                             (name, len(name), "TRUE" if s["valid"] else "FALSE",
                              " | ".join(sorted(s["proposed"])), " | ".join(sorted(s["issues"])),
-                             " | ".join(sorted(s["sources"])), s["accounts"], s["migrating"]))
+                             " | ".join(sorted(s["sources"])), s["accounts"], s["migrating"],
+                             body.get("managingCPM", ""), body.get("description", ""), retention))
         for (safe, _), m in plan.members.items():
-            self.db.execute("INSERT INTO plan_members VALUES (?,?,?,?,?,?,?,?,?)",
+            self.db.execute("INSERT INTO plan_members VALUES (?,?,?,?,?,?,?,?,?,?)",
                             (safe, m["source_name"], m["member_name"], m["search_in"], m["member_type"],
-                             m["permission"], m["role"] or "UNMAPPED", m["accounts"], "; ".join(m["notes"])))
+                             m["permission"], m["role"] or "UNMAPPED", m["accounts"], "; ".join(m["notes"]),
+                             m.get("directory_source", "")))
         self._set_meta("config", json.dumps(cfg))
         self._set_meta("config_path", str(cfg_path or "(defaults)"))
         self._set_meta("mapped_utc", _now())

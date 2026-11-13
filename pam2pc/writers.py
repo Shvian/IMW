@@ -10,6 +10,7 @@ from pathlib import Path
 
 from . import __version__
 from .config import ALL_PERMISSIONS, all_roles
+from .transform import safe_settings
 
 SAFE_FIELDS = ["safeName", "description", "location", "managingCPM",
                "numberOfVersionsRetention", "numberOfDaysRetention", "olacEnabled", "autoPurgeEnabled"]
@@ -103,12 +104,11 @@ def write_upload(plan, cfg, out_dir, include_secrets):
     upload_safes = [n for n, s in plan.safes.items() if s["migrating"]]
 
     safes = out / "Safes.csv"
-    defaults = cfg["safe_defaults"]
     with _open(safes) as fh:
         w = csv.writer(fh)
         w.writerow(SAFE_FIELDS)
         for name in upload_safes:
-            body = dict(defaults, safeName=name)
+            body = safe_settings(name, plan.safes[name], cfg)
             w.writerow([_fmt(body.get(f, "")) for f in SAFE_FIELDS])
 
     members = out / "SafeMembers.csv"

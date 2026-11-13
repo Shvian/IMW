@@ -4,17 +4,23 @@ Security model
   * Listens on 127.0.0.1 only; the Host and Origin headers must match.
   * The start-up link carries a one-time token that is exchanged for an HttpOnly,
     SameSite=Strict session cookie. Changes also need a custom request header.
-  * The session ends after 30 minutes without activity.
+  * Nothing is shown until the Windows user who started the tool signs in with their
+    password (checked by Windows; see auth.py). After 10 minutes without activity, or
+    with Lock session, the page locks again and needs the password.
+  * End session (typed confirmation) stops the Workbench, optionally deleting the database.
   * No API returns a secret value. Secrets are only decrypted by the Output step
     when "include secrets" is chosen, straight into upload/Accounts.csv.
   * Runs in-process as the signed-in user, so DPAPI works as for the CLI.
 """
 
+import csv
+import io
 import json
 import logging
 import os
 import secrets
 import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -32,11 +38,13 @@ from ..model import SourceRecord
 from ..naming import Namer
 from ..protect import ProtectError
 from ..store import Store, StoreError, run_extract
-from ..transform import Permissions
+from ..transform import Permissions, member_target
+from .auth import get_authenticator
 
 log = logging.getLogger("pam2pc.ui")
 STATIC = Path(__file__).parent / "static"
-IDLE_SECONDS = 30 * 60
+IDLE_SECONDS = 10 * 60          # auto-lock
+MAX_FAILURES = 5                # then a growing wait between attempts
 PAGE_SIZE = 200
 EDITABLE = ("migrate", "target_safe", "platform_id", "account_name")
 
@@ -105,6 +113,60 @@ def check_roles(cfg):
             raise UiError(f"Source permission '{word}' maps to '{role}', which is not a preset or custom role.")
 
 
+def compare_inputs(inputs):
+    """Mark files loaded more than once: same name with the same or different content, or the
+    same content under another name (which loads every record twice)."""
+    for i, cur in enumerate(inputs):
+        name = Path(cur["path"]).name.lower()
+        notes = []
+        for prev in inputs[:i]:
+            pname = Path(prev["path"]).name
+            if pname.lower() == name:
+                same = prev["sha256"] == cur["sha256"]
+                notes.append(f"{'same content as' if same else 'different content from'} load #{prev['id']}")
+            elif prev["sha256"] == cur["sha256"]:
+                notes.append(f"same content as load #{prev['id']} ({pname}); records are loaded twice")
+        cur["file"] = Path(cur["path"]).name
+        cur["repeat"] = "; ".join(notes)
+    return inputs
+
+
+def check_settings(cfg):
+    """Regexes and Safe settings must be usable before they are saved."""
+    import re as _re
+
+    def rx(pattern, where):
+        try:
+            _re.compile(pattern or "")
+        except _re.error as exc:
+            raise UiError(f"{where}: '{pattern}' is not a valid pattern ({exc}).")
+    for name, layer in (cfg["safe_convention"].get("layers") or {}).items():
+        if not _re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+            raise UiError(f"Placeholder name '{name}' can only use letters, digits and _.")
+        if name in ("folder", "folder_leaf", "type", "convention", "folder_abbrev"):
+            raise UiError(f"{{{name}}} is a built-in placeholder; pick another name.")
+        for r in layer.get("rules") or []:
+            rx(r.get("pattern"), f"{{{name}}} rule")
+            if r.get("field2"):
+                rx(r.get("pattern2"), f"{{{name}}} rule")
+    for src in cfg.get("directory_sources") or []:
+        if not src.get("search_in"):
+            raise UiError(f"Directory source '{src.get('name') or src.get('match')}' needs a directory (searchIn).")
+        if str(src.get("match", "")).lower().startswith("re:"):
+            rx(src["match"][3:], "Directory source match")
+        if src.get("find"):
+            rx(src["find"], "Directory source find")
+    for rule in cfg.get("safe_rules") or []:
+        rx(rule.get("safe_pattern"), "Safe settings rule")
+        if str(rule.get("numberOfVersionsRetention", "")).strip() and str(rule.get("numberOfDaysRetention", "")).strip():
+            raise UiError("A Safe keeps either a number of versions or a number of days, not both.")
+    d = cfg["safe_defaults"]
+    if str(d.get("numberOfVersionsRetention", "")).strip() and str(d.get("numberOfDaysRetention", "")).strip():
+        raise UiError("Safes keep either a number of versions or a number of days, not both.")
+    for rule in cfg.get("platform_rules") or []:
+        rx(rule.get("pattern"), "Platform rule")
+
+
 def looks_like_permissions(path):
     """A CSV whose header has a group/principal column and a permission column, and no password column."""
     if path.suffix.lower() != ".csv":
@@ -130,7 +192,7 @@ def secure_delete(path):
 
 
 class App:
-    def __init__(self, workspace, protector_flag=None):
+    def __init__(self, workspace, protector_flag=None, authenticator=None):
         self.ws = Path(workspace).resolve()
         self.inbox = self.ws / "inbox"
         self.output = self.ws / "output"
@@ -143,6 +205,11 @@ class App:
         self.launch_token = secrets.token_urlsafe(32)
         self.sid = None
         self.last_seen = 0.0
+        self.unlocked = False
+        self.auth = authenticator or get_authenticator()
+        self.failures = 0
+        self.wait_until = 0.0
+        self.httpd = None
 
     # -- helpers ----------------------------------------------------------
     def store(self, create=False):
@@ -195,8 +262,9 @@ class App:
                 state["protector"] = st.meta("protector")
                 state["mapped"] = st.meta("mapped_utc")
                 state["records"] = st.db.execute("SELECT COUNT(*) FROM records").fetchone()[0]
-                state["inputs"] = [dict(r) for r in st.db.execute(
-                    "SELECT id, source, path, records, loaded_utc, loaded_by FROM inputs ORDER BY id")]
+                state["inputs"] = compare_inputs([dict(r) for r in st.db.execute(
+                    "SELECT id, source, path, sha256, records, permissions_path, permissions_sha256, "
+                    "loaded_utc, loaded_by FROM inputs ORDER BY id")])
                 counts = {r[0]: r[1] for r in st.db.execute(
                     "SELECT status, COUNT(*) FROM plan_accounts GROUP BY status")}
                 state["status_counts"] = counts
@@ -220,9 +288,11 @@ class App:
         if not files:
             raise UiError("Pick at least one export file.")
         cfg = self.config()
-        perms = None
-        if body.get("permissions"):
-            perms = Permissions(self._inbox_file(body["permissions"]))
+        perm_names = body.get("permissions") or []
+        if isinstance(perm_names, str):
+            perm_names = [perm_names]
+        perm_paths = [self._inbox_file(n) for n in perm_names]
+        perms = Permissions([str(p) for p in perm_paths]) if perm_paths else None
         results = []
         st = self.store(create=True)
         try:
@@ -230,8 +300,7 @@ class App:
                 path = self._inbox_file(f["name"])
                 adapter = get_adapter(f["source"]) if f.get("source") else detect_adapter(path)
                 records = list(adapter.read(path, cfg))
-                n, replaced = st.ingest(adapter.name, path, records, perms,
-                                        str(self._inbox_file(body["permissions"])) if perms else None)
+                n, replaced = st.ingest(adapter.name, path, records, perms, [str(p) for p in perm_paths])
                 results.append({"name": f["name"], "source": adapter.name, "records": n, "replaced": replaced})
             st.map(cfg, str(self.config_path) if self.config_path.exists() else None)
         except (AdapterError, ValueError, OSError, ProtectError, StoreError) as exc:
@@ -276,13 +345,16 @@ class App:
         """Generated convention names for the distinct folder/platform/username combinations."""
         namer = Namer(cfg)
         rows = st.db.execute(
-            "SELECT r.folder_json, r.folder, r.type, r.username, p.platform_id, COUNT(*) AS n "
+            "SELECT r.folder_json, r.folder, r.type, r.username, p.platform_id, MIN(r.address) AS address, "
+            "MIN(r.name) AS name, MIN(r.source) AS source, MIN(r.extra_json) AS extra_json, COUNT(*) AS n "
             "FROM records r JOIN plan_accounts p USING (record_id) "
             "GROUP BY r.folder_json, p.platform_id, r.username ORDER BY r.folder LIMIT ?", (limit,)).fetchall()
         out, seen = [], set()
         for r in rows:
-            rec = SourceRecord(source="", source_file="", source_id="", source_ref="",
-                               folder=tuple(json.loads(r["folder_json"])), type=r["type"], username=r["username"])
+            rec = SourceRecord(source=r["source"] or "", source_file="", source_id="", source_ref="",
+                               folder=tuple(json.loads(r["folder_json"])), type=r["type"], username=r["username"],
+                               address=r["address"] or "", name=r["name"] or "",
+                               extra=json.loads(r["extra_json"] or "{}"))
             name, notes = namer.build(rec, r["platform_id"])
             key = (r["folder"], name)
             if key in seen:
@@ -321,6 +393,10 @@ class App:
 
     def api_config_save(self, body):
         user = body.get("config")
+        if isinstance(body.get("patch"), dict):
+            # One settings page saves only its own keys on top of everything else.
+            user = self.config()
+            user.update(body["patch"])
         if not isinstance(user, dict):
             raise UiError("config must be a JSON object")
         tmp = self.config_path.with_suffix(".tmp")
@@ -334,6 +410,7 @@ class App:
                 if not rule.get("safe") or not rule.get("folder_prefix"):
                     raise UiError("Every folder rule needs a folder and a Safe.")
             check_roles(cfg)
+            check_settings(cfg)
         except UiError:
             tmp.unlink()
             raise
@@ -475,9 +552,154 @@ class App:
         try:
             cols, rows = st.query("SELECT ts, user, action, detail FROM audit ORDER BY id DESC LIMIT 300")
             ecols, erows = st.query("SELECT * FROM edits ORDER BY changed_utc DESC LIMIT 500")
+            summary = {
+                "entries": st.db.execute("SELECT COUNT(*) FROM audit").fetchone()[0],
+                "first": st.db.execute("SELECT MIN(ts) FROM audit").fetchone()[0],
+                "last": st.db.execute("SELECT MAX(ts) FROM audit").fetchone()[0],
+                "by_action": [dict(r) for r in st.db.execute(
+                    "SELECT action, COUNT(*) AS count, MAX(ts) AS last FROM audit GROUP BY action ORDER BY 2 DESC")],
+                "by_user": [dict(r) for r in st.db.execute(
+                    "SELECT user, COUNT(*) AS count, MIN(ts) AS first, MAX(ts) AS last FROM audit "
+                    "GROUP BY user ORDER BY 2 DESC")],
+                "edits": st.db.execute("SELECT COUNT(*) FROM edits").fetchone()[0],
+                "edited_accounts": st.db.execute("SELECT COUNT(DISTINCT record_id) FROM edits").fetchone()[0],
+                "edits_by_field": [dict(r) for r in st.db.execute(
+                    "SELECT field, COUNT(*) AS count FROM edits GROUP BY field ORDER BY 2 DESC")],
+            }
         finally:
             st.close()
-        return {"audit": [dict(zip(cols, r)) for r in rows], "edits": [dict(zip(ecols, r)) for r in erows]}
+        return {"audit": [dict(zip(cols, r)) for r in rows], "edits": [dict(zip(ecols, r)) for r in erows],
+                "summary": summary}
+
+    def export_csv(self, what):
+        """Every row of the activity log or of the changes, as CSV text."""
+        st = self.store()
+        try:
+            if what == "audit":
+                cols, rows = st.query("SELECT id, ts, user, host, action, detail FROM audit ORDER BY id")
+            else:
+                cols, rows = st.query("SELECT record_id, field, value, changed_utc, changed_by, reason "
+                                      "FROM edits ORDER BY changed_utc, record_id")
+            st.audit("export_log", what=what, rows=len(rows))
+            st.db.commit()
+        finally:
+            st.close()
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(cols)
+        for r in rows:
+            w.writerow(["'" + str(v) if isinstance(v, str) and v[:1] in "=+-@" else v for v in r])
+        return "\ufeff" + buf.getvalue()
+
+    def api_open_folder(self, body):
+        which = body.get("which", "inbox")
+        path = {"inbox": self.inbox, "output": self.output, "workspace": self.ws}.get(which)
+        if not path:
+            raise UiError("unknown folder")
+        sub = body.get("name")
+        if sub and which == "output":
+            cand = (self.output / sub).resolve()
+            if cand.parent == self.output and cand.is_dir():
+                path = cand
+        opened = False
+        try:
+            if sys.platform == "win32":
+                os.startfile(str(path))   # noqa: S606 - opens Explorer on our own folder
+                opened = True
+            elif os.environ.get("PAM2PC_UI_NO_OPEN") != "1":
+                tool = "open" if sys.platform == "darwin" else "xdg-open"
+                if shutil.which(tool):
+                    subprocess.Popen([tool, str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    opened = True
+        except OSError as exc:
+            raise UiError(f"Could not open the folder: {exc}")
+        return {"path": str(path), "opened": opened}
+
+    def api_members_preview(self, body):
+        """How each distinct member in the loaded data comes out with the given settings."""
+        cfg = self.config()
+        if isinstance(body.get("patch"), dict):
+            cfg.update(body["patch"])
+        try:
+            cfg = config_from_dict(cfg)
+            check_settings(cfg)
+        except UiError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise UiError(f"settings are not valid: {exc}")
+        if not self.db_path.exists():
+            return {"members": []}
+        st = self.store()
+        try:
+            rows = st.db.execute("SELECT member, member_type, COUNT(DISTINCT record_id) AS n FROM grants "
+                                 "GROUP BY lower(member), member_type ORDER BY 3 DESC LIMIT 300").fetchall()
+        finally:
+            st.close()
+        out = []
+        for r in rows:
+            mtype = r["member_type"] or cfg["default_member_type"]
+            name, search_in, src = member_target(r["member"], cfg, mtype)
+            out.append({"source": r["member"], "type": mtype, "accounts": r["n"], "member_name": name,
+                        "search_in": search_in, "directory_source": src or "(not matched; default)"})
+        return {"members": out}
+
+    def api_ping(self, _body):
+        return {"ok": True}
+
+    # -- session ------------------------------------------------------------
+    def api_session(self, _body):
+        return {"locked": not self.unlocked, "user": self.auth.display, "kind": self.auth.kind,
+                "idle_minutes": IDLE_SECONDS // 60,
+                "wait": max(0, int(self.wait_until - time.time()))}
+
+    def _audit_if_db(self, action, **detail):
+        if self.db_path.exists():
+            try:
+                st = self.store()
+                try:
+                    st.audit(action, **detail)
+                    st.db.commit()
+                finally:
+                    st.close()
+            except Exception:  # noqa: BLE001 - never block sign-in on logging
+                log.exception("audit failed")
+
+    def api_unlock(self, body):
+        now = time.time()
+        if now < self.wait_until:
+            raise UiError(f"Too many wrong passwords. Try again in {int(self.wait_until - now) + 1} seconds.", 429)
+        password = body.get("password") or ""
+        if password and self.auth.check(password):
+            self.unlocked, self.failures, self.last_seen = True, 0, now
+            self._audit_if_db("sign_in", user=self.auth.display)
+            return {"ok": True}
+        self.failures += 1
+        if self.failures >= MAX_FAILURES:
+            self.wait_until = now + min(300, 30 * 2 ** (self.failures - MAX_FAILURES))
+        self._audit_if_db("sign_in_failed", user=self.auth.display, failures=self.failures)
+        raise UiError("That password is not right for " + self.auth.display + ".")
+
+    def api_lock(self, _body):
+        self.unlocked = False
+        self._audit_if_db("lock", reason="button")
+        return {"locked": True}
+
+    def api_end(self, body):
+        if body.get("confirm") != "END SESSION":
+            raise UiError("Type END SESSION to confirm.")
+        deleted = False
+        if body.get("delete_db"):
+            for suffix in ("", "-wal", "-shm", "-journal"):
+                f = Path(str(self.db_path) + suffix)
+                if f.exists():
+                    secure_delete(f)
+                    deleted = True
+        else:
+            self._audit_if_db("end_session", database="kept")
+        self.sid, self.unlocked = None, False
+        if self.httpd:
+            threading.Timer(0.5, self.httpd.shutdown).start()
+        return {"ended": True, "database_deleted": deleted}
 
     ROUTES = {
         ("GET", "/api/state"): "api_state", ("POST", "/api/ingest"): "api_ingest",
@@ -486,8 +708,12 @@ class App:
         ("POST", "/api/record"): "api_record", ("POST", "/api/edit"): "api_edit",
         ("GET", "/api/safes"): "api_safes", ("POST", "/api/extract"): "api_extract",
         ("POST", "/api/output/delete"): "api_output_delete", ("GET", "/api/audit"): "api_audit",
-        ("POST", "/api/naming/preview"): "api_naming_preview",
+        ("POST", "/api/naming/preview"): "api_naming_preview", ("POST", "/api/open"): "api_open_folder",
+        ("POST", "/api/lock"): "api_lock", ("POST", "/api/end"): "api_end", ("POST", "/api/ping"): "api_ping",
+        ("POST", "/api/members/preview"): "api_members_preview",
     }
+    # Allowed while locked.
+    OPEN_ROUTES = {("GET", "/api/session"): "api_session", ("POST", "/api/unlock"): "api_unlock"}
 
 
 def make_handler(app, port):
@@ -535,15 +761,19 @@ def make_handler(app, port):
             return None
 
         def _session_ok(self):
+            """The browser holds this run's session cookie (locked or not)."""
             with app.lock:
                 sid = self._cookie()
-                if not app.sid or not sid or not secrets.compare_digest(sid, app.sid):
-                    return False
-                if time.time() - app.last_seen > IDLE_SECONDS:
-                    app.sid = None
-                    return False
-                app.last_seen = time.time()
-                return True
+                return bool(app.sid and sid and secrets.compare_digest(sid, app.sid))
+
+        def _unlocked(self, touch=True):
+            with app.lock:
+                if app.unlocked and time.time() - app.last_seen > IDLE_SECONDS:
+                    app.unlocked = False
+                    app._audit_if_db("lock", reason="idle")
+                if app.unlocked and touch:
+                    app.last_seen = time.time()
+                return app.unlocked
 
         def do_GET(self):
             self._handle("GET")
@@ -562,7 +792,7 @@ def make_handler(app, port):
                     if token and app.launch_token and secrets.compare_digest(token, app.launch_token):
                         app.launch_token = None
                         app.sid = secrets.token_urlsafe(32)
-                        app.last_seen = time.time()
+                        app.unlocked = False
                         cookie = f"pam2pc_sid={app.sid}; HttpOnly; SameSite=Strict; Path=/"
                         return self._send(HTTPStatus.SEE_OTHER, b"", "text/plain",
                                           {"Location": "/", "Set-Cookie": cookie})
@@ -577,13 +807,29 @@ def make_handler(app, port):
                 return self._send(HTTPStatus.NOT_FOUND, {"error": "not found"})
             if not self._session_ok():
                 return self._send(HTTPStatus.UNAUTHORIZED, {"error": "Session ended. Restart the UI."})
-            if url.path == "/api/logout" and method == "POST":
-                with app.lock:
-                    app.sid = None
-                return self._send(HTTPStatus.OK, {"ok": True})
-            name = App.ROUTES.get((method, url.path))
-            if not name:
-                return self._send(HTTPStatus.NOT_FOUND, {"error": "not found"})
+            if url.path.startswith("/api/export/") and method == "GET":
+                if not self._unlocked():
+                    return self._send(HTTPStatus.LOCKED, {"error": "locked"})
+                what = url.path.rsplit("/", 1)[-1].replace(".csv", "")
+                if what not in ("audit", "edits"):
+                    return self._send(HTTPStatus.NOT_FOUND, {"error": "not found"})
+                try:
+                    with app.lock:
+                        text = app.export_csv(what)
+                except UiError as exc:
+                    return self._send(exc.status, {"error": str(exc)})
+                stamp = time.strftime("%Y%m%d-%H%M%S")
+                return self._send(HTTPStatus.OK, text.encode("utf-8"), "text/csv; charset=utf-8",
+                                  {"Content-Disposition": f'attachment; filename="pam2pc_{what}_{stamp}.csv"'})
+            name = App.OPEN_ROUTES.get((method, url.path))
+            if name:
+                self._unlocked(touch=False)          # applies the idle lock before answering
+            else:
+                name = App.ROUTES.get((method, url.path))
+                if not name:
+                    return self._send(HTTPStatus.NOT_FOUND, {"error": "not found"})
+                if not self._unlocked():
+                    return self._send(HTTPStatus.LOCKED, {"error": "locked"})
             body = {}
             if method == "POST":
                 length = int(self.headers.get("Content-Length") or 0)
@@ -606,16 +852,17 @@ def make_handler(app, port):
     return Handler
 
 
-def serve(workspace, port=0, open_browser=True, protector_flag=None, ready=None):
-    app = App(workspace, protector_flag)
+def serve(workspace, port=0, open_browser=True, protector_flag=None, ready=None, authenticator=None):
+    app = App(workspace, protector_flag, authenticator)
     httpd = ThreadingHTTPServer(("127.0.0.1", port), None)
     port = httpd.server_address[1]
     httpd.RequestHandlerClass = make_handler(app, port)
+    app.httpd = httpd
     url = f"http://127.0.0.1:{port}/?t={app.launch_token}"
     print(f"pam2pc UI running. Workspace: {app.ws}")
     print(f"Put export files in: {app.inbox}")
     print(f"Open this link (works once): {url}")
-    print("Press Ctrl+C to stop.")
+    print(f"Sign in as {app.auth.display}. Press Ctrl+C to stop.")
     if ready:
         ready(url, httpd)
     if open_browser:

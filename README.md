@@ -14,19 +14,31 @@ Requirements: Python 3.8 or later, **standard library only** (Excel files includ
 
 ## Easiest: the Migration Workbench (menus, no SQL)
 
-Double-click `start-ui.cmd`, or run `python -m pam2pc ui`. A page opens in your browser and walks through five steps:
+Double-click `start-ui.cmd`, or run `python -m pam2pc ui`. A page opens in your browser. **Sign in with your Windows password first**: only the Windows user who started the Workbench can unlock it, and Windows itself checks the password (nothing is stored). The page then walks through these steps:
 
-1. **Load exports.** Copy the export files into `pam2pc_workspace\inbox`, tick them and click Load. Secrets are encrypted as they load, and you can securely delete each export straight from this page.
-2. **Mapping rules.** Fill in simple tables: which group goes to which Safe, which folder goes to which Safe, which record type uses which platform, and how permissions turn into roles. Group, folder and type names already loaded are suggested as you type. Record types with no platform yet are highlighted.
+1. **Load exports.** Copy the export files into `pam2pc_workspace\inbox` (click the path to open it in Explorer), tick them and click Load. Tick one or more permissions files; several are merged. Secrets are encrypted as they load, and you can securely delete each export straight from this page.
+2. **Mapping rules**, one page per topic, each with its own **Save & apply** that saves only that page:
+   - **A. Directory sources.** Where Privilege Cloud finds each group and user (searchIn), with name rules per source: drop the domain, find and replace, add text before or after, change case. A preview shows every member as it will be uploaded.
+   - **B. Permissions: Safes.** Safe from folder (the default), folder exceptions, the naming convention (folder abbreviations, every placeholder's values, your own placeholders), Safe settings (CPM, description, retention by versions or days, automatic CPM management), and the optional access-group rules.
+   - **B. Permissions: Safe members.** Source permission to role, with the Privilege Cloud presets and your own custom roles.
+   - **C. Platforms.** Platform rules, record type to platform, and the default platform.
+   - **D. Accounts.** How accounts are named, URL addresses, and extra account properties.
+   - **Settings file (JSON)** for anything else.
 3. **Review & change.** Pick a list from the menu (Needs a look, Errors, Safe name was changed, No access groups, Possible duplicates, Changed by you...), narrow it with filters or search, tick accounts and use the buttons: Exclude, Include, Move to Safe, Set platform, Rename or Undo. You can add a reason, which goes into the log. Click a row to see everything about that account.
-4. **Safes & members.** See the Safes and members the upload will create.
+4. **Safes & members.** See the Safes (with their CPM, description and retention) and the members the upload will create.
 5. **Create upload files.** Choose everything or one wave (by Safe, platform or source), and a dry run or upload-ready. Upload-ready needs you to type a confirmation. Old upload files can be securely deleted from the same page.
 
-An **Activity log** page lists every action and change.
+The **Overview** boxes open the matching list (Needs a look opens Review with that list picked, and so on). It also lists every loaded file with its SHA-256 checksum, and marks a file loaded more than once as the same or different content. Loading a file with the same name again replaces its records (matched by record ID) and keeps your changes; loading the same content under another name loads every record twice.
+
+The **Activity log** page shows a summary (by action, by person, changes by field) and the latest entries, and exports the whole log and every account change as CSV.
 
 ![Review page](docs/ui/03_review.png)
 
-The page is served only to this computer (`127.0.0.1`), through a one-time link that becomes a session cookie, and the session ends after 30 minutes idle. No page ever shows a secret. The UI runs as you, so DPAPI works the same as on the command line. Everything lives in the workspace folder: `migration.db`, `config.json`, `inbox\` and `output\`. More screenshots are in [docs/ui](docs/ui).
+**Locking and ending.** After 10 minutes without activity, or when you click **Lock session**, the page goes back to the sign-in screen. **End session** explains what it does and needs you to type END SESSION: it stops the Workbench, and the database stays on disk, encrypted for your Windows account, until you start the Workbench again and sign in. Tick the box in that pop-up to securely delete the database as well. Output files and the inbox are kept either way.
+
+The page is served only to this computer (`127.0.0.1`), through a one-time link that becomes a session cookie. Five wrong passwords in a row add a growing wait, and every sign-in, lock and failed attempt is logged. Your Windows account lockout policy also counts failed attempts. No page ever shows a secret. The UI runs as you, so DPAPI works the same as on the command line. Everything lives in the workspace folder: `migration.db`, `config.json`, `inbox\` and `output\`. More screenshots are in [docs/ui](docs/ui).
+
+Sign-in needs Windows. For automated tests on other systems, set `PAM2PC_UI_TEST_PASSWORD`; never use that with real data.
 
 ## Command line
 
@@ -35,7 +47,7 @@ The page is served only to this computer (`127.0.0.1`), through a one-time link 
 ```
 python -m pam2pc init-config my_config.json                       # starter config to edit
 
-python -m pam2pc ingest  --db migration.db -i export.csv -p permissions.csv -i vault.xml
+python -m pam2pc ingest  --db migration.db -i export.csv -p permissions.csv -p more_permissions.csv -i vault.xml
 #   -> secrets are encrypted with Windows DPAPI as they are stored; securely delete the exports now
 python -m pam2pc map     --db migration.db -c my_config.json      # apply the rules (rerun after config changes)
 python -m pam2pc query   --db migration.db --report list          # built-in reports
@@ -91,7 +103,7 @@ To add a source, see [Adding a source adapter](#adding-a-source-adapter).
 ## Inputs
 
 - **Export files** (`-i`), described above.
-- **Permissions CSV** (`-p`, optional). Use it for sources whose export has no access data, such as Delinea and KeePass. It has one grant per row, with the columns `Folder Path, Secret Name, Secret ID, Group, Permission` and an optional `Member Type`. A row with an ID or name applies to that record. A row with only a folder applies to that folder and its subfolders, and the nearest folder wins. Record-level rows take precedence. Build it from a Secret Server folder and secret permissions report, or by hand.
+- **Permissions CSV** (`-p`, optional). Use it for sources whose export has no access data, such as Delinea and KeePass. It has one grant per row, with the columns `Folder Path, Secret Name, Secret ID, Group, Permission` and an optional `Member Type`. A row with an ID or name applies to that record. A row with only a folder applies to that folder and its subfolders, and the nearest folder wins. Record-level rows take precedence. Repeat `-p` to merge several permissions files; a group listed twice for the same folder or record counts once. Build it from a Secret Server folder and secret permissions report, or by hand.
 - **Config** (`-c`, optional). It is JSON and only needs the keys you change; everything else uses the defaults. `init-config` writes a starter file with every key; the comments in `pam2pc/config.py` explain each one. Configs from the old phase 1 still load.
 - **Overrides** (`--overrides`, `convert` only). This is an edited copy of `review/Accounts_Review.csv`. Only the values you *changed* in `Migrate`, `Target_Safe`, `Platform_ID` and `Account_Name` are applied, matched by `Record_ID`.
 
@@ -102,8 +114,9 @@ To add a source, see [Adding a source adapter](#adding-a-source-adapter).
 | Safe | Safes are **object oriented by default: they follow the folders**. The tool checks an override, then a `Target Safe` column in the source, then `folder_rules` (exceptions; the longest folder prefix wins), then `group_rules`, then `fallback_strategy`, which names the Safe from the folders (`convention`, the default and described below; `folder_leaf`; `folder_path`; or `unmapped`). `group_rules` are optional and empty to start with, because role-oriented Safes don't scale as well. Each rule maps an access group to a Safe: the first rule matching one of the record's groups wins, `min_role` ignores weak grants, `{1}` inserts regex captures, and `{folder_leaf}` and `{folder_path}` insert the folder. Set `group_rules_first` to check them before the folder rules. |
 | Safe name | At most **28 characters**. The forbidden characters `\ / : * ? " < > \|` become **`-`**, repeated `-` are collapsed, and an optional `prefix` is added. `Valid_Safe_Name=FALSE` means the name had to change. When two different names end up identical, the later one gets a `-2` style suffix that still fits in 28 characters. |
 | Platform | The tool checks an override, then a `Platform ID` column, then `platform_rules` (a regex on type, folder, name, address, username or any source column), then `platform_map` (record type to platform), then `default_platform`. A record with no platform is an **ERROR**. |
-| Members | Each source permission is mapped through `permission_map` to a role: one of the Privilege Cloud **permission presets** (Connect only, Read only, Approver, Accounts manager, Full) or one of your named `custom_roles`, where you choose every permission flag. The defaults are Owner/Full to Full, Edit/Write to Accounts manager, View/Read to Read only, Use/Connect to Connect only, Approve to Approver, and List to the custom role List only. Each Safe gets every group seen on its accounts, at the strongest role seen (the role with the most permissions). `directory_map` turns `CORP\Group` into memberName `Group` and searchIn `corp.example.com`. |
-| Accounts | The name comes from the source name, otherwise `address-username`. Invalid characters become `_`, and the name is made unique within the Safe. URL addresses are reduced to the host name. Mapped source columns go into `platformAccountProperties` (`account_property_map`). |
+| Members | Each source permission is mapped through `permission_map` to a role: one of the Privilege Cloud **permission presets** (Connect only, Read only, Approver, Accounts manager, Full) or one of your named `custom_roles`, where you choose every permission flag. The defaults are Owner/Full to Full, Edit/Write to Accounts manager, View/Read to Read only, Use/Connect to Connect only, Approve to Approver, and List to the custom role List only. Each Safe gets every group seen on its accounts, at the strongest role seen (the role with the most permissions). `directory_sources` decide each member's searchIn and name: each source matches a domain (`CORP`, `corp.example.com`), `*` or `re:<pattern>`, applies to groups, users or both, and can drop the domain, find and replace, add text before or after and change case. Members no source matches use `directory_map` (default: everything to `Vault`). |
+| Safe settings | `safe_defaults` sets `managingCPM`, `description` (may use `{folder}` and `{safe}`) and retention (`numberOfVersionsRetention` or `numberOfDaysRetention`, not both). `safe_rules` override them for Safes whose name matches a pattern; the first match wins. `account_defaults.automaticManagementEnabled` turns CPM management on for migrated accounts. |
+| Accounts | The name comes from `account_name.template` (default `{name}`), otherwise `account_name.fallback` (default `{address}-{username}`). Invalid characters become `_`, and the name is made unique within the Safe. URL addresses are reduced to the host name. Mapped source columns go into `platformAccountProperties` (`account_property_map`). |
 | Not migrated | File attachments and file fields (`exclude_field_patterns`). Each record that loses one says so in its Notes. |
 
 ### Safe naming convention (abbreviations)
@@ -112,15 +125,18 @@ Existing structure comes first. A record with folders gets a Safe named after it
 - `\Applications\Storefront\Prod` becomes `APP-SF-P`.
 - `\Databases\Oracle Finance` becomes `DB-ORC-FIN`.
 
-Only records with no folders, such as flat KeePass files or spreadsheets, get the CyberArk example layers from `template_no_folders` (default `{env}-{tech}-{flavor}-{acct}`). For example, a local Windows service account with no folder becomes `P-SVR-WIN-LS` when `default_environment` is P.
+Only records with no folders, such as flat KeePass files or spreadsheets, get the CyberArk example layers from `template_no_folders` (default `{env}-{tech}-{flavor}-{acct}`). For example, a local Windows service account with no folder becomes `P-SVR-WIN-LS` when the `{env}` default is P.
 
 | Placeholder | Comes from | Codes |
 |---|---|---|
 | `{folder}` | Every folder level, in order. A whole folder name in `abbreviations` wins; otherwise each word gets a code from the dictionary, or an automatic code (compound words and CamelCase become initials, e.g. Storefront becomes SF and SharePoint becomes SP, and other words become consonants). `{folder_leaf}` is the last level only. | APP, SF, BOS, HR, FIN |
-| `{env}` | A folder word such as Production, Dev, Test or QA, otherwise `default_environment`. With `{env}` in the template the code moves to that spot; without it, the code stays where the folder is. | P, D, T, Q |
+| `{env}` | A folder word such as Production, Dev, Test or QA, otherwise its default. With `{env}` in the template the code moves to that spot; without it, the code stays where the folder is. | P, D, T, Q |
 | `{tech}` | The platform | SVR, DB, NET, DOM, WKS, WEB, CLD |
 | `{flavor}` | The platform | WIN, UNX, SQL, ORC, CSC, AZ |
 | `{acct}` | The platform, refined by username (root, sa, svc_*, enable) | LA, DA, LS, DS, RT, SA, EN |
+| your own, e.g. `{region}` | Whatever its rows say, for example the address or a source column | HQ, EU |
+
+Every placeholder except `{folder}` is a list of value rows in `safe_convention.layers`, all editable, including the built-in ones. Each row looks at one field, or two, and gives a code when the pattern matches; the first matching row wins, otherwise the placeholder's default. Fields: `folder_word`, `folder_level`, `folder`, `platform`, `username`, `address`, `name`, `type`, `source`, an earlier placeholder's code (`env`, `tech`, `flavor`, `acct`), or `column:<source column>`. For example, a `{region}` placeholder with the row `address` matches `\.eu\.example\.com$` gives `EU`, and the template `{region}-{folder}` turns `\Applications\Payments` into `EU-APP-PAY`.
 
 To split a folder's accounts further (least privilege), add layers to `template`, for example `{folder}-{flavor}` or `{folder}-{acct}`. The full CyberArk style is `{env}-{folder}-{tech}-{flavor}-{acct}`, which gives `P-BOS-DC-WIN-SVR-HR-APP-LS` for `\Boston DC\Production\Windows Servers\HR App` with a `svc_hr` account.
 
@@ -131,13 +147,12 @@ A code that already appears earlier in the name is not repeated. When a name is 
 
 All of this is set under `safe_convention`:
 - `template` and `template_no_folders`
-- `default_environment`
+- `layers`: the placeholders and their value rows
 - `abbreviations`: folder names or words with your code, which win over the built-in list in `pam2pc/naming.py`
 - `skip_folder_levels`
-- `environment_words`
-- `platform_codes`
+- `default_environment`, `environment_words` and `platform_codes`: older settings, still read
 
-In the Workbench, the **Mapping rules** page lists every folder name found in the loaded exports with the code it gets. You can type over any code, or keep all the suggested codes so they stay fixed. The page also flags two folders that end up with the same automatic code, and has a live preview. Rules can use the layers too. For example, `{"group_pattern": "^CORP\\APP-(.+)-Owners$", "safe": "{env}-{1}-{tech}-{flavor}-{acct}"}` gives `P-PAY-SVR-WIN-LS`, and `{convention}` inserts the whole name.
+In the Workbench, the **B. Permissions: Safes** page lists every folder name found in the loaded exports with the code it gets. You can type over any code, or keep all the suggested codes so they stay fixed. The page also flags two folders that end up with the same automatic code, and has a live preview. Rules can use the layers too. For example, `{"group_pattern": "^CORP\\APP-(.+)-Owners$", "safe": "{env}-{1}-{tech}-{flavor}-{acct}"}` gives `P-PAY-SVR-WIN-LS`, and `{convention}` inserts the whole name.
 
 Two things are flagged for review:
 - A Safe built from more than one source folder (the abbreviations collided, or levels were skipped).

@@ -77,6 +77,17 @@ code { background: #f0f2f6; padding: 1px 5px; border-radius: 4px; font-size: 12p
 .roles .tick { color: var(--ok); font-weight: 700; }
 .roles th input { width: auto; }
 .hidden { display: none !important; }
+nav .sub { padding: 6px 10px 6px 42px; font-size: 13px; }
+.stat.link { cursor: pointer; }
+.stat.link:hover { border-color: var(--accent); }
+.overlay { position: fixed; inset: 0; background: #1b2333; display: flex; align-items: center; justify-content: center; z-index: 50; }
+.overlay.modal { background: rgba(20,26,38,.55); }
+.dialog { background: var(--panel); border-radius: 10px; padding: 24px; width: 440px; max-width: calc(100vw - 32px);
+  box-shadow: 0 10px 40px rgba(0,0,0,.25); }
+.dialog h2 { margin-bottom: 8px; }
+.dialog input[type=password], .dialog input[type=text] { width: 100%; box-sizing: border-box; margin: 6px 0 12px; }
+.dialog ul { padding-left: 18px; margin: 8px 0; }
+a.pathlink { cursor: pointer; }
 .actionbar { position: sticky; bottom: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
   padding: 10px; margin-top: 10px; }
 .busy { position: fixed; inset: 0; background: rgba(255,255,255,.6); display: flex; align-items: center; justify-content: center;
@@ -88,14 +99,21 @@ code { background: #f0f2f6; padding: 1px 5px; border-radius: 4px; font-size: 12p
   <h1>pam2pc Migration Workbench</h1>
   <span class="sub" id="hdr-sub"></span>
   <span class="spacer"></span>
-  <button class="btn" id="logout" style="background:transparent;color:#fff;border-color:#45526e">End session</button>
+  <button class="btn" id="lock" style="background:transparent;color:#fff;border-color:#45526e">Lock session</button>
+  <button class="btn" id="logout" style="background:transparent;color:#fff;border-color:#45526e;margin-left:8px">End session</button>
 </header>
 <div class="layout">
   <nav id="nav">
     <button data-page="overview"><span class="num">⌂</span>Overview</button>
     <hr>
     <button data-page="load"><span class="num">1</span>Load exports</button>
-    <button data-page="rules"><span class="num">2</span>Mapping rules</button>
+    <button data-page="rules-dir" data-group="rules"><span class="num">2</span>Mapping rules</button>
+    <button class="sub" data-page="rules-dir">A. Directory sources</button>
+    <button class="sub" data-page="rules-safes">B. Permissions: Safes</button>
+    <button class="sub" data-page="rules-members">B. Permissions: Safe members</button>
+    <button class="sub" data-page="rules-platforms">C. Platforms</button>
+    <button class="sub" data-page="rules-accounts">D. Accounts</button>
+    <button class="sub" data-page="rules-json">Settings file (JSON)</button>
     <button data-page="review"><span class="num">3</span>Review &amp; change</button>
     <button data-page="safes"><span class="num">4</span>Safes &amp; members</button>
     <button data-page="output"><span class="num">5</span>Create upload files</button>
@@ -106,6 +124,22 @@ code { background: #f0f2f6; padding: 1px 5px; border-radius: 4px; font-size: 12p
 </div>
 <div id="drawer" class="drawer hidden"></div>
 <div id="busy" class="busy hidden">Working…</div>
+<div id="login" class="overlay hidden"><form class="dialog" id="login-form" autocomplete="off">
+  <h2>pam2pc Migration Workbench</h2>
+  <p class="muted" id="login-why">Sign in to continue.</p>
+  <label>Password for <b id="login-user"></b><input type="password" id="login-pw" autocomplete="current-password"></label>
+  <div class="row"><button class="btn primary" type="submit" id="login-go">Unlock</button><span id="login-msg" class="small"></span></div>
+  <p class="muted small">Only the Windows user who started the Workbench can sign in. Windows checks the password; it is not stored.
+    The Workbench locks after <span id="login-idle">10</span> minutes without activity.</p></form></div>
+<div id="endbox" class="overlay modal hidden"><div class="dialog">
+  <h2>End session?</h2>
+  <p>Ending the session:</p>
+  <ul><li>stops the Workbench on this computer, so this page and its link stop working;</li>
+    <li>leaves the database (<code id="end-db"></code>) on disk, encrypted for your Windows account. It can only be opened again by starting the Workbench again as you and signing in;</li>
+    <li>keeps the inbox and the output folders as they are.</li></ul>
+  <p><label class="inline"><input type="checkbox" id="end-del"> Also securely delete the database: every loaded record, encrypted secret, mapping and change you made is gone for good. Output files are kept.</label></p>
+  <label>Type <b>END SESSION</b> to confirm<input type="text" id="end-confirm" autocomplete="off"></label>
+  <div class="row"><button class="btn danger" id="end-go">End session</button><button class="btn" id="end-cancel">Cancel</button><span id="end-msg" class="small"></span></div></div></div>
 
 <script>
 "use strict";
@@ -117,11 +151,12 @@ const REVIEW = { view: "review", filters: {}, page: 0, sort: "target_safe", desc
 async function api(path, body) {
   const opts = body === undefined ? { headers: { "X-Pam2pc": "1" } }
     : { method: "POST", headers: { "Content-Type": "application/json", "X-Pam2pc": "1" }, body: JSON.stringify(body) };
-  $("#busy").classList.toggle("hidden", body === undefined);
+  $("#busy").classList.toggle("hidden", body === undefined || path === "/api/ping");
   try {
     const r = await fetch(path, opts);
     const data = await r.json().catch(() => ({ error: "Unexpected response" }));
-    if (r.status === 401) { document.body.innerHTML = "<p style='padding:30px'>Session ended. Restart the UI to get a new link.</p>"; throw new Error("session"); }
+    if (r.status === 401) { document.body.innerHTML = "<p style='padding:30px'>Session ended. Restart the Workbench to get a new link.</p>"; throw new Error("session"); }
+    if (r.status === 423) { showLogin("Locked after inactivity. Sign in again to continue."); throw new Error("session"); }
     if (!r.ok) throw new Error(data.error || r.statusText);
     return data;
   } finally { $("#busy").classList.add("hidden"); }
@@ -136,12 +171,70 @@ async function refresh() {
 }
 function go(page) {
   PAGE = page;
-  document.querySelectorAll("#nav button").forEach(b => b.classList.toggle("active", b.dataset.page === page));
+  document.querySelectorAll("#nav button").forEach(b => b.classList.toggle("active",
+    b.dataset.group ? page.startsWith(b.dataset.group) : b.dataset.page === page));
   closeDrawer();
   PAGES[page]().catch(e => { if (e.message !== "session") msg($("#main"), "err", e.message); });
 }
 document.querySelectorAll("#nav button").forEach(b => b.onclick = () => go(b.dataset.page));
-$("#logout").onclick = async () => { await api("/api/logout", {}); document.body.innerHTML = "<p style='padding:30px'>Session ended. You can close this tab.</p>"; };
+
+/* ---------------- Sign-in, lock, end session ---------------- */
+let LOCKED = true, LAST_PING = 0;
+function showLogin(why) {
+  LOCKED = true;
+  $("#login-why").textContent = why || "Sign in to continue.";
+  $("#login").classList.remove("hidden");
+  $("#main").innerHTML = ""; closeDrawer();
+  $("#login-pw").value = ""; $("#login-pw").focus();
+}
+async function checkSession() {
+  const r = await fetch("/api/session", { headers: { "X-Pam2pc": "1" } });
+  if (r.status === 401) { document.body.innerHTML = "<p style='padding:30px'>Session ended. Restart the Workbench to get a new link.</p>"; return null; }
+  return r.json();
+}
+$("#login-form").onsubmit = async (e) => {
+  e.preventDefault();
+  try {
+    await api("/api/unlock", { password: $("#login-pw").value });
+    $("#login-pw").value = "";
+    LOCKED = false; LAST_PING = Date.now();
+    $("#login").classList.add("hidden");
+    go(PAGE);
+  } catch (err) { $("#login-msg").innerHTML = `<span style="color:var(--err)">${esc(err.message)}</span>`; $("#login-pw").select(); }
+};
+$("#lock").onclick = async () => { await api("/api/lock", {}).catch(() => {}); showLogin("Session locked."); };
+$("#logout").onclick = () => {
+  $("#end-db").textContent = STATE.workspace ? STATE.workspace + (STATE.workspace.includes("\\") ? "\\" : "/") + "migration.db" : "migration.db";
+  $("#end-confirm").value = ""; $("#end-del").checked = false; $("#end-msg").textContent = "";
+  $("#endbox").classList.remove("hidden"); $("#end-confirm").focus();
+};
+$("#end-cancel").onclick = () => $("#endbox").classList.add("hidden");
+$("#end-go").onclick = async () => {
+  if ($("#end-confirm").value !== "END SESSION") return $("#end-msg").innerHTML = '<span style="color:var(--err)">Type END SESSION exactly.</span>';
+  try {
+    const r = await api("/api/end", { confirm: "END SESSION", delete_db: $("#end-del").checked });
+    document.body.innerHTML = `<p style='padding:30px'>Session ended and the Workbench has stopped.
+      ${r.database_deleted ? "The database was securely deleted." : "The database is still on disk, encrypted for your Windows account. Start the Workbench again to open it."}
+      You can close this tab.</p>`;
+  } catch (e) { $("#end-msg").innerHTML = `<span style="color:var(--err)">${esc(e.message)}</span>`; }
+};
+// Real use (keys, clicks, mouse) keeps the session open; nothing else does.
+["keydown", "mousedown", "mousemove", "wheel", "touchstart"].forEach(ev => document.addEventListener(ev, () => {
+  if (!LOCKED && Date.now() - LAST_PING > 60000) { LAST_PING = Date.now(); api("/api/ping", {}).catch(() => {}); }
+}, { passive: true }));
+setInterval(async () => {
+  if (LOCKED) return;
+  const s = await checkSession().catch(() => null);
+  if (s && s.locked) showLogin("Locked after " + s.idle_minutes + " minutes without activity. Sign in again to continue.");
+}, 30000);
+async function start() {
+  const s = await checkSession();
+  if (!s) return;
+  $("#login-user").textContent = s.user;
+  $("#login-idle").textContent = s.idle_minutes;
+  if (s.locked) showLogin("Sign in to continue.");
+  else { LOCKED = false; go("overview"); }
+}
 
 const PAGES = {};
 
@@ -164,18 +257,26 @@ PAGES.overview = async () => {
   else if (c.ERROR) next = `<div class="msg warn">${c.ERROR} accounts have errors and won't be uploaded. Open <b>3. Review &amp; change</b> → "Errors".</div>`;
   m.innerHTML = `<h2>Overview</h2><p class="lead">Where the migration stands right now.</p>
     <div class="stats">
-      <div class="stat"><b>${STATE.records}</b><span>records loaded</span></div>
-      <div class="stat"><b>${STATE.to_upload}</b><span>will be uploaded</span></div>
-      <div class="stat"><b style="color:var(--warn)">${c.REVIEW || 0}</b><span>need a look</span></div>
-      <div class="stat"><b style="color:var(--err)">${c.ERROR || 0}</b><span>errors (not uploaded)</span></div>
-      <div class="stat"><b>${STATE.excluded}</b><span>excluded by you</span></div>
-      <div class="stat"><b>${STATE.safes}</b><span>Safes (${STATE.invalid_safes} renamed)</span></div>
-      <div class="stat"><b>${STATE.edits}</b><span>accounts you changed</span></div>
+      <div class="stat link" data-view="all" title="Show all accounts"><b>${STATE.records}</b><span>records loaded</span></div>
+      <div class="stat link" data-view="upload" title="Show the accounts that will be uploaded"><b>${STATE.to_upload}</b><span>will be uploaded</span></div>
+      <div class="stat link" data-view="review" title="Show the accounts that need a look"><b style="color:var(--warn)">${c.REVIEW || 0}</b><span>need a look</span></div>
+      <div class="stat link" data-view="errors" title="Show the accounts with errors"><b style="color:var(--err)">${c.ERROR || 0}</b><span>errors (not uploaded)</span></div>
+      <div class="stat link" data-view="excluded" title="Show the accounts you excluded"><b>${STATE.excluded}</b><span>excluded by you</span></div>
+      <div class="stat link" data-goto="safes" title="Show the Safes"><b>${STATE.safes}</b><span>Safes (${STATE.invalid_safes} renamed)</span></div>
+      <div class="stat link" data-view="edited" title="Show the accounts you changed"><b>${STATE.edits}</b><span>accounts you changed</span></div>
     </div>${next}
     <div class="card" style="margin-top:16px"><h3>Loaded files</h3>
-    <table><tr><th>#</th><th>Source</th><th>File</th><th>Records</th><th>Loaded</th><th>By</th></tr>
-    ${STATE.inputs.map(i => `<tr><td>${i.id}</td><td>${esc(i.source)}</td><td class="small">${esc(i.path)}</td><td>${i.records}</td><td>${esc(i.loaded_utc)}</td><td>${esc(i.loaded_by)}</td></tr>`).join("")}</table></div>
+    ${STATE.inputs.some(i => i.repeat) ? `<div class="msg warn">Some files were loaded more than once. Loading a file with the same name again replaces its records (matched by record ID) and keeps your changes; records missing from the newer file stay from the earlier load. Loading the same content under a different file name loads every record a second time, which shows up as possible duplicates.</div>` : ""}
+    <div class="tablewrap"><table><tr><th>#</th><th>Source</th><th>File</th><th>Records</th><th>SHA-256 checksum</th><th>Loaded more than once?</th><th>Permissions file(s)</th><th>Loaded (UTC)</th><th>By</th></tr>
+    ${STATE.inputs.map(i => `<tr><td>${i.id}</td><td>${esc(i.source)}</td><td title="${esc(i.path)}">${esc(i.file)}</td><td>${i.records}</td>
+      <td class="small"><code title="${esc(i.sha256)}">${esc((i.sha256 || "").slice(0, 16))}…</code></td>
+      <td class="small">${i.repeat ? `<span class="pill ${/different|twice/.test(i.repeat) ? "REVIEW" : "OK"}">${/different/.test(i.repeat) ? "different content" : /twice/.test(i.repeat) ? "same content, other name" : "same content"}</span> ${esc(i.repeat)}` : '<span class="muted">first load</span>'}</td>
+      <td class="small">${i.permissions_path ? i.permissions_path.split(" | ").map((pth, k) => `${esc(pth.split(/[\\/]/).pop())} <code title="${esc((i.permissions_sha256 || "").split(" | ")[k] || "")}">${esc(((i.permissions_sha256 || "").split(" | ")[k] || "").slice(0, 8))}…</code>`).join("<br>") : '<span class="muted">none</span>'}</td>
+      <td class="small">${esc(i.loaded_utc)}</td><td>${esc(i.loaded_by)}</td></tr>`).join("")}</table></div></div>
     <p class="muted small">Workspace: <code>${esc(STATE.workspace)}</code> · last mapped ${esc(STATE.mapped || "never")}</p>`;
+  document.querySelectorAll(".stat[data-view]").forEach(el => el.onclick = () => {
+    REVIEW.view = el.dataset.view; REVIEW.filters = {}; REVIEW.page = 0; REVIEW.selected.clear(); go("review"); });
+  document.querySelectorAll(".stat[data-goto]").forEach(el => el.onclick = () => go(el.dataset.goto));
 };
 
 /* ---------------- 1. Load ---------------- */
@@ -185,39 +286,47 @@ PAGES.load = async () => {
   const srcOpts = (sel) => `<option value="">Auto-detect${sel ? " (" + esc(sel) + ")" : ""}</option>` +
     Object.entries(STATE.sources).map(([k, d]) => `<option value="${k}">${esc(k)}: ${esc(d)}</option>`).join("");
   $("#main").innerHTML = `<h2>1. Load exports</h2>
-    <p class="lead">Copy export files into the inbox folder, tick the ones to load, then click Load. ${STATE.protector === "plain" ? "" : "Secrets are encrypted as they are stored, so you can securely delete each export straight after loading it."} Loading a file again replaces its earlier records and keeps your changes.</p>
-    <div class="card"><h3>Inbox: <code>${esc(STATE.inbox)}</code></h3>
-    ${files.length ? `<table><tr><th></th><th>File</th><th>Size</th><th>Type</th><th>Use as permissions file</th><th></th></tr>
+    <p class="lead">Copy export files into the inbox folder, tick the ones to load, then click Load. ${STATE.protector === "plain" ? "" : "Secrets are encrypted as they are stored, so you can securely delete each export straight after loading it."}
+      Loading a file with the same name again replaces its records and keeps your changes; the Overview shows each file's checksum so you can tell whether the content changed.</p>
+    <div class="card"><h3>Inbox: <a class="pathlink" id="open-inbox" title="Open this folder in Explorer"><code>${esc(STATE.inbox)}</code></a>
+      <button class="btn small" id="open-inbox2">Open folder</button></h3>
+    ${files.length ? `<table><tr><th>Load</th><th>File</th><th>Size</th><th>Type</th><th>Permissions file</th><th></th></tr>
       ${files.map((f, i) => `<tr><td><input type="checkbox" class="pick" data-i="${i}" ${f.guess && !f.permissions ? "checked" : ""}></td>
         <td>${esc(f.name)}</td><td>${(f.size / 1024).toFixed(1)} KB</td>
         <td><select class="src" data-i="${i}">${srcOpts(f.guess)}</select></td>
-        <td><input type="radio" name="perm" value="${esc(f.name)}" ${f.permissions && files.filter(x => x.permissions).length === 1 ? "checked" : ""}>${f.permissions ? ' <span class="muted small">looks like one</span>' : ""}</td>
+        <td><label class="inline"><input type="checkbox" class="perm" data-i="${i}" ${f.permissions ? "checked" : ""}>${f.permissions ? ' <span class="muted small">looks like one</span>' : ""}</label></td>
         <td><button class="btn danger del" data-name="${esc(f.name)}">Securely delete</button></td></tr>`).join("")}
-      <tr><td></td><td colspan="3" class="muted small">A permissions file lists groups per folder or record (columns: Folder Path, Secret Name, Secret ID, Group, Permission). Use one when the export itself has no access data, as with Delinea and KeePass.</td>
-      <td><input type="radio" name="perm" value="" ${files.filter(x => x.permissions).length === 1 ? "" : "checked"}> none</td><td></td></tr></table>
+      <tr><td></td><td colspan="5" class="muted small">A permissions file lists groups per folder or record (columns: Folder Path, Secret Name, Secret ID, Group, Permission). Use one when the export itself has no access data, as with Delinea and KeePass.
+        Tick several to merge them; a group listed in more than one file for the same folder is counted once.</td></tr></table>
       <div class="row" style="margin-top:12px"><button class="btn primary" id="go-load">Load selected files</button>
       <button class="btn" id="re">Refresh list</button></div>`
       : `<p class="muted">The inbox is empty. Copy your export files into the folder above, then <button class="btn" id="re">Refresh</button></p>`}
     <div id="load-msg"></div></div>`;
   $("#re").onclick = () => go("load");
-  document.querySelectorAll(".pick").forEach(cb => {
-    const radio = () => document.querySelector(`input[name=perm][value="${CSS.escape(files[cb.dataset.i].name)}"]`);
-    cb.onchange = () => { if (cb.checked && radio().checked) document.querySelector("input[name=perm][value='']").checked = true; };
-  });
+  const openInbox = async () => {
+    try { const r = await api("/api/open", { which: "inbox" }); if (!r.opened) alert("Open this folder yourself: " + r.path); }
+    catch (e) { msg($("#load-msg"), "err", e.message); }
+  };
+  $("#open-inbox").onclick = openInbox; $("#open-inbox2").onclick = openInbox;
+  document.querySelectorAll(".pick").forEach(cb => cb.onchange = () => {
+    const p = document.querySelector(`.perm[data-i="${cb.dataset.i}"]`); if (cb.checked && p) p.checked = false; });
+  document.querySelectorAll(".perm").forEach(cb => cb.onchange = () => {
+    const p = document.querySelector(`.pick[data-i="${cb.dataset.i}"]`); if (cb.checked && p) p.checked = false; });
   document.querySelectorAll(".del").forEach(b => b.onclick = async () => {
     if (!confirm(`Overwrite and delete ${b.dataset.name}? This can't be undone.`)) return;
     try { await api("/api/inbox/delete", { name: b.dataset.name }); go("load"); } catch (e) { msg($("#load-msg"), "err", e.message); }
   });
   const btn = $("#go-load");
   if (btn) btn.onclick = async () => {
-    const perm = document.querySelector("input[name=perm]:checked").value;
+    const perm = [...document.querySelectorAll(".perm:checked")].map(cb => files[cb.dataset.i].name);
     const picks = [...document.querySelectorAll(".pick:checked")].map(cb => ({
       name: files[cb.dataset.i].name, source: document.querySelector(`.src[data-i="${cb.dataset.i}"]`).value }))
-      .filter(f => f.name !== perm);
+      .filter(f => !perm.includes(f.name));
     try {
       const r = await api("/api/ingest", { files: picks, permissions: perm });
       await refresh();
       $("#load-msg").innerHTML = `<div class="msg ok">${r.results.map(x => `${esc(x.name)}: ${x.records} records loaded as ${esc(x.source)}${x.replaced ? ` (${x.replaced} replaced)` : ""}`).join("<br>")}
+        ${perm.length ? `<br>Permissions merged from ${perm.map(esc).join(", ")}.` : ""}
         <br>Mapping rules applied. ${STATE.protector === "dpapi" ? "You can now securely delete the export files." : ""}</div>
         <button class="btn primary" onclick="go('rules')">Next: mapping rules</button>`;
     } catch (e) { msg($("#load-msg"), "err", e.message); }
@@ -237,11 +346,15 @@ const PERM_GROUPS = [
     ["requestsAuthorizationLevel2", "Authorize account requests, level 2"], ["accessWithoutConfirmation", "Access Safe without confirmation"]]],
   ["Advanced", [["createFolders", "Create folders"], ["deleteFolders", "Delete folders"], ["moveAccountsAndFolders", "Move accounts and folders"]]],
 ];
+const LAYER_FIELDS = ["folder_word", "folder_level", "folder", "platform", "username", "address", "name", "type", "source",
+  "env", "tech", "flavor", "acct", "column:"];
 let ROLE_NAMES = () => [];
-function editorTable(id, cols, rows) {
+let TABLES = {};
+function editorTable(id, cols, rows, addLabel = "+ Add row") {
+  TABLES[id] = cols;
   return `<table class="editor" id="${id}"><tr>${cols.map(c => `<th>${esc(c.label)}</th>`).join("")}<th></th></tr>
     ${rows.map(r => editorRow(cols, r)).join("")}</table>
-    <button class="btn small" data-add="${id}">+ Add row</button>`;
+    <button class="btn small" data-add="${id}">${esc(addLabel)}</button>`;
 }
 function roleOptions(value, blank) {
   const names = ROLE_NAMES();
@@ -253,8 +366,9 @@ function editorRow(cols, r = {}) {
   return `<tr>${cols.map(c => c.roles
     ? `<td><select class="role-select" data-blank="${c.blank ? 1 : ""}" data-k="${c.key}">${roleOptions(r[c.key] || "", c.blank)}</select></td>`
     : c.options
-    ? `<td><select data-k="${c.key}">${c.options.map(o => `<option ${o === (r[c.key] || "") ? "selected" : ""}>${esc(o)}</option>`).join("")}</select></td>`
-    : `<td><input type="text" data-k="${c.key}" value="${esc(r[c.key] || "")}" placeholder="${esc(c.ph || "")}"${c.list ? ` list="${c.list}"` : ""}></td>`).join("")}
+    ? `<td><select data-k="${c.key}">${c.options.map(o => { const [v, l] = Array.isArray(o) ? o : [o, o];
+        return `<option value="${esc(v)}" ${String(v) === String(r[c.key] ?? c.def ?? "") ? "selected" : ""}>${esc(l)}</option>`; }).join("")}</select></td>`
+    : `<td><input type="text" data-k="${c.key}" value="${esc(r[c.key] ?? "")}" placeholder="${esc(c.ph || "")}"${c.list ? ` list="${c.list}"` : ""}${c.size ? ` size="${c.size}"` : ""}></td>`).join("")}
     <td class="x"><button class="btn small" title="Remove" onclick="this.closest('tr').remove()">✕</button></td></tr>`;
 }
 function readTable(id) {
@@ -262,193 +376,381 @@ function readTable(id) {
     const o = {}; tr.querySelectorAll("[data-k]").forEach(i => { if (i.value.trim()) o[i.dataset.k] = i.value.trim(); }); return o;
   }).filter(o => Object.keys(o).length);
 }
+function wireAddButtons(root = document) {
+  root.querySelectorAll("[data-add]").forEach(b => b.onclick = () =>
+    $(`#${b.dataset.add}`).insertAdjacentHTML("beforeend", editorRow(TABLES[b.dataset.add])));
+}
 const normName = (t) => String(t).toLowerCase().split(/[\s\-_/\\:;,.()\[\]{}"'&+]+/).filter(Boolean).join(" ");
-PAGES.rules = async () => {
-  const { config: cfg, hints, presets } = await api("/api/config");
-  const LEGACY = { owner: "Full", editor: "Accounts manager", user: "Read only", viewer: "List only" };
-  const GR = [{ key: "group", label: "Group (exact name)", ph: "CORP\\Unix-Admins", list: "dl-groups" },
-              { key: "group_pattern", label: "…or pattern (advanced)", ph: "^CORP\\\\APP-(.+)-Owners$" },
-              { key: "safe", label: "Target Safe", ph: "UNIX-Admins or APP-{1}" },
-              { key: "min_role", label: "Only if role at least", roles: true, blank: true }];
-  const FR = [{ key: "folder_prefix", label: "Folder (and everything under it)", ph: "\\IT\\Network", list: "dl-folders" },
-              { key: "safe", label: "Target Safe", ph: "NET-Devices or {convention}" }];
-  const PM = [{ key: "type", label: "Record type / template", list: "dl-types" }, { key: "platform", label: "Platform ID", ph: "WinDomain" }];
-  const DM = [{ key: "domain", label: "Domain prefix in group names", ph: "CORP (* = everything else)" }, { key: "dir", label: "Directory (searchIn)", ph: "corp.example.com" }];
-  const AB = [{ key: "word", label: "Word or phrase" }, { key: "code", label: "Code (1-4 letters)", ph: "e.g. BOS" }];
-  const PR = [{ key: "role", label: "Source permission word" }, { key: "to", label: "Privilege Cloud role", roles: true }];
-  const platRows = Object.entries(cfg.platform_map).map(([type, platform]) => ({ type, platform }));
-  hints.types_without_platform.forEach(t => { if (t && !platRows.some(r => r.type.toLowerCase() === t.toLowerCase())) platRows.unshift({ type: t, platform: "" }); });
-  const fixRole = (r) => r ? (LEGACY[String(r).toLowerCase()] && !(cfg.custom_roles || {})[r] ? LEGACY[String(r).toLowerCase()] : r) : "";
-  const migrateRules = (rules) => rules.map(r => ({ ...r, min_role: fixRole(r.min_role || (r.min_permission ? ({owner:"Owner",edit:"Editor",view:"User",list:"Viewer"})[String(r.min_permission).toLowerCase()] || "" : "")) }));
-  const folderNames = new Set((hints.folders || []).flatMap(f => f.name.split("\\").filter(Boolean)).map(normName));
-  const abbr = cfg.safe_convention.abbreviations || {};
-  let folderAbbr = Object.fromEntries(Object.entries(abbr).filter(([w]) => folderNames.has(normName(w))));
-  const otherAbbr = Object.entries(abbr).filter(([w]) => !folderNames.has(normName(w))).map(([word, code]) => ({ word, code }));
-  let customRoles = Object.entries({ ...(cfg.role_permissions || {}), ...(cfg.custom_roles || {}) }).filter(([n]) => !presets[n]).map(([name, perms]) => ({ name, perms: new Set(perms) }));
-  ROLE_NAMES = () => Object.keys(presets).concat(customRoles.map(r => r.name.trim()).filter(Boolean));
-  const fb = [["convention", "the folder structure, abbreviated (\\Applications\\Storefront\\Prod → APP-SF-P)"],
-              ["folder_leaf", "the last folder only (Prod)"], ["folder_path", "the whole folder path (Applications-Storefront-Prod)"],
-              ["unmapped", "nothing: use UNMAPPED so I decide"]];
-  $("#main").innerHTML = `<h2>2. Mapping rules</h2>
-    <p class="lead">These rules decide each account's Safe, platform and Safe members. Click <b>Save &amp; apply</b> to re-run them on everything loaded; your manual changes in step 3 always win over these rules.</p>
-    <datalist id="dl-groups">${(hints.groups || []).map(g => `<option value="${esc(g.name)}">${g.accounts} accounts</option>`).join("")}</datalist>
-    <datalist id="dl-folders">${(hints.folders || []).map(g => `<option value="${esc(g.name)}">${g.accounts} accounts</option>`).join("")}</datalist>
-    <datalist id="dl-types">${(hints.types || []).map(g => `<option value="${esc(g.name)}">${g.accounts} accounts</option>`).join("")}</datalist>
-    <div class="card"><h3>Safe from folder <span class="muted small">(the default: object-oriented Safes that follow your existing folders)</span></h3>
-      <div class="row"><label class="inline">Name each Safe after
-        <select id="fallback">${fb.map(([v, l]) => `<option value="${v}" ${cfg.fallback_strategy === v ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>
-        <label class="inline">Prefix every Safe with <input type="text" id="prefix" value="${esc(cfg.safe_name.prefix || "")}" size="8" placeholder="MIG-"></label></div>
-      <h4 style="margin:12px 0 6px">Exceptions: send a folder somewhere else <span class="muted small">(the most specific folder wins)</span></h4>
-      ${editorTable("t-fr", FR, cfg.folder_rules)}
-      <p class="muted small">Safe names are always cut to ${cfg.safe_name.max_length} characters, and the characters <code>${esc(cfg.safe_name.invalid_chars)}</code> become "${esc(cfg.safe_name.replacement)}".</p></div>
-    <div class="card"><h3>Safe naming convention</h3>
-      <p class="muted small">Your existing structure comes first: an account with folders gets a Safe named after its folder levels, in order, each one abbreviated.
-        Only accounts with no folders (flat KeePass files, spreadsheets) get the CyberArk example layers instead.</p>
-      <div class="row"><label class="inline">Accounts with folders <input type="text" id="conv-template" size="34" value="${esc(cfg.safe_convention.template)}"></label>
-        <label class="inline">Accounts with no folders <input type="text" id="conv-flat" size="34" value="${esc(cfg.safe_convention.template_no_folders || "")}"></label></div>
-      <div class="row"><label class="inline">Default environment <input type="text" id="conv-env" size="3" value="${esc(cfg.safe_convention.default_environment || "")}" placeholder="P"></label>
-        <label class="inline">Leave out folder levels <input type="text" id="conv-skip" size="30" value="${esc((cfg.safe_convention.skip_folder_levels || []).join(", "))}" placeholder="e.g. Root"></label></div>
-      <details style="margin:8px 0"><summary class="small">What can go in a template</summary>
-      <table class="small" style="margin:8px 0"><tr><th>Placeholder</th><th>Comes from</th><th>Examples</th></tr>
-        <tr><td><code>{folder}</code></td><td>every folder level, abbreviated, in order (<code>{folder_leaf}</code> = last level only)</td><td>APP-SF-P, BOS-HR</td></tr>
-        <tr><td><code>{env}</code></td><td>a folder word like Production, Dev, Test, QA (else the default environment). With <code>{env}</code> in the template the code moves to that spot; without it, it stays in place in the folder part</td><td>P, D, T, Q</td></tr>
-        <tr><td><code>{tech}</code></td><td>the platform</td><td>SVR, DB, NET, DOM, WKS</td></tr>
-        <tr><td><code>{flavor}</code></td><td>the platform</td><td>WIN, UNX, SQL, ORC, CSC</td></tr>
-        <tr><td><code>{acct}</code></td><td>the platform, refined by username (root, sa, svc_*, enable)</td><td>LA, DA, LS, DS, RT, SA, EN</td></tr></table>
-      <p class="muted small">Add <code>-{flavor}</code> or <code>-{acct}</code> to the folder template to split a folder's accounts into separate Safes by technology or account type.
-        A code already used earlier in the name is not repeated. If a name is too long, long folder names become initials first, then the top folder levels are left out.</p></details>
-      <h4 style="margin:12px 0 6px">Folder abbreviations <span class="muted small">(taken from the folders you loaded; type a code to change one)</span></h4>
-      <div id="conv-folders"><p class="muted small">${STATE.has_db ? "Loading…" : "Load some exports to see your folder names here."}</p></div>
-      <details style="margin-top:10px" ${otherAbbr.length ? "open" : ""}><summary class="small">Other words and phrases</summary>
-      ${editorTable("t-ab", AB, otherAbbr)}</details>
-      <div class="row" style="margin-top:10px"><button class="btn" id="conv-preview">Preview names</button><span class="muted small">uses the settings on this page, nothing is saved</span></div>
-      <div id="conv-out"></div></div>
-    <div class="card"><h3>Optional: Safe from access groups <span class="muted small">(role-oriented; empty unless you add rules)</span></h3>
-      <p class="muted small">Role-oriented Safes don't scale as well as folder (object) Safes, so these rules only apply to the groups you list.
-        Checked top to bottom; the first match wins.</p>
-      ${editorTable("t-gr", GR, migrateRules(cfg.group_rules))}
-      <p><label class="inline"><input type="checkbox" id="gr-first" ${cfg.group_rules_first ? "checked" : ""}> Check these before the folder exceptions above</label></p>
-      <p class="muted small">In the Safe name you can use {1} for the pattern's first ( ) part, {folder_leaf} or {folder_path} for the record's folder,
-        {convention} for the full naming-convention name, or single layers such as <code>{env}-APP-{1}-{flavor}</code>.</p></div>
-    <div class="card"><h3>Platforms</h3>
-      ${hints.types_without_platform.length ? `<div class="msg warn">These record types have no platform yet, so their accounts can't be uploaded: ${hints.types_without_platform.map(esc).join(", ")}. Fill in the Platform ID below.</div>` : ""}
-      ${editorTable("t-pm", PM, platRows)}
-      <p><label class="inline">Platform for anything not listed <input type="text" id="defplat" value="${esc(cfg.default_platform || "")}" placeholder="leave empty to flag as error"></label></p></div>
-    <div class="card"><h3>Safe members</h3>
-      <p class="muted small">How source permissions turn into Privilege Cloud permission presets or your own custom roles, and where to find the groups.</p>
-      <div class="row" style="align-items:flex-start;gap:24px">
-        <div style="flex:1;min-width:300px">${editorTable("t-pr", PR, Object.entries(cfg.permission_map).map(([role, to]) => ({ role, to: fixRole(to) })))}</div>
-        <div style="flex:1;min-width:300px">${editorTable("t-dm", DM, Object.entries(cfg.directory_map).map(([domain, dir]) => ({ domain, dir })))}
-          <p><label class="inline"><input type="checkbox" id="strip" ${cfg.strip_domain_prefix ? "checked" : ""}> Drop "CORP\\" from member names</label></p></div>
-      </div>
-      <h4 style="margin:14px 0 6px">Roles and their permissions</h4>
-      <p class="muted small">The five Privilege Cloud presets are fixed. Make a custom role to choose every permission yourself; give it a name and pick it in the table above.</p>
-      <div class="row"><label class="inline">New custom role starting from <select id="role-from">${["(nothing ticked)"].concat(Object.keys(presets)).map(n => `<option>${esc(n)}</option>`).join("")}</select></label>
-        <button class="btn small" id="role-add">+ New custom role</button></div>
-      <div class="tablewrap" style="margin-top:8px" id="roles"></div></div>
-    <details class="card"><summary><b>Advanced: edit the full settings as JSON</b></summary>
-      <p class="muted small">Only change these if you know what you need. Anything you set here is kept unless the forms above change the same setting.</p>
-      <textarea id="json" rows="16">${esc(JSON.stringify(cfg, null, 2))}</textarea></details>
-    <div class="actionbar row"><button class="btn primary" id="save">Save &amp; apply rules</button><span id="rules-msg"></span></div>`;
-  const tables = { "t-gr": GR, "t-fr": FR, "t-pm": PM, "t-dm": DM, "t-pr": PR, "t-ab": AB };
-  document.querySelectorAll("[data-add]").forEach(b => b.onclick = () =>
-    $(`#${b.dataset.add}`).insertAdjacentHTML("beforeend", editorRow(tables[b.dataset.add])));
+const RULE_PAGES = [["rules-dir", "A. Directory sources"], ["rules-safes", "B. Permissions: Safes"],
+  ["rules-members", "B. Permissions: Safe members"], ["rules-platforms", "C. Platforms"], ["rules-accounts", "D. Accounts"],
+  ["rules-json", "Settings file (JSON)"]];
 
-  // ---- roles matrix
-  const refreshRoleSelects = () => document.querySelectorAll("select.role-select").forEach(sel => {
-    const v = sel.value; sel.innerHTML = roleOptions(v, !!sel.dataset.blank); });
-  const renderRoles = () => {
-    const presetNames = Object.keys(presets);
-    $("#roles").innerHTML = `<table class="small roles"><tr><th>Permission</th>
-      ${presetNames.map(n => `<th title="Privilege Cloud preset">${esc(n)}</th>`).join("")}
-      ${customRoles.map((r, i) => `<th><input type="text" class="role-name" data-i="${i}" value="${esc(r.name)}" placeholder="Role name" size="12">
-        <button class="btn small" data-del="${i}" title="Delete this custom role">✕</button></th>`).join("")}</tr>
-      ${PERM_GROUPS.map(([group, perms]) => `<tr><td colspan="${1 + presetNames.length + customRoles.length}" class="muted"><b>${esc(group)}</b></td></tr>` +
-        perms.map(([key, label]) => `<tr><td>${esc(label)}</td>
-          ${presetNames.map(n => `<td class="c">${presets[n].includes(key) ? '<span class="tick" title="Granted by this preset">✓</span>' : ""}</td>`).join("")}
-          ${customRoles.map((r, i) => `<td class="c"><input type="checkbox" class="role-perm" data-i="${i}" data-p="${key}" ${r.perms.has(key) ? "checked" : ""}></td>`).join("")}</tr>`).join("")).join("")}
-    </table>`;
-    document.querySelectorAll(".role-name").forEach(inp => inp.oninput = () => { customRoles[+inp.dataset.i].name = inp.value; refreshRoleSelects(); });
-    document.querySelectorAll(".role-perm").forEach(cb => cb.onchange = () => {
-      const s = customRoles[+cb.dataset.i].perms; cb.checked ? s.add(cb.dataset.p) : s.delete(cb.dataset.p); });
-    document.querySelectorAll("[data-del]").forEach(b => b.onclick = () => { customRoles.splice(+b.dataset.del, 1); renderRoles(); refreshRoleSelects(); });
-  };
-  $("#role-add").onclick = () => {
-    const from = $("#role-from").value;
-    let name = "Custom role", n = 1;
-    while (ROLE_NAMES().includes(name)) name = `Custom role ${++n}`;
-    customRoles.push({ name, perms: new Set(presets[from] || []) });
-    renderRoles(); refreshRoleSelects();
-    const inputs = document.querySelectorAll(".role-name"); inputs[inputs.length - 1].select();
-  };
-  renderRoles();
-
-  // ---- folder abbreviations
-  const readFolderCodes = () => {
-    document.querySelectorAll("#conv-folders input[data-folder]").forEach(i => {
-      const code = i.value.trim(); if (code) folderAbbr[i.dataset.folder] = code; else delete folderAbbr[i.dataset.folder]; });
-    return folderAbbr;
-  };
-  const renderFolderCodes = (rows) => {
-    if (!rows.length) return;
-    const yours = {}; Object.entries(folderAbbr).forEach(([w, c]) => yours[normName(w)] = [w, c]);
-    $("#conv-folders").innerHTML = `<div class="tablewrap" style="max-height:40vh"><table class="small editor"><tr><th>Folder name</th><th>Accounts</th><th>Code</th><th></th></tr>
-      ${rows.map(r => { const mine = yours[normName(r.folder)];
-        return `<tr><td>${esc(r.folder)}</td><td>${r.accounts}</td>
-        <td><input type="text" data-folder="${esc(mine ? mine[0] : r.folder)}" value="${esc(mine ? mine[1] : "")}" placeholder="${esc(mine ? "" : r.code)}"></td>
-        <td class="small">${r.clash ? `<span class="pill ERROR">same code as ${esc(r.clash)}</span>` : r.automatic && !mine ? '<span class="muted">automatic</span>' : ""}</td></tr>`; }).join("")}</table></div>
-      <div class="row" style="margin-top:6px"><button class="btn small" id="conv-keep">Keep all the suggested codes</button>
-        <span class="muted small">writes them into your settings so they stay the same later</span></div>`;
-    $("#conv-keep").onclick = () => document.querySelectorAll("#conv-folders input[data-folder]").forEach(i => { if (!i.value) i.value = i.placeholder; });
-  };
-
-  const collect = () => {
-    let base;
-    try { base = JSON.parse($("#json").value); } catch (e) { throw new Error("The advanced JSON is not valid: " + e.message); }
-    const abbrOut = { ...readFolderCodes() };
-    readTable("t-ab").filter(r => r.word && r.code).forEach(r => abbrOut[r.word] = r.code);
-    base.safe_convention = { ...(base.safe_convention || {}), template: $("#conv-template").value.trim(),
-      template_no_folders: $("#conv-flat").value.trim(),
-      default_environment: $("#conv-env").value.trim(),
-      skip_folder_levels: $("#conv-skip").value.split(",").map(x => x.trim()).filter(Boolean),
-      abbreviations: abbrOut };
-    base.group_rules = readTable("t-gr").map(r => { const o = { safe: r.safe }; if (r.group) o.group = r.group; else if (r.group_pattern) o.group_pattern = r.group_pattern; if (r.min_role) o.min_role = r.min_role; return o; });
-    base.group_rules_first = $("#gr-first").checked;
-    base.folder_rules = readTable("t-fr");
-    base.fallback_strategy = $("#fallback").value;
-    base.safe_name = { ...(base.safe_name || {}), prefix: $("#prefix").value.trim() };
-    base.platform_map = Object.fromEntries(readTable("t-pm").filter(r => r.type && r.platform).map(r => [r.type, r.platform]));
-    base.default_platform = $("#defplat").value.trim();
-    base.permission_map = Object.fromEntries(readTable("t-pr").filter(r => r.role && r.to).map(r => [r.role, r.to]));
-    base.custom_roles = Object.fromEntries(customRoles.map(r => [r.name.trim(), PERM_GROUPS.flatMap(g => g[1].map(p => p[0])).filter(p => r.perms.has(p))]));
-    delete base.role_permissions;
-    base.directory_map = Object.fromEntries(readTable("t-dm").filter(r => r.domain && r.dir).map(r => [r.domain, r.dir]));
-    base.strip_domain_prefix = $("#strip").checked;
-    delete base.min_permission;
-    return base;
-  };
-  const preview = async () => {
-    let base;
-    try { base = collect(); } catch (e) { return msg($("#conv-out"), "err", e.message); }
-    const r = await api("/api/naming/preview", { config: base });
-    renderFolderCodes(r.folder_codes || []);
-    $("#conv-out").innerHTML = r.samples.length ? `<div class="tablewrap" style="margin-top:10px;max-height:40vh"><table>
-      <tr><th>Source folder</th><th>Platform</th><th>Safe name</th><th>Length</th><th>Notes</th></tr>
-      ${r.samples.map(x => `<tr><td class="small">${esc(x.folder)}</td><td>${esc(x.platform)}</td><td><b>${esc(x.name)}</b></td><td>${x.length}</td><td class="notes">${esc(x.notes)}</td></tr>`).join("")}</table></div>`
-      : '<p class="muted">Load some exports to see a preview.</p>';
-  };
-  $("#conv-preview").onclick = () => preview().catch(e => msg($("#conv-out"), "err", e.message));
-  if (STATE.has_db) preview().catch(() => {});
+// One settings page: its own cards and its own Save & apply, which saves only its keys.
+async function rulesPage(page, intro, render) {
+  const data = await api("/api/config");
+  TABLES = {};
+  const title = RULE_PAGES.find(p => p[0] === page)[1];
+  const view = render(data);
+  $("#main").innerHTML = `<h2>2. Mapping rules · ${esc(title)}</h2>
+    <p class="lead">${intro} <b>Save &amp; apply</b> saves this page only and re-runs the rules on everything loaded. Your manual changes in step 3 always win.</p>
+    <datalist id="dl-groups">${(data.hints.groups || []).map(g => `<option value="${esc(g.name)}">${g.accounts} accounts</option>`).join("")}</datalist>
+    <datalist id="dl-folders">${(data.hints.folders || []).map(g => `<option value="${esc(g.name)}">${g.accounts} accounts</option>`).join("")}</datalist>
+    <datalist id="dl-types">${(data.hints.types || []).map(g => `<option value="${esc(g.name)}">${g.accounts} accounts</option>`).join("")}</datalist>
+    ${view.html}
+    <div class="actionbar row"><button class="btn primary" id="save">Save &amp; apply this page</button><span id="rules-msg"></span></div>`;
+  wireAddButtons();
+  if (view.after) view.after();
   $("#save").onclick = async () => {
-    let base;
-    try { base = collect(); } catch (e) { return msg($("#rules-msg"), "err", e.message); }
+    let patch;
+    try { patch = view.collect(); } catch (e) { return msg($("#rules-msg"), "err", e.message); }
     try {
-      const r = await api("/api/config", { config: base });
+      const r = await api("/api/config", patch.__full ? { config: patch.__full } : { patch });
       await refresh();
       $("#rules-msg").innerHTML = `<span class="msg ok">Saved${r.mapped ? ` and applied: ${STATE.to_upload} accounts will be uploaded, ${(STATE.status_counts || {}).ERROR || 0} errors` : ""}.</span> ${r.mapped ? `<button class="btn" onclick="go('review')">Next: review</button>` : ""}`;
     } catch (e) { msg($("#rules-msg"), "err", e.message); }
   };
-};
+}
+PAGES.rules = async () => go("rules-dir");
+
+/* A. Directory sources */
+PAGES["rules-dir"] = () => rulesPage("rules-dir",
+  "Where Privilege Cloud finds each Safe member, and how member names are converted. Sources are checked top to bottom; the first that matches a member is used.",
+  ({ config: cfg }) => {
+    const COLS = [{ key: "name", label: "Source name", ph: "Corporate AD" },
+      { key: "match", label: "Matches members from", ph: "CORP, corp.example.com, * or re:^APP-" },
+      { key: "search_in", label: "Privilege Cloud directory (searchIn)", ph: "corp.example.com or Vault" },
+      { key: "strip_domain", label: "Drop CORP\\ / @domain", options: [["yes", "yes"], ["no", "no"]] },
+      { key: "find", label: "Find (pattern)", ph: "^GRP-" }, { key: "replace", label: "Replace with", ph: "PAM-" },
+      { key: "add_prefix", label: "Add before" }, { key: "add_suffix", label: "Add after" },
+      { key: "case", label: "Case", options: [["keep", "keep"], ["lower", "lower"], ["upper", "UPPER"]] }];
+    let sources = cfg.directory_sources || [];
+    if (!sources.length) {
+      const entries = Object.entries(cfg.directory_map || {}).sort((a, b) => (a[0] === "*") - (b[0] === "*"));
+      sources = entries.filter(([d]) => d !== "*").map(([domain, dir]) => ({ name: domain, members: "both", match: domain, search_in: dir,
+        strip_domain: cfg.strip_domain_prefix, case: "keep" }));
+    }
+    const rowsFor = (kind) => sources.filter(s => (s.members || "both") === "both" || s.members === kind)
+      .map(s => ({ ...s, strip_domain: s.strip_domain === false || s.strip_domain === "no" ? "no" : "yes" }));
+    const fallbackDir = (cfg.directory_map || {})["*"] || "Vault";
+    return {
+      html: `<div class="card"><h3>Groups</h3>${editorTable("t-dg", COLS, rowsFor("groups"), "+ Add group source")}</div>
+        <div class="card"><h3>Users</h3>${editorTable("t-du", COLS, rowsFor("users"), "+ Add user source")}</div>
+        <div class="card"><h3>Everything else</h3><div class="row">
+          <label class="inline">Members no source matches go to directory <input type="text" id="dir-fallback" value="${esc(fallbackDir)}" size="20"></label>
+          <label class="inline"><input type="checkbox" id="dir-strip" ${cfg.strip_domain_prefix ? "checked" : ""}> and drop their CORP\\ prefix</label>
+          <label class="inline">A member with no type is a <select id="dir-type">${["Group", "User"].map(t => `<option ${cfg.default_member_type === t ? "selected" : ""}>${t}</option>`).join("")}</select></label></div>
+          <p class="muted small">"Matches members from" takes a domain (<code>CORP</code> or <code>corp.example.com</code>), <code>*</code> for anything, or <code>re:</code> and a pattern on the full name.
+          Find is a pattern too; Replace can use <code>\\1</code> for its first ( ) part.</p></div>
+        <div class="card"><h3>Preview</h3><div class="row"><button class="btn" id="dir-preview">Preview member names</button></div><div id="dir-out"></div></div>`,
+      collect() {
+        const fix = (r, members) => ({ ...r, members, strip_domain: r.strip_domain !== "no", name: r.name || r.match || "" });
+        const list = readTable("t-dg").map(r => fix(r, "groups")).concat(readTable("t-du").map(r => fix(r, "users")));
+        if (list.some(r => !r.search_in)) throw new Error("Every directory source needs a Privilege Cloud directory (searchIn).");
+        return { directory_sources: list, directory_map: { "*": $("#dir-fallback").value.trim() || "Vault" },
+                 strip_domain_prefix: $("#dir-strip").checked, default_member_type: $("#dir-type").value };
+      },
+      after() {
+        const preview = async () => {
+          let patch; try { patch = this.collect(); } catch (e) { return msg($("#dir-out"), "err", e.message); }
+          const r = await api("/api/members/preview", { patch });
+          $("#dir-out").innerHTML = r.members.length ? `<div class="tablewrap" style="margin-top:10px;max-height:40vh"><table class="small">
+            <tr><th>In the export</th><th>Type</th><th>Accounts</th><th>memberName</th><th>searchIn</th><th>Source used</th></tr>
+            ${r.members.map(m => `<tr><td>${esc(m.source)}</td><td>${esc(m.type)}</td><td>${m.accounts}</td><td><b>${esc(m.member_name)}</b></td><td>${esc(m.search_in)}</td><td class="muted">${esc(m.directory_source)}</td></tr>`).join("")}</table></div>`
+            : '<p class="muted">Load some exports to see a preview.</p>';
+        };
+        $("#dir-preview").onclick = () => preview().catch(e => msg($("#dir-out"), "err", e.message));
+        if (STATE.has_db) preview().catch(() => {});
+      },
+    };
+  });
+
+/* B. Permissions: Safes */
+PAGES["rules-safes"] = () => rulesPage("rules-safes",
+  "Which Safe each account goes to, how Safes are named, and the settings each Safe is created with.",
+  ({ config: cfg, hints, presets }) => {
+    ROLE_NAMES = () => Object.keys(presets).concat(Object.keys(cfg.custom_roles || {}));
+    const GR = [{ key: "group", label: "Group (exact name)", ph: "CORP\\Unix-Admins", list: "dl-groups" },
+                { key: "group_pattern", label: "…or pattern (advanced)", ph: "^CORP\\\\APP-(.+)-Owners$" },
+                { key: "safe", label: "Target Safe", ph: "UNIX-Admins or APP-{1}" },
+                { key: "min_role", label: "Only if role at least", roles: true, blank: true }];
+    const FR = [{ key: "folder_prefix", label: "Folder (and everything under it)", ph: "\\IT\\Network", list: "dl-folders" },
+                { key: "safe", label: "Target Safe", ph: "NET-Devices or {convention}" }];
+    const AB = [{ key: "word", label: "Word or phrase" }, { key: "code", label: "Code (1-4 letters)", ph: "e.g. BOS" }];
+    const SR = [{ key: "safe_pattern", label: "Safes matching (pattern)", ph: "^P-|^DB-" }, { key: "managingCPM", label: "CPM", ph: "PasswordManager_DB" },
+                { key: "description", label: "Description", ph: "{folder}" }, { key: "numberOfVersionsRetention", label: "Keep versions", size: 4 },
+                { key: "numberOfDaysRetention", label: "or keep days", size: 4 }];
+    const RULE = [{ key: "field", label: "Look at", list: "dl-fields", ph: "folder_word" }, { key: "pattern", label: "Matches (pattern)", ph: "^prod$" },
+                  { key: "field2", label: "and look at", list: "dl-fields" }, { key: "pattern2", label: "matches" },
+                  { key: "code", label: "Code", ph: "P", size: 6 }];
+    const LEGACY = { owner: "Full", editor: "Accounts manager", user: "Read only", viewer: "List only" };
+    const fixRole = (r) => r ? (LEGACY[String(r).toLowerCase()] && !(cfg.custom_roles || {})[r] ? LEGACY[String(r).toLowerCase()] : r) : "";
+    const conv = cfg.safe_convention;
+    const folderNames = new Set((hints.folders || []).flatMap(f => f.name.split("\\").filter(Boolean)).map(normName));
+    const folderAbbr = Object.fromEntries(Object.entries(conv.abbreviations || {}).filter(([w]) => folderNames.has(normName(w))));
+    const otherAbbr = Object.entries(conv.abbreviations || {}).filter(([w]) => !folderNames.has(normName(w))).map(([word, code]) => ({ word, code }));
+    let layers = JSON.parse(JSON.stringify(conv.layers || {}));
+    const BUILTIN = { env: "Environment", tech: "Technology", flavor: "Flavor", acct: "Account type" };
+    const sd = cfg.safe_defaults, ad = cfg.account_defaults;
+    const keepVersions = String(sd.numberOfVersionsRetention ?? "").trim() !== "";
+    const fb = [["convention", "the folder structure, abbreviated (\\Applications\\Storefront\\Prod → APP-SF-P)"],
+                ["folder_leaf", "the last folder only (Prod)"], ["folder_path", "the whole folder path (Applications-Storefront-Prod)"],
+                ["unmapped", "nothing: use UNMAPPED so I decide"]];
+    const layerBlock = (name, layer) => `<div class="layer card" data-layer="${esc(name)}" style="background:#fafbfd">
+      <div class="row"><b><code>{${esc(name)}}</code></b>
+        <label class="inline">Label <input type="text" class="l-label" value="${esc(layer.label || BUILTIN[name] || name)}" size="16"></label>
+        <label class="inline">If no value matches use <input type="text" class="l-default" value="${esc(layer.default || "")}" size="6" placeholder="nothing"></label>
+        ${BUILTIN[name] ? '<span class="muted small">built-in</span>' : `<button class="btn small danger l-del">Remove {${esc(name)}}</button>`}</div>
+      ${editorTable("t-layer-" + name, RULE, layer.rules || [], "+ Add value")}</div>`;
+    const html = `
+      <datalist id="dl-fields">${LAYER_FIELDS.map(f => `<option value="${f}">`).join("")}</datalist>
+      <div class="card"><h3>Safe from folder <span class="muted small">(the default: object-oriented Safes that follow your existing folders)</span></h3>
+        <div class="row"><label class="inline">Name each Safe after
+          <select id="fallback">${fb.map(([v, l]) => `<option value="${v}" ${cfg.fallback_strategy === v ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>
+          <label class="inline">Prefix every Safe with <input type="text" id="prefix" value="${esc(cfg.safe_name.prefix || "")}" size="8" placeholder="MIG-"></label></div>
+        <h4 style="margin:12px 0 6px">Exceptions: send a folder somewhere else <span class="muted small">(the most specific folder wins)</span></h4>
+        ${editorTable("t-fr", FR, cfg.folder_rules)}
+        <p class="muted small">Safe names are always cut to ${cfg.safe_name.max_length} characters, and the characters <code>${esc(cfg.safe_name.invalid_chars)}</code> become "${esc(cfg.safe_name.replacement)}".</p></div>
+      <div class="card"><h3>Safe naming convention</h3>
+        <p class="muted small">Your existing structure comes first: an account with folders gets a Safe named after its folder levels, in order, each one abbreviated.
+          Only accounts with no folders (flat KeePass files, spreadsheets) get the CyberArk example layers instead.</p>
+        <div class="row"><label class="inline">Accounts with folders <input type="text" id="conv-template" size="34" value="${esc(conv.template)}"></label>
+          <label class="inline">Accounts with no folders <input type="text" id="conv-flat" size="34" value="${esc(conv.template_no_folders || "")}"></label></div>
+        <div class="row"><label class="inline">Leave out folder levels <input type="text" id="conv-skip" size="30" value="${esc((conv.skip_folder_levels || []).join(", "))}" placeholder="e.g. Root"></label>
+          <label class="inline">Flag Safes with more than <input type="text" id="max-acc" size="6" value="${esc(cfg.safe_max_accounts)}"> accounts</label></div>
+        <p class="muted small"><code>{folder}</code> is every folder level abbreviated (<code>{folder_leaf}</code> the last one). Every other placeholder is listed below with its values, and you can add your own.
+          A code already used earlier in the name is not repeated. If a name is too long, long folder names become initials first, then the top folder levels are left out.</p>
+        <h4 style="margin:12px 0 6px">Folder abbreviations <span class="muted small">(taken from the folders you loaded; type a code to change one)</span></h4>
+        <div id="conv-folders"><p class="muted small">${STATE.has_db ? "Loading…" : "Load some exports to see your folder names here."}</p></div>
+        <details style="margin-top:10px" ${otherAbbr.length ? "open" : ""}><summary class="small">Other words and phrases</summary>
+        ${editorTable("t-ab", AB, otherAbbr)}</details>
+        <h4 style="margin:16px 0 6px">Placeholders and their values</h4>
+        <p class="muted small">Each placeholder's value comes from the first row that matches. "Look at" can be a folder word, a whole folder level, the folder path, the platform, username,
+          address, name, type, source, an earlier placeholder's code (env, tech, flavor, acct), or <code>column:</code> and a source column name. Patterns ignore upper/lower case.</p>
+        <div id="layers"></div>
+        <div class="row"><label class="inline">New placeholder <input type="text" id="new-layer" size="14" placeholder="region"></label>
+          <button class="btn small" id="add-layer">+ Add placeholder</button>
+          <button class="btn small" id="reset-layers">Restore the built-in values</button></div>
+        <div class="row" style="margin-top:12px"><button class="btn" id="conv-preview">Preview names</button><span class="muted small">uses the settings on this page, nothing is saved</span></div>
+        <div id="conv-out"></div></div>
+      <div class="card"><h3>Safe settings</h3>
+        <div class="row"><label class="inline">Managing CPM <input type="text" id="s-cpm" value="${esc(sd.managingCPM || "")}" placeholder="PasswordManager" size="20"></label>
+          <label class="inline">Description <input type="text" id="s-desc" value="${esc(sd.description || "")}" placeholder="Migrated from {folder}" size="34"></label></div>
+        <div class="row"><span>Keep old passwords for</span>
+          <label class="inline"><input type="radio" name="ret" value="versions" ${keepVersions ? "checked" : ""}> <input type="text" id="s-ver" size="4" value="${esc(keepVersions ? sd.numberOfVersionsRetention : 5)}"> versions</label>
+          <label class="inline"><input type="radio" name="ret" value="days" ${keepVersions ? "" : "checked"}> <input type="text" id="s-days" size="4" value="${esc(sd.numberOfDaysRetention || 7)}"> days</label></div>
+        <div class="row"><label class="inline"><input type="checkbox" id="a-auto" ${ad.automaticManagementEnabled ? "checked" : ""}> Let the CPM manage migrated accounts automatically</label>
+          <label class="inline">otherwise the reason is <input type="text" id="a-reason" value="${esc(ad.manualManagementReason || "")}" size="40"></label></div>
+        <h4 style="margin:12px 0 6px">Different settings for some Safes <span class="muted small">(first match wins; empty cells keep the settings above)</span></h4>
+        ${editorTable("t-sr", SR, cfg.safe_rules || [])}
+        <p class="muted small">Descriptions can use <code>{folder}</code> (the Safe's source folder) and <code>{safe}</code>. A Safe keeps either a number of versions or a number of days.</p></div>
+      <div class="card"><h3>Optional: Safe from access groups <span class="muted small">(role-oriented; empty unless you add rules)</span></h3>
+        <p class="muted small">Role-oriented Safes don't scale as well as folder (object) Safes, so these rules only apply to the groups you list. Checked top to bottom; the first match wins.</p>
+        ${editorTable("t-gr", GR, (cfg.group_rules || []).map(r => ({ ...r, min_role: fixRole(r.min_role) })))}
+        <p><label class="inline"><input type="checkbox" id="gr-first" ${cfg.group_rules_first ? "checked" : ""}> Check these before the folder exceptions above</label></p>
+        <p class="muted small">In the Safe name you can use {1} for the pattern's first ( ) part, {folder_leaf} or {folder_path}, {convention} for the full convention name, or placeholders such as <code>{env}-APP-{1}-{flavor}</code>.</p></div>`;
+
+    const renderLayers = () => {
+      const order = ["env", "tech", "flavor", "acct"].concat(Object.keys(layers).filter(n => !BUILTIN[n]));
+      $("#layers").innerHTML = order.filter(n => layers[n]).map(n => layerBlock(n, layers[n])).join("");
+      wireAddButtons($("#layers"));
+      document.querySelectorAll(".l-del").forEach(b => b.onclick = () => { readLayers(); delete layers[b.closest(".layer").dataset.layer]; renderLayers(); });
+    };
+    const readLayers = () => {
+      document.querySelectorAll("#layers .layer").forEach(div => {
+        const name = div.dataset.layer;
+        layers[name] = { label: $(".l-label", div).value.trim(), default: $(".l-default", div).value.trim(),
+          rules: readTable("t-layer-" + name).filter(r => r.field && r.pattern !== undefined || r.field).map(r => {
+            const o = { field: r.field, pattern: r.pattern || "", code: r.code || "" };
+            if (r.field2) { o.field2 = r.field2; o.pattern2 = r.pattern2 || ""; }
+            return o; }) };
+      });
+      return layers;
+    };
+    const readFolderCodes = () => {
+      document.querySelectorAll("#conv-folders input[data-folder]").forEach(i => {
+        const code = i.value.trim(); if (code) folderAbbr[i.dataset.folder] = code; else delete folderAbbr[i.dataset.folder]; });
+      return folderAbbr;
+    };
+    const renderFolderCodes = (rows) => {
+      if (!rows.length) return;
+      const yours = {}; Object.entries(folderAbbr).forEach(([w, c]) => yours[normName(w)] = [w, c]);
+      $("#conv-folders").innerHTML = `<div class="tablewrap" style="max-height:40vh"><table class="small editor"><tr><th>Folder name</th><th>Accounts</th><th>Code</th><th></th></tr>
+        ${rows.map(r => { const mine = yours[normName(r.folder)];
+          return `<tr><td>${esc(r.folder)}</td><td>${r.accounts}</td>
+          <td><input type="text" data-folder="${esc(mine ? mine[0] : r.folder)}" value="${esc(mine ? mine[1] : "")}" placeholder="${esc(mine ? "" : r.code)}"></td>
+          <td class="small">${r.clash ? `<span class="pill ERROR">same code as ${esc(r.clash)}</span>` : r.automatic && !mine ? '<span class="muted">automatic</span>' : ""}</td></tr>`; }).join("")}</table></div>
+        <div class="row" style="margin-top:6px"><button class="btn small" id="conv-keep">Keep all the suggested codes</button>
+          <span class="muted small">writes them into your settings so they stay the same later</span></div>`;
+      $("#conv-keep").onclick = () => document.querySelectorAll("#conv-folders input[data-folder]").forEach(i => { if (!i.value) i.value = i.placeholder; });
+    };
+    const collect = () => {
+      const abbr = { ...readFolderCodes() };
+      readTable("t-ab").filter(r => r.word && r.code).forEach(r => abbr[r.word] = r.code);
+      const ret = document.querySelector("input[name=ret]:checked").value;
+      const num = (v, what) => { if (!/^\d+$/.test(v)) throw new Error(`${what} must be a whole number.`); return Number(v); };
+      const rules = readTable("t-sr").map(r => { if (!r.safe_pattern) throw new Error("Every 'Different settings' row needs a Safe pattern."); return r; });
+      return {
+        fallback_strategy: $("#fallback").value,
+        safe_name: { ...cfg.safe_name, prefix: $("#prefix").value.trim() },
+        folder_rules: readTable("t-fr"),
+        group_rules: readTable("t-gr").map(r => { const o = { safe: r.safe }; if (r.group) o.group = r.group; else if (r.group_pattern) o.group_pattern = r.group_pattern; if (r.min_role) o.min_role = r.min_role; return o; }),
+        group_rules_first: $("#gr-first").checked,
+        safe_max_accounts: num($("#max-acc").value.trim(), "The account limit"),
+        safe_convention: { ...conv, template: $("#conv-template").value.trim(), template_no_folders: $("#conv-flat").value.trim(),
+          skip_folder_levels: $("#conv-skip").value.split(",").map(x => x.trim()).filter(Boolean), abbreviations: abbr,
+          layers: readLayers(), default_environment: "" },
+        safe_defaults: { ...sd, managingCPM: $("#s-cpm").value.trim(), description: $("#s-desc").value.trim(),
+          numberOfVersionsRetention: ret === "versions" ? num($("#s-ver").value.trim(), "Versions") : "",
+          numberOfDaysRetention: ret === "days" ? num($("#s-days").value.trim(), "Days") : "" },
+        safe_rules: rules,
+        account_defaults: { ...ad, automaticManagementEnabled: $("#a-auto").checked, manualManagementReason: $("#a-reason").value.trim() },
+      };
+    };
+    return {
+      html, collect,
+      after() {
+        // An older default environment becomes the {env} default so it shows here.
+        if (conv.default_environment && layers.env && !layers.env.default) layers.env.default = conv.default_environment;
+        renderLayers();
+        $("#add-layer").onclick = () => {
+          const name = $("#new-layer").value.trim().replace(/^\{|\}$/g, "");
+          if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return alert("Use letters, digits and _ only, for example region.");
+          if (layers[name] || ["folder", "folder_leaf", "type", "convention"].includes(name)) return alert(`{${name}} already exists.`);
+          readLayers(); layers[name] = { label: name, default: "", rules: [{ field: "address", pattern: "", code: "" }] };
+          renderLayers(); $("#new-layer").value = "";
+        };
+        $("#reset-layers").onclick = async () => {
+          if (!confirm("Put the built-in values back for {env}, {tech}, {flavor} and {acct}? Your own placeholders stay.")) return;
+          readLayers(); const d = await api("/api/config"); Object.assign(layers, d.defaults.safe_convention.layers); renderLayers();
+        };
+        const preview = async () => {
+          let patch; try { patch = collect(); } catch (e) { return msg($("#conv-out"), "err", e.message); }
+          const r = await api("/api/naming/preview", { config: { ...cfg, ...patch } });
+          renderFolderCodes(r.folder_codes || []);
+          $("#conv-out").innerHTML = r.samples.length ? `<div class="tablewrap" style="margin-top:10px;max-height:40vh"><table>
+            <tr><th>Source folder</th><th>Platform</th><th>Safe name</th><th>Length</th><th>Notes</th></tr>
+            ${r.samples.map(x => `<tr><td class="small">${esc(x.folder)}</td><td>${esc(x.platform)}</td><td><b>${esc(x.name)}</b></td><td>${x.length}</td><td class="notes">${esc(x.notes)}</td></tr>`).join("")}</table></div>`
+            : '<p class="muted">Load some exports to see a preview.</p>';
+        };
+        $("#conv-preview").onclick = () => preview().catch(e => msg($("#conv-out"), "err", e.message));
+        if (STATE.has_db) preview().catch(() => {});
+      },
+    };
+  });
+
+/* B. Permissions: Safe members */
+PAGES["rules-members"] = () => rulesPage("rules-members",
+  "How source permissions turn into Privilege Cloud permission presets or your own custom roles.",
+  ({ config: cfg, presets }) => {
+    const LEGACY = { owner: "Full", editor: "Accounts manager", user: "Read only", viewer: "List only" };
+    let customRoles = Object.entries({ ...(cfg.role_permissions || {}), ...(cfg.custom_roles || {}) }).filter(([n]) => !presets[n])
+      .map(([name, perms]) => ({ name, perms: new Set(perms) }));
+    ROLE_NAMES = () => Object.keys(presets).concat(customRoles.map(r => r.name.trim()).filter(Boolean));
+    const fixRole = (r) => r ? (LEGACY[String(r).toLowerCase()] && !customRoles.some(c => c.name === r) ? LEGACY[String(r).toLowerCase()] : r) : "";
+    const PR = [{ key: "role", label: "Source permission word" }, { key: "to", label: "Privilege Cloud role", roles: true }];
+    const html = `<div class="card"><h3>Source permission → role</h3>
+        ${editorTable("t-pr", PR, Object.entries(cfg.permission_map).map(([role, to]) => ({ role, to: fixRole(to) })))}
+        <p class="muted small">A member with several permissions on one Safe gets the strongest role (the one with the most permissions).</p></div>
+      <div class="card"><h3>Roles and their permissions</h3>
+        <p class="muted small">The five Privilege Cloud presets are fixed. Make a custom role to choose every permission yourself; give it a name and pick it in the table above.</p>
+        <div class="row"><label class="inline">New custom role starting from <select id="role-from">${["(nothing ticked)"].concat(Object.keys(presets)).map(n => `<option>${esc(n)}</option>`).join("")}</select></label>
+          <button class="btn small" id="role-add">+ New custom role</button></div>
+        <div class="tablewrap" style="margin-top:8px" id="roles"></div></div>`;
+    const refreshRoleSelects = () => document.querySelectorAll("select.role-select").forEach(sel => {
+      const v = sel.value; sel.innerHTML = roleOptions(v, !!sel.dataset.blank); });
+    const renderRoles = () => {
+      const presetNames = Object.keys(presets);
+      $("#roles").innerHTML = `<table class="small roles"><tr><th>Permission</th>
+        ${presetNames.map(n => `<th title="Privilege Cloud preset">${esc(n)}</th>`).join("")}
+        ${customRoles.map((r, i) => `<th><input type="text" class="role-name" data-i="${i}" value="${esc(r.name)}" placeholder="Role name" size="12">
+          <button class="btn small" data-del="${i}" title="Delete this custom role">✕</button></th>`).join("")}</tr>
+        ${PERM_GROUPS.map(([group, perms]) => `<tr><td colspan="${1 + presetNames.length + customRoles.length}" class="muted"><b>${esc(group)}</b></td></tr>` +
+          perms.map(([key, label]) => `<tr><td>${esc(label)}</td>
+            ${presetNames.map(n => `<td class="c">${presets[n].includes(key) ? '<span class="tick" title="Granted by this preset">✓</span>' : ""}</td>`).join("")}
+            ${customRoles.map((r, i) => `<td class="c"><input type="checkbox" class="role-perm" data-i="${i}" data-p="${key}" ${r.perms.has(key) ? "checked" : ""}></td>`).join("")}</tr>`).join("")).join("")}
+      </table>`;
+      document.querySelectorAll(".role-name").forEach(inp => inp.oninput = () => { customRoles[+inp.dataset.i].name = inp.value; refreshRoleSelects(); });
+      document.querySelectorAll(".role-perm").forEach(cb => cb.onchange = () => {
+        const s = customRoles[+cb.dataset.i].perms; cb.checked ? s.add(cb.dataset.p) : s.delete(cb.dataset.p); });
+      document.querySelectorAll("[data-del]").forEach(b => b.onclick = () => { customRoles.splice(+b.dataset.del, 1); renderRoles(); refreshRoleSelects(); });
+    };
+    return {
+      html,
+      collect: () => ({
+        permission_map: Object.fromEntries(readTable("t-pr").filter(r => r.role && r.to).map(r => [r.role, r.to])),
+        custom_roles: Object.fromEntries(customRoles.map(r => [r.name.trim(), PERM_GROUPS.flatMap(g => g[1].map(p => p[0])).filter(p => r.perms.has(p))])),
+        role_permissions: {},
+      }),
+      after() {
+        renderRoles();
+        $("#role-add").onclick = () => {
+          const from = $("#role-from").value;
+          let name = "Custom role", n = 1;
+          while (ROLE_NAMES().includes(name)) name = `Custom role ${++n}`;
+          customRoles.push({ name, perms: new Set(presets[from] || []) });
+          renderRoles(); refreshRoleSelects();
+          const inputs = document.querySelectorAll(".role-name"); inputs[inputs.length - 1].select();
+        };
+      },
+    };
+  });
+
+/* C. Platforms */
+PAGES["rules-platforms"] = () => rulesPage("rules-platforms",
+  "Which Privilege Cloud platform each account uses. Rules are checked first, then the record type list, then the default.",
+  ({ config: cfg, hints }) => {
+    const PM = [{ key: "type", label: "Record type / template", list: "dl-types" }, { key: "platform", label: "Platform ID", ph: "WinDomain" }];
+    const PRU = [{ key: "field", label: "Look at", options: [["type", "type"], ["folder", "folder"], ["name", "name"], ["address", "address"], ["username", "username"]] },
+                 { key: "pattern", label: "Matches (pattern)", ph: "(?i)linux|unix" }, { key: "platform", label: "Platform ID", ph: "UnixSSH" }];
+    const platRows = Object.entries(cfg.platform_map).map(([type, platform]) => ({ type, platform }));
+    hints.types_without_platform.forEach(t => { if (t && !platRows.some(r => r.type.toLowerCase() === t.toLowerCase())) platRows.unshift({ type: t, platform: "" }); });
+    return {
+      html: `${hints.types_without_platform.length ? `<div class="msg warn">These record types have no platform yet, so their accounts can't be uploaded: ${hints.types_without_platform.map(esc).join(", ")}. Fill in the Platform ID below.</div>` : ""}
+        <div class="card"><h3>Rules <span class="muted small">(checked first, top to bottom)</span></h3>${editorTable("t-pru", PRU, cfg.platform_rules || [])}</div>
+        <div class="card"><h3>By record type</h3>${editorTable("t-pm", PM, platRows)}
+        <p><label class="inline">Platform for anything not listed <input type="text" id="defplat" value="${esc(cfg.default_platform || "")}" placeholder="leave empty to flag as error"></label></p></div>`,
+      collect: () => ({
+        platform_rules: readTable("t-pru").filter(r => r.pattern && r.platform).map(r => ({ field: r.field || "type", pattern: r.pattern, platform: r.platform })),
+        platform_map: Object.fromEntries(readTable("t-pm").filter(r => r.type && r.platform).map(r => [r.type, r.platform])),
+        default_platform: $("#defplat").value.trim(),
+      }),
+    };
+  });
+
+/* D. Accounts */
+PAGES["rules-accounts"] = () => rulesPage("rules-accounts",
+  "How each account is named and which extra source columns become account properties.",
+  ({ config: cfg }) => {
+    const AP = [{ key: "column", label: "Source column" }, { key: "property", label: "Platform property", ph: "Port" }];
+    const an = cfg.account_name || {};
+    return {
+      html: `<div class="card"><h3>Account name</h3>
+          <div class="row"><label class="inline">Name <input type="text" id="an-t" size="30" value="${esc(an.template || "{name}")}"></label>
+            <label class="inline">if that comes out empty <input type="text" id="an-f" size="30" value="${esc(an.fallback || "{address}-{username}")}"></label></div>
+          <p class="muted small">Placeholders: <code>{name}</code> <code>{address}</code> <code>{username}</code> <code>{platform}</code> <code>{safe}</code> <code>{folder_leaf}</code> <code>{type}</code> <code>{source_id}</code>.
+            Invalid characters become _, and a name repeated in one Safe gets a number.</p>
+          <p><label class="inline"><input type="checkbox" id="url-host" ${cfg.url_address_to_host ? "checked" : ""}> Turn URL addresses into host names (https://fw01.example.com/login → fw01.example.com)</label></p></div>
+        <div class="card"><h3>Extra account properties</h3>
+          <p class="muted small">Source columns copied into platformAccountProperties. The property must exist on the target platform, or Privilege Cloud rejects the account.</p>
+          ${editorTable("t-ap", AP, Object.entries(cfg.account_property_map || {}).map(([column, property]) => ({ column, property })))}</div>
+        <p class="muted small">CPM management and Safe settings are on <a href="#" onclick="go('rules-safes');return false">B. Permissions: Safes</a>.</p>`,
+      collect: () => ({
+        account_name: { template: $("#an-t").value.trim() || "{name}", fallback: $("#an-f").value.trim() || "{address}-{username}" },
+        url_address_to_host: $("#url-host").checked,
+        account_property_map: Object.fromEntries(readTable("t-ap").filter(r => r.column && r.property).map(r => [r.column, r.property])),
+      }),
+    };
+  });
+
+/* Settings file */
+PAGES["rules-json"] = () => rulesPage("rules-json",
+  "Every setting as JSON, for anything the other pages don't cover. Only change these if you know what you need.",
+  ({ config: cfg }) => ({
+    html: `<div class="card"><textarea id="json" rows="30">${esc(JSON.stringify(cfg, null, 2))}</textarea></div>`,
+    collect() {
+      try { return { __full: JSON.parse($("#json").value) }; } catch (e) { throw new Error("The JSON is not valid: " + e.message); }
+    },
+  }));
 
 /* ---------------- 3. Review ---------------- */
 PAGES.review = async () => {
@@ -559,12 +861,14 @@ PAGES.safes = async () => {
   if (!STATE.has_db) return msg($("#main"), "warn", "Load some exports first (step 1).");
   const d = await api("/api/safes");
   $("#main").innerHTML = `<h2>4. Safes &amp; members</h2>
-    <p class="lead">The Safes the upload will create, and who gets access. To change these, adjust the rules (step 2) or move accounts (step 3).</p>
-    <div class="card"><h3>Safes (${d.safes.length})</h3><div class="tablewrap"><table><tr><th>Safe</th><th>Length</th><th>Name OK?</th><th>Original name(s)</th><th>Why changed</th><th>Chosen by</th><th>Accounts</th><th>To upload</th></tr>
+    <p class="lead">The Safes the upload will create, and who gets access. To change these, adjust the rules (step 2: <a href="#" onclick="go('rules-safes');return false">Safes</a>, <a href="#" onclick="go('rules-members');return false">Safe members</a>, <a href="#" onclick="go('rules-dir');return false">directory sources</a>) or move accounts (step 3).</p>
+    <div class="card"><h3>Safes (${d.safes.length})</h3><div class="tablewrap"><table><tr><th>Safe</th><th>Length</th><th>Name OK?</th><th>Original name(s)</th><th>Why changed</th><th>Chosen by</th><th>CPM</th><th>Description</th><th>Keeps</th><th>Accounts</th><th>To upload</th></tr>
       ${d.safes.map(s => `<tr><td><a href="#" data-safe="${esc(s.safe_name)}">${esc(s.safe_name)}</a></td><td>${s.length}</td><td>${s.valid_safe_name === "TRUE" ? "✓" : '<span class="pill REVIEW">renamed</span>'}</td>
-        <td class="small">${esc(s.proposed_names)}</td><td class="small">${esc(s.issues)}</td><td class="small">${esc(s.mapping_sources)}</td><td>${s.accounts}</td><td>${s.accounts_to_upload}</td></tr>`).join("")}</table></div></div>
-    <div class="card"><h3>Members (${d.members.length})</h3><div class="tablewrap"><table><tr><th>Safe</th><th>Member</th><th>Directory</th><th>Type</th><th>Source permission</th><th>Role</th><th>Accounts</th><th>Notes</th></tr>
-      ${d.members.map(m => `<tr><td>${esc(m.safe_name)}</td><td>${esc(m.member_name)}</td><td>${esc(m.search_in)}</td><td>${esc(m.member_type)}</td><td>${esc(m.source_permission)}</td>
+        <td class="small">${esc(s.proposed_names)}</td><td class="small">${esc(s.issues)}</td><td class="small">${esc(s.mapping_sources)}</td>
+        <td class="small">${esc(s.managing_cpm || "")}</td><td class="small">${esc(s.description || "")}</td><td class="small">${esc(s.retention || "")}</td><td>${s.accounts}</td><td>${s.accounts_to_upload}</td></tr>`).join("")}</table></div></div>
+    <div class="card"><h3>Members (${d.members.length})</h3><div class="tablewrap"><table><tr><th>Safe</th><th>Member</th><th>Directory</th><th>Type</th><th>Directory source</th><th>In the export</th><th>Source permission</th><th>Role</th><th>Accounts</th><th>Notes</th></tr>
+      ${d.members.map(m => `<tr><td>${esc(m.safe_name)}</td><td>${esc(m.member_name)}</td><td>${esc(m.search_in)}</td><td>${esc(m.member_type)}</td>
+        <td class="small">${esc(m.directory_source || "default")}</td><td class="small">${esc(m.source_member)}</td><td>${esc(m.source_permission)}</td>
         <td>${m.role === "UNMAPPED" ? '<span class="pill ERROR">no role</span>' : esc(m.role)}</td><td>${m.accounts}</td><td class="notes">${esc(m.notes)}</td></tr>`).join("")}</table></div></div>`;
   document.querySelectorAll("[data-safe]").forEach(a => a.onclick = (e) => { e.preventDefault(); REVIEW.view = "all"; REVIEW.filters = { safe: a.dataset.safe }; REVIEW.page = 0; go("review"); });
 };
@@ -625,14 +929,30 @@ PAGES.activity = async () => {
   if (!STATE.has_db) await refresh();
   if (!STATE.has_db) return msg($("#main"), "warn", "Nothing has happened yet.");
   const d = await api("/api/audit");
-  $("#main").innerHTML = `<h2>Activity log</h2><p class="lead">Everything done to this database, newest first.</p>
+  const sm = d.summary;
+  $("#main").innerHTML = `<h2>Activity log</h2><p class="lead">Everything done to this database. The tables show the latest entries; the exports hold every entry.</p>
+    <div class="stats">
+      <div class="stat"><b>${sm.entries}</b><span>log entries since ${esc((sm.first || "").slice(0, 16).replace("T", " "))}</span></div>
+      <div class="stat"><b>${sm.by_user.length}</b><span>${sm.by_user.length === 1 ? "person" : "people"}: ${sm.by_user.map(u => esc(u.user)).join(", ")}</span></div>
+      <div class="stat"><b>${sm.edits}</b><span>changes to ${sm.edited_accounts} accounts</span></div>
+      <div class="stat"><b>${(sm.by_action.find(a => a.action === "extract") || { count: 0 }).count}</b><span>upload files created</span></div>
+    </div>
+    <div class="row" style="margin:12px 0"><a class="btn" href="/api/export/audit.csv" download>Export the activity log (CSV)</a>
+      <a class="btn" href="/api/export/edits.csv" download>Export the account changes (CSV)</a>
+      <span class="muted small">Exporting is itself logged.</span></div>
+    <div class="row" style="align-items:flex-start;gap:16px">
+      <div class="card" style="flex:1;min-width:280px"><h3>By action</h3><table class="small"><tr><th>Action</th><th>Times</th><th>Last (UTC)</th></tr>
+        ${sm.by_action.map(a => `<tr><td>${esc(a.action)}</td><td>${a.count}</td><td>${esc(a.last)}</td></tr>`).join("")}</table></div>
+      <div class="card" style="flex:1;min-width:280px"><h3>By person</h3><table class="small"><tr><th>Who</th><th>Entries</th><th>First</th><th>Last</th></tr>
+        ${sm.by_user.map(u => `<tr><td>${esc(u.user)}</td><td>${u.count}</td><td>${esc(u.first)}</td><td>${esc(u.last)}</td></tr>`).join("")}</table>
+        ${sm.edits_by_field.length ? `<h3 style="margin-top:12px">Changes by field</h3><table class="small"><tr><th>Field</th><th>Changes</th></tr>${sm.edits_by_field.map(f => `<tr><td>${esc(f.field)}</td><td>${f.count}</td></tr>`).join("")}</table>` : ""}</div></div>
     <div class="card"><h3>Actions</h3><div class="tablewrap"><table><tr><th>When (UTC)</th><th>Who</th><th>What</th><th>Details</th></tr>
       ${d.audit.map(a => `<tr><td class="small">${esc(a.ts)}</td><td>${esc(a.user)}</td><td>${esc(a.action)}</td><td class="notes">${esc(a.detail)}</td></tr>`).join("")}</table></div></div>
     <div class="card"><h3>Your changes to accounts</h3><div class="tablewrap"><table><tr><th>Account</th><th>Field</th><th>Value</th><th>When</th><th>Who</th><th>Reason</th></tr>
       ${d.edits.map(e => `<tr><td class="small">${esc(e.record_id)}</td><td>${esc(e.field)}</td><td>${esc(e.value)}</td><td class="small">${esc(e.changed_utc)}</td><td>${esc(e.changed_by)}</td><td>${esc(e.reason)}</td></tr>`).join("") || '<tr><td colspan="6" class="muted">None</td></tr>'}</table></div></div>`;
 };
 
-go("overview");
+start();
 </script>
 </body>
 </html>

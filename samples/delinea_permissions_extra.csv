@@ -1,0 +1,3 @@
+Folder Path,Secret Name,Secret ID,Group,Permission
+\IT\Windows,,,CORP\Windows-Ops,Edit
+\Linux,,,CORP\Linux-Audit,List
