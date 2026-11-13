@@ -8,6 +8,7 @@ import csv
 from collections import OrderedDict
 
 from .. import xlsx
+from ..csvsafe import reading
 from .base import Adapter, file_stem, read_head
 from .rows import record_from_row
 
@@ -33,7 +34,7 @@ class TableAdapter(Adapter):
             sheet, rows = xlsx.read_rows(path, tcfg.get("sheet", ""))
             label = f"{sheet}!row "
         else:
-            with open(path, newline="", encoding=encoding) as fh:
+            with open(path, newline="", encoding=encoding) as fh, reading(path):
                 sample = fh.read(8192)
                 fh.seek(0)
                 try:

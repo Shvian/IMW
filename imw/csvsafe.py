@@ -9,7 +9,24 @@ Upload files (upload/*.csv) are API input and are NOT escaped: changing a value 
 would change the account (a password may well start with '-').
 """
 
+import csv
+from contextlib import contextmanager
+
 TRIGGERS = ("=", "+", "-", "@", "\t", "\r")
+
+# A multi-line SSH key or long notes can pass the csv module's default 128 KB per field.
+FIELD_LIMIT = 64 * 1024 * 1024
+csv.field_size_limit(FIELD_LIMIT)
+
+
+@contextmanager
+def reading(path):
+    """Turn csv.Error (a NUL byte, an over-long field, broken quoting) into a ValueError that
+    names the file, so the Workbench and CLI show a message instead of failing."""
+    try:
+        yield
+    except csv.Error as exc:
+        raise ValueError(f"{path}: not a readable CSV file ({exc})") from None
 
 
 def escape(value):

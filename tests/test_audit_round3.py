@@ -9,7 +9,12 @@ from test_imw import SAMPLES, Base  # noqa: F401
 from imw.config import config_from_dict
 from imw.model import Grant, SourceRecord
 from imw.store import Store
-from imw.transform import UNSAFE_LINE, UNSAFE_TEXT, build_plan, clean_line, safe_settings
+from imw import xlsx
+from imw.adapters.delinea import DelineaAdapter
+from imw.adapters.keepass import KeePassAdapter
+from imw.adapters.table import TableAdapter
+from imw.transform import (UNSAFE_LINE, UNSAFE_TEXT, Permissions, build_plan, clean_line, load_overrides,
+                           safe_settings, sanitize_safe_name)
 
 APP_JS = Path(__file__).resolve().parent.parent / "imw" / "ui" / "static" / "app.js"
 
@@ -30,8 +35,8 @@ class MemberCheckMatchesServer(unittest.TestCase):
             text = path.read_text(encoding="utf-8")
             self.assertIsNone(UNSAFE_TEXT.search(text.replace("\n", "").replace("\t", "")), path.name)
 
-    def test_member_check_is_the_server_list(self):
-        line = next(x for x in APP_JS.read_text(encoding="utf-8").splitlines() if x.strip().startswith("member:"))
+    def test_name_checks_use_the_server_list(self):
+        line = next(x for x in APP_JS.read_text(encoding="utf-8").splitlines() if x.startswith("const INVISIBLE ="))
         js = re.search(r"/(\[.*?\])/", line).group(1)
         self.assertEqual(js.encode().decode("unicode_escape"), UNSAFE_LINE.pattern)
 
@@ -153,6 +158,80 @@ class MemberEditsFollowRenames(Base):
         self.assertEqual(st.safe_overrides()[a.lower()]["moved_edits"], ["A-Only"])
         st.set_safe_override(a, {}, undo=True, old_name=b, new_name=a)
         self.assertEqual(self.edits(a), ["A-Only"])
+
+
+class TypedNamesAreCleaned(unittest.TestCase):
+    def test_safe_names(self):
+        cfg = config_from_dict(CFG)
+        self.assertEqual(sanitize_safe_name("AP\u200bPS\x7f\u2060", cfg)[0], "APPS")
+
+    def test_account_name_platform_and_member_edits(self):
+        cfg = config_from_dict(CFG)
+        r = rec("1", ("Apps",))
+        r2 = rec("2", ("Apps",))
+        rid = r.record_id
+        plan = build_plan([r, r2], cfg, overrides={rid: {"Account_Name": "web\u200b01\x7f", "Platform_ID": "Win\ufeffLocal"}},
+                          explicit=True, member_edits=[{"safe_name": "APPS", "member_name": "PAM\u200b-Ops", "action": "add",
+                                                        "search_in": "corp\u2060", "role": "Read only", "reason": ""}],
+                          member_overrides={"corp\\ops": {"member_name": "Ops\u200e", "search_in": "dir\x7f"}})
+        p = next(x for x in plan.accounts if x.rec.record_id == rid)
+        self.assertEqual((p.account_name, p.platform), ("web01", "WinLocal"))
+        self.assertIn("invisible or control characters removed from the account name", p.warnings)
+        names = {(m["member_name"], m["search_in"]) for m in plan.members.values()}
+        self.assertIn(("PAM-Ops", "corp"), names)
+        self.assertIn(("Ops", "dir"), names)
+
+
+class BrokenFilesGiveMessages(Base):
+    def test_bad_xlsx(self):
+        bad = self.tmp / "bad.xlsx"
+        bad.write_bytes(b"not a zip at all")
+        with self.assertRaisesRegex(ValueError, "not a readable Excel workbook"):
+            xlsx.read_rows(bad)
+        with self.assertRaisesRegex(ValueError, "not a readable Excel workbook"):
+            xlsx.sheet_names(bad)
+
+    def test_xlsx_with_missing_sheet_relationship(self):
+        import zipfile
+        src = SAMPLES / "accounts_by_group.xlsx"
+        bad = self.tmp / "norel.xlsx"
+        with zipfile.ZipFile(src) as zin, zipfile.ZipFile(bad, "w") as zout:
+            for item in zin.infolist():
+                data = zin.read(item.filename)
+                if item.filename == "xl/_rels/workbook.xml.rels":
+                    data = re.sub(rb'Id="rId1"', b'Id="rIdGone"', data)
+                zout.writestr(item, data)
+        with self.assertRaisesRegex(ValueError, "the workbook does not list"):
+            xlsx.read_rows(bad)
+
+    def test_csv_errors_become_value_errors(self):
+        nul = self.tmp / "nul.csv"
+        nul.write_bytes(b'Secret Name,Username,Password\n"a\x00b",u,"unterminated\n')
+        import csv
+        old = csv.field_size_limit(10)
+        try:
+            for reader in (lambda: list(DelineaAdapter().read(nul, config_from_dict(CFG))),
+                           lambda: list(TableAdapter().read(nul, config_from_dict(CFG))),
+                           lambda: list(KeePassAdapter()._read_csv(nul, config_from_dict(CFG), "utf-8-sig")),
+                           lambda: Permissions(str(nul)),
+                           lambda: load_overrides(nul)):
+                with self.assertRaisesRegex(ValueError, "not a readable CSV file"):
+                    reader()
+        finally:
+            csv.field_size_limit(old)
+
+    def test_long_fields_are_fine(self):
+        big = self.tmp / "big.csv"
+        key = "A" * 300_000
+        big.write_text(f'Secret Name,Folder Path,Username,Password,Notes\nweb,\\IT,admin,pw,"{key}"\n', encoding="utf-8")
+        recs = list(DelineaAdapter().read(big, config_from_dict(CFG)))
+        self.assertEqual(len(recs[0].extra["Notes"]), 300_000)
+
+    def test_cli_reports_instead_of_crashing(self):
+        bad = self.tmp / "bad.xlsx"
+        bad.write_bytes(b"PK broken")
+        rc, _ = self.run_cli("convert", "-i", str(bad), "-o", str(self.tmp / "o"), "--force")
+        self.assertEqual(rc, 2)
 
 
 if __name__ == "__main__":

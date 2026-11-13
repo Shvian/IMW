@@ -367,7 +367,10 @@ class App:
         if isinstance(perm_names, str):
             perm_names = [perm_names]
         perm_paths = [self._inbox_file(n) for n in perm_names]
-        perms = Permissions([str(p) for p in perm_paths]) if perm_paths else None
+        try:
+            perms = Permissions([str(p) for p in perm_paths]) if perm_paths else None
+        except (ValueError, OSError) as exc:
+            raise UiError(f"Permissions file: {exc}")
         results = []
         st = self.store(create=True)
         try:
@@ -554,6 +557,10 @@ class App:
             raise UiError("only Migrate, Safe, platform and account name can be changed")
         if "migrate" in values and values["migrate"] not in ("Y", "N", ""):
             raise UiError("Migrate must be Y or N")
+        cleaned = []
+        for k in ("target_safe", "platform_id", "account_name"):
+            if isinstance(values.get(k), str):
+                values[k] = _line(values[k], cleaned)
         st = self.store()
         try:
             if body.get("ids"):
@@ -571,7 +578,7 @@ class App:
             raise UiError(str(exc))
         finally:
             st.close()
-        return {"changed": len(ids)}
+        return {"changed": len(ids), "cleaned": len(cleaned)}
 
     def api_safes(self, _body):
         st = self.store()

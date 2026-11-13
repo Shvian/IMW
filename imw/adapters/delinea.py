@@ -9,6 +9,7 @@ import csv
 import logging
 from collections import OrderedDict, defaultdict
 
+from ..csvsafe import reading
 from .base import Adapter, file_stem, read_head
 from .rows import record_from_row
 
@@ -32,7 +33,7 @@ def _dedupe(headers):
 def parse_sections(path, markers, encoding="utf-8-sig"):
     """Yield (template_name, line_no, OrderedDict row) for every data row."""
     markers = {m.lower() for m in markers}
-    with open(path, newline="", encoding=encoding) as fh:
+    with open(path, newline="", encoding=encoding) as fh, reading(path):
         reader = csv.reader(fh)
         lines = [(reader.line_num, row) for row in reader]
     lines = [(n, r) for n, r in lines if not _is_blank(r)]

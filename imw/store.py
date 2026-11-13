@@ -493,7 +493,7 @@ class Store:
         cols = {"Migrate": "migrate", "Target_Safe": "target_safe", "Platform_ID": "platform_id",
                 "Account_Name": "account_name"}
         count = 0
-        with open(path, newline="", encoding=encoding) as fh:
+        with open(path, newline="", encoding=encoding) as fh, csvsafe.reading(path):
             for row in csv.DictReader(fh):
                 rid = csvsafe.unescape((row.get("Record_ID") or "").strip()).strip()
                 if rid not in current:

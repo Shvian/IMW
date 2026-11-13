@@ -61,7 +61,7 @@ class Permissions:
             lst.append(g)
 
     def _read(self, path, encoding):
-        with open(path, newline="", encoding=encoding) as fh:
+        with open(path, newline="", encoding=encoding) as fh, csvsafe.reading(path):
             reader = csv.DictReader(fh)
             cols = {c.lower().strip(): c for c in reader.fieldnames or []}
 
@@ -118,7 +118,7 @@ def sanitize_safe_name(name, cfg):
     if bad:
         issues.append("invalid chars " + " ".join(bad))
     s = "".join(sc["replacement"] if c in sc["invalid_chars"] else c for c in raw)
-    s = re.sub(r"[\x00-\x1f]", "", s)
+    s = UNSAFE_LINE.sub("", s.replace("\u00a0", " "))
     if sc["replacement"]:
         s = re.sub(re.escape(sc["replacement"]) + "{2,}", sc["replacement"], s)
     s = re.sub(r"\s+", " ", s).strip()
@@ -378,7 +378,7 @@ class Plan:
 def load_overrides(path, encoding="utf-8-sig"):
     """Read an edited Accounts_Review.csv. Returns {Record_ID: {column: value}}."""
     out = {}
-    with open(path, newline="", encoding=encoding) as fh:
+    with open(path, newline="", encoding=encoding) as fh, csvsafe.reading(path):
         for row in csv.DictReader(fh):
             rid = csvsafe.unescape((row.get("Record_ID") or "").strip()).strip()
             if rid:
@@ -472,6 +472,7 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
             p.errors.append("no platform: removed by you")
         elif changed(ov.get("Platform_ID"), p.platform):
             p.platform, p.platform_source = ov["Platform_ID"], "override"
+        p.platform = UNSAFE_LINE.sub("", p.platform or "")
         if p.platform and PLATFORM_INVALID.search(p.platform):
             bad = " ".join(sorted({repr(c)[1:-1] if c != " " else "space" for c in PLATFORM_INVALID.findall(p.platform)}))
             clean = PLATFORM_INVALID.sub("_", p.platform)
@@ -517,6 +518,10 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
             name = ov["Account_Name"]
         if name.strip().lower() == NO_NAME:
             name = ""                   # left empty on purpose: Privilege Cloud generates one
+        unsafe = UNSAFE_TEXT.sub("", name)
+        if unsafe != name:
+            p.warnings.append("invisible or control characters removed from the account name")
+            name = unsafe
         clean = ACCOUNT_NAME_INVALID.sub("_", name).strip()
         if len(clean) > ACCOUNT_NAME_MAX:
             clean = clean[:ACCOUNT_NAME_MAX]
@@ -698,6 +703,7 @@ def apply_member_edits(members, plans, edits):
             uploading[p.safe.lower()] += 1
             names[p.safe.lower()] = p.safe
     for e in edits:
+        e = dict(e, member_name=clean_line(e["member_name"]), search_in=clean_line(e.get("search_in") or ""))
         safe_l, name_l = e["safe_name"].lower(), e["member_name"].lower()
         found = [k for k, m in members.items() if k[0].lower() == safe_l and name_l in _member_names(m)]
         why = f": {e['reason']}" if e.get("reason") else ""
@@ -732,14 +738,14 @@ def apply_member_override(m, ov):
     if not ov:
         return m
     changed = []
-    if ov.get("member_name"):
-        m["member_name"] = ov["member_name"]
+    if clean_line(ov.get("member_name")):
+        m["member_name"] = clean_line(ov["member_name"])
         changed.append("name")
     if ov.get("member_type"):
         m["member_type"] = m["type"] = normalize_member_type(ov["member_type"], m.get("member_type") or "Group")
         changed.append("type")
     if ov.get("search_in") is not None:
-        m["search_in"] = ov["search_in"]
+        m["search_in"] = clean_line(ov["search_in"])
         changed.append("searchIn")
     if changed:
         m["directory_source"] = "edited by you"

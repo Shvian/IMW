@@ -183,24 +183,28 @@ async function start() {
 const PAGES = {};
 
 /* ---------------- Forbidden characters, checked as you type ---------------- */
+// The same characters the server removes from typed names (UNSAFE_LINE in imw/transform.py).
+const INVISIBLE = /[\u0000-\u001f\u007f\u200b-\u200f\u2028\u2029\u2060\ufeff]/g;
+const INVISIBLE_MSG = "invisible or control characters will be removed";
+const hasInvisible = (v) => { INVISIBLE.lastIndex = 0; return INVISIBLE.test(v); };
 const CHECKS = {
   safe: (v) => {
     const bad = [...new Set(v.match(/[\\/:*?"<>|]/g) || [])];
-    const out = [];
+    const out = hasInvisible(v) ? [INVISIBLE_MSG] : [];
     if (bad.length) out.push(`${bad.join(" ")} not allowed in Safe names: will become "-"`);
     if (v.replace(/\{[^}]*\}/g, "").length > 28 && !/\{/.test(v)) out.push(`${v.length} characters: Safe names are cut to 28`);
     return out.join("; ");
   },
   platform: (v) => {
     if (v === "(none)") return "";
-    const bad = [...new Set(v.match(/[^A-Za-z0-9_.\-]/g) || [])].map(c => c === " " ? "space" : c);
-    return bad.length ? `${bad.join(" ")} not allowed in a platform ID: will become "_"` : "";
+    const bad = [...new Set(v.replace(INVISIBLE, "").match(/[^A-Za-z0-9_.\-]/g) || [])].map(c => c === " " ? "space" : c);
+    return [hasInvisible(v) ? INVISIBLE_MSG : "", bad.length ? `${bad.join(" ")} not allowed in a platform ID: will become "_"` : ""].filter(Boolean).join("; ");
   },
   account: (v) => {
     const bad = [...new Set(v.match(/[\\/:*?"<>|]/g) || [])];
-    return bad.length ? `${bad.join(" ")} not allowed in account names: will become "_"` : "";
+    return [hasInvisible(v) ? INVISIBLE_MSG : "", bad.length ? `${bad.join(" ")} not allowed in account names: will become "_"` : ""].filter(Boolean).join("; ");
   },
-  member: (v) => /[\u0000-\u001f\u007f\u200b-\u200f\u2028\u2029\u2060\ufeff]/.test(v) ? "invisible or control characters will be removed" : "",
+  member: (v) => hasInvisible(v) ? INVISIBLE_MSG : "",
 };
 function checkInput(el) {
   if (!el || !el.dataset || !CHECKS[el.dataset.check]) return;
@@ -1158,7 +1162,7 @@ async function act(kind) {
     saved("main");
     await loadList(); await refresh();
     ["#a-safe", "#a-plat", "#a-name"].forEach(k => { $(k).value = ""; checkInput($(k)); });
-    msg($("#act-msg"), "ok", `Changed ${r.changed} accounts. Rules re-applied.`);
+    okOrCleaned($("#act-msg"), r, `Changed ${r.changed} accounts. Rules re-applied.`);
   } catch (e) { msg($("#act-msg"), "err", e.message); }
 }
 function closeDrawer() { $("#drawer").classList.add("hidden"); }
@@ -1202,11 +1206,11 @@ async function showRecord(id) {
   $("#ra-noname").onchange = syncName; syncName();
   const save = async (values, done) => {
     try {
-      await api("/api/edit", { ids: [id], values, reason: $("#ra-reason").value });
+      const r = await api("/api/edit", { ids: [id], values, reason: $("#ra-reason").value });
       saved("panel");
       if (PAGE === "review") await loadList();
       await refresh(); await showRecord(id);
-      msg($("#ra-msg"), "ok", done || "Saved. Rules re-applied.");
+      okOrCleaned($("#ra-msg"), r, done || "Saved. Rules re-applied.");
     } catch (e) { msg($("#ra-msg"), "err", e.message); }
   };
   $("#ra-save").onclick = () => {

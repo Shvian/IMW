@@ -316,6 +316,21 @@ class UiServer(Base):
         self.assertEqual((st, r["cleaned"]), (200, 2), r)
         cfg = json.loads((self.ws / "config.json").read_text(encoding="utf-8"))
         self.assertEqual(cfg["safe_defaults"]["description"], "Default")
+        # A damaged workbook or permissions file gives a message, not "Unexpected error"
+        (self.ws / "inbox" / "broken.xlsx").write_bytes(b"PK not really")
+        st, r = self.req("POST", "/api/ingest", {"files": [{"name": "broken.xlsx", "source": ""}]})
+        self.assertEqual(st, 400, r)
+        self.assertIn("not a readable Excel workbook", r["error"])
+        (self.ws / "inbox" / "perms.csv").write_bytes(b"Group,Permission\n\"" + b"x" * 5000 + b"\n")
+        import csv
+        old = csv.field_size_limit(1000)         # stands in for a field over the 64 MB limit
+        try:
+            st, r = self.req("POST", "/api/ingest", {"files": [{"name": "delinea_export.csv", "source": ""}],
+                                                     "permissions": ["perms.csv"]})
+        finally:
+            csv.field_size_limit(old)
+        self.assertEqual(st, 400, r)
+        self.assertIn("not a readable CSV file", r["error"])
 
 
 class _Quiet:

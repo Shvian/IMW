@@ -13,6 +13,7 @@ import csv
 from collections import OrderedDict
 
 from .. import safexml
+from ..csvsafe import reading
 from ..model import SourceRecord, split_folder
 from .base import Adapter, AdapterError, file_stem, matches_any, read_head
 from .rows import record_from_row
@@ -122,7 +123,7 @@ class KeePassAdapter(Adapter):
         skip = {g.lower() for g in kcfg["skip_groups"]}
         stem = file_stem(path)
         out = []
-        with open(path, newline="", encoding=encoding) as fh:
+        with open(path, newline="", encoding=encoding) as fh, reading(path):
             reader = csv.DictReader(fh)
             for n, row in enumerate(reader, start=1):
                 row = OrderedDict((k or f"Unnamed_{i}", v or "") for i, (k, v) in enumerate(row.items()))

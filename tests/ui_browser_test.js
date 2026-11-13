@@ -2,7 +2,7 @@
 //
 //   IMW_UI_TEST_PASSWORD=test-pass IMW_UI_NO_OPEN=1 \
 //     python -m imw ui -w <ws> --no-browser --insecure-plaintext-secrets > ui.log &
-//   (copy samples/delinea_export.csv, delinea_permissions.csv, keepass_export.xml,
+//   (copy samples/delinea_export.csv, delinea_permissions.csv, delinea_permissions_extra.csv, keepass_export.xml,
 //    accounts_by_group.xlsx into <ws>/inbox first)
 //   node tests/ui_browser_test.js ui.log [screenshot-folder]
 const { chromium } = require('playwright');
