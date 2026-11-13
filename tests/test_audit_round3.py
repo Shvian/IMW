@@ -4,7 +4,7 @@ import re
 import unittest
 from pathlib import Path
 
-from test_imw import SAMPLES, Base  # noqa: F401
+from test_imw import SAMPLES, Base, read_csv  # noqa: F401
 
 from imw.config import config_from_dict
 from imw.model import Grant, SourceRecord
@@ -232,6 +232,83 @@ class BrokenFilesGiveMessages(Base):
         bad.write_bytes(b"PK broken")
         rc, _ = self.run_cli("convert", "-i", str(bad), "-o", str(self.tmp / "o"), "--force")
         self.assertEqual(rc, 2)
+
+
+class SecretsStayOutOfReviewFiles(Base):
+    def review_text(self, src, *extra):
+        cfg = self.tmp / "cfg.json"
+        cfg.write_text('{"default_platform": "WinServerLocal"}', encoding="utf-8")
+        out = self.convert(src, config=cfg, extra=extra)
+        return "".join(f.read_text(encoding="utf-8") for f in (out / "review").glob("*.csv")), out
+
+    def test_secret_like_columns(self):
+        src = self.tmp / "aws.csv"
+        src.write_text("Secret Name,Folder Path,Username,Password,Secret Key,Client Secret,API Key,Token,"
+                       "Security Answer,Secret Template,Notes\n"
+                       "aws,\\Cloud,svc,pw1,SKVALUE1,CSVALUE2,AKVALUE3,TKVALUE4,ANSVALUE5,Amazon IAM Key,fine\n",
+                       encoding="utf-8")
+        text, _ = self.review_text(src)
+        for v in ("SKVALUE1", "CSVALUE2", "AKVALUE3", "TKVALUE4", "ANSVALUE5", "pw1"):
+            self.assertNotIn(v, text)
+        self.assertIn("Amazon IAM Key", text)                 # Secret Template is not a secret
+        self.assertIn("secret field 'Secret Key' is not migrated", text)
+
+    def test_keepass_protected_fields(self):
+        src = self.tmp / "kp.xml"
+        src.write_text("""<?xml version="1.0" encoding="utf-8"?><KeePassFile><Meta/><Root><Group><Name>Root</Name>
+          <Entry><UUID>u1</UUID>
+            <String><Key>Title</Key><Value>db</Value></String>
+            <String><Key>UserName</Key><Value>sa</Value></String>
+            <String><Key>Password</Key><Value ProtectInMemory="True">PWVALUE</Value></String>
+            <String><Key>Vendor code</Key><Value ProtectInMemory="True">PROTVALUE1</Value></String>
+            <String><Key>Recovery</Key><Value Protected="True">PROTVALUE2</Value></String>
+            <String><Key>Port</Key><Value>1433</Value></String>
+          </Entry></Group></Root></KeePassFile>""", encoding="utf-8")
+        text, _ = self.review_text(src)
+        for v in ("PWVALUE", "PROTVALUE1", "PROTVALUE2"):
+            self.assertNotIn(v, text)
+        self.assertIn("1433", text)
+
+    def test_shifted_rows_are_errors_without_secret_pieces(self):
+        src = self.tmp / "shift.csv"
+        src.write_text("Secret Name,Folder Path,Username,Password,Notes,Machine\n"
+                       "web,\\IT,admin,pa,ss,word,srv1\n"
+                       "ok,\\IT,admin2,fine,n,srv2\n", encoding="utf-8")
+        text, out = self.review_text(src)
+        rows = {r["Account_Name"] or r["Username"]: r for r in read_csv(out / "review" / "Accounts_Review.csv")}
+        bad = next(r for r in rows.values() if r["Username"] == "admin")
+        self.assertEqual(bad["Status"], "ERROR")
+        self.assertIn("more values than the header", bad["Notes"])
+        self.assertNotIn(",ss,", text)
+        self.assertNotIn("word", text.replace("password", "").replace("Password", ""))
+        good = next(r for r in rows.values() if r["Username"] == "admin2")
+        self.assertNotEqual(good["Status"], "ERROR", good["Notes"])
+        self.assertNotIn("srv1", {r["Address"] for r in rows.values()})
+        accounts = read_csv(out / "upload" / "Accounts.csv")
+        self.assertEqual([a["userName"] for a in accounts], ["admin2"])
+
+    def test_keepass_csv_and_table_csv_shifted(self):
+        kp = self.tmp / "kp.csv"
+        kp.write_text('"Group","Title","Username","Password","URL","Notes"\n'
+                      '"Root/A","t","u","p1","p2","h.example","x"\n', encoding="utf-8")
+        recs = KeePassAdapter().read(kp, config_from_dict(CFG))
+        self.assertTrue(any("more values than the header" in n for n in recs[0].notes))
+        self.assertNotIn("p2", list(recs[0].extra.values()) + [recs[0].address])
+        tb = self.tmp / "t.csv"
+        tb.write_text("Hostname,Login,Password,Notes\nh1,u1,p1,p2,note\n", encoding="utf-8")
+        recs = list(TableAdapter().read(tb, config_from_dict(CFG)))
+        self.assertTrue(any("more values than the header" in n for n in recs[0].notes))
+        self.assertNotIn("p2", recs[0].extra.values())
+
+
+class RenameJoinsSafeWhateverTheCase(unittest.TestCase):
+    def test_case(self):
+        cfg = config_from_dict(CFG)
+        recs = lambda: [rec("1", ("Apps",)), rec("2", ("Web",))]
+        p = build_plan(recs(), cfg, safe_overrides={"apps": {"new_name": "web"}})
+        self.assertEqual(list(p.safes), ["WEB"])
+        p = build_plan(recs(), cfg, safe_overrides={"apps": {"new_name": "new"}, "web": {"new_name": "NEW"}})
+        self.assertEqual(len(p.safes), 1)
 
 
 if __name__ == "__main__":

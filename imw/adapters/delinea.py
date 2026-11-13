@@ -59,7 +59,7 @@ def parse_sections(path, markers, encoding="utf-8-sig"):
         if len(row) > len(headers):
             extra = row[len(headers):]
             if any(c.strip() for c in extra):
-                log.warning("line %d: %d more values than headers; kept as Extra_N", line_no, len(extra))
+                log.warning("line %d: %d more values than headers; values may have moved, record marked as an error", line_no, len(extra))
             cols = headers + [f"Extra_{i + 1}" for i in range(len(extra))]
         else:
             row = row + [""] * (len(headers) - len(row))
@@ -88,4 +88,4 @@ class DelineaAdapter(Adapter):
             n += 1
             yield record_from_row(row, cfg, source=self.name, source_file=stem,
                                   row_ref=f"line {line_no}", row_number=n,
-                                  type_hint=template or "", folder_separator="\\")
+                                  type_hint=template or "", folder_separator="\\", from_csv=True)

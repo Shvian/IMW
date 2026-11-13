@@ -15,7 +15,7 @@ from collections import OrderedDict
 from .. import safexml
 from ..csvsafe import reading
 from ..model import SourceRecord, split_folder
-from .base import Adapter, AdapterError, file_stem, matches_any, read_head
+from .base import Adapter, AdapterError, file_stem, is_secret_column, read_head
 from .rows import record_from_row
 
 STANDARD = {"Title", "UserName", "Password", "URL", "Notes"}
@@ -88,8 +88,14 @@ class KeePassAdapter(Adapter):
     def _entry(self, entry, folder, stem, cfg, idx):
         kcfg = cfg["sources"]["keepass"]
         fields = OrderedDict()
+        protected = set()
         for s in entry.findall("String"):
-            fields[(s.findtext("Key") or "").strip()] = s.findtext("Value") or ""
+            key = (s.findtext("Key") or "").strip()
+            fields[key] = s.findtext("Value") or ""
+            v = s.find("Value")
+            # Fields you marked as protected in KeePass are secrets, whatever their name.
+            if v is not None and any(str(v.get(a, "")).lower() == "true" for a in ("ProtectInMemory", "Protected")):
+                protected.add(key)
         uuid = (entry.findtext("UUID") or "").strip()
         rec = SourceRecord(source=self.name, source_file=stem, source_id=uuid or f"entry{idx}",
                            source_ref=f"entry {fields.get('Title', '')!r}")
@@ -104,9 +110,12 @@ class KeePassAdapter(Adapter):
                 if k in ("URL", "Notes"):
                     rec.extra[k] = v
                 continue
-            if matches_any(k, cfg["secret_column_patterns"]):
+            if k in protected or is_secret_column(k, cfg):
                 if "private" in k.lower() and "key" in k.lower() and v.strip():
                     rec.secret, rec.secret_type = v, "key"
+                elif v.strip():
+                    rec.notes.append(f"secret field '{k}' is not migrated (an account takes one secret) "
+                                     "and is left out of the review files")
                 continue
             rec.extra[k] = v
         for b in entry.findall("Binary"):
@@ -124,9 +133,12 @@ class KeePassAdapter(Adapter):
         stem = file_stem(path)
         out = []
         with open(path, newline="", encoding=encoding) as fh, reading(path):
-            reader = csv.DictReader(fh)
+            reader = csv.DictReader(fh, restkey="_extra")
             for n, row in enumerate(reader, start=1):
+                extra = row.pop("_extra", None) or []
                 row = OrderedDict((k or f"Unnamed_{i}", v or "") for i, (k, v) in enumerate(row.items()))
+                for i, v in enumerate(extra, start=1):
+                    row[f"Extra_{i}"] = v or ""
                 # KeePass 1.x CSV names.
                 cols = {"name": "Title" if "Title" in row else "Account",
                         "username": "Username" if "Username" in row else "Login Name",
@@ -135,7 +147,7 @@ class KeePassAdapter(Adapter):
                         "folder": "Group" if "Group" in row else ""}
                 rec = record_from_row(row, cfg, source=self.name, source_file=stem,
                                       row_ref=f"row {n + 1}", row_number=n, columns=cols,
-                                      folder_separator="/")
+                                      folder_separator="/", from_csv=True)
                 if any(g.lower() in skip for g in rec.folder):
                     continue
                 if kcfg["drop_root_group"]:

@@ -199,6 +199,8 @@ Each record gets a Status:
   manifest.json                 SHA-256 of every input and output file, counts, timestamp, host
 ```
 
+**What counts as a secret.** Source columns and KeePass fields whose names say they hold a secret (password, passphrase, private key, secret, API key, token, PIN, OTP, security answer, recovery code, card number, connection string and similar; `secret_column_patterns` in the settings adds more) and KeePass fields you marked as protected never go to `review/`. An account carries one secret, so any second secret field is not migrated and the account's Notes say so. A CSV row with more values than its header has columns (usually an unquoted comma in a password) is an error: its values from the secret column on are dropped, so a piece of a password can't land in another column. Fix the export and load it again.
+
 Notes for whoever writes the uploader:
 - Dotted column names map to nested JSON. For example `permissions.useAccounts` becomes `{"permissions": {"useAccounts": ...}}`.
 - `recordId` (Accounts) and `role` (SafeMembers) are for traceability and are not API fields. Drop them from the request body. Keep `recordId` in your upload log.

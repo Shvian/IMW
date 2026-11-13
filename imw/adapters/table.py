@@ -63,7 +63,8 @@ class TableAdapter(Adapter):
     def read(self, path, cfg, encoding="utf-8-sig"):
         tcfg = cfg["sources"]["table"]
         stem = file_stem(path)
-        records = (self._record(row, ref, n, cfg, tcfg, stem)
+        from_csv = not str(path).lower().endswith((".xlsx", ".xlsm"))
+        records = (self._record(row, ref, n, cfg, tcfg, stem, from_csv)
                    for ref, n, row in self._rows(path, tcfg, encoding))
         if not tcfg.get("group_column"):
             yield from records
@@ -82,9 +83,9 @@ class TableAdapter(Adapter):
                 merged[key] = rec
         yield from merged.values()
 
-    def _record(self, row, ref, n, cfg, tcfg, stem):
+    def _record(self, row, ref, n, cfg, tcfg, stem, from_csv=False):
         return record_from_row(row, cfg, source=self.name, source_file=stem, row_ref=ref,
                                   row_number=n, columns=tcfg.get("columns") or {},
                                   folder_separator=tcfg.get("folder_separator") or "auto",
                                   group_column=tcfg.get("group_column", ""),
-                                  permission_column=tcfg.get("permission_column", ""))
+                                  permission_column=tcfg.get("permission_column", ""), from_csv=from_csv)

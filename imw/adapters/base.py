@@ -65,6 +65,23 @@ def matches_any(name, patterns):
     return any(re.search(p, name, re.IGNORECASE) for p in patterns)
 
 
+# Column names that hold secrets, always on (config secret_column_patterns adds to them).
+# Their values are never kept as Source.* columns, so they never reach a review file.
+BUILTIN_SECRET_COLUMNS = (
+    r"pass ?word", r"passwd", r"\bpwd\b", r"^pass$", r"passphrase", r"pass ?code",
+    r"private ?key", r"ssh ?key", r"\bsecret\b(?! ?(name|id|template|folder|policy|type)\b)",
+    r"api ?key", r"\btoken\b", r"\bpin\b", r"\btotp\b", r"\botp\b", r"\bseed\b",
+    r"recovery ?(code|key)", r"backup ?code", r"security ?(answer|code)", r"\bcvv\b", r"\bcvc\b",
+    r"card ?number", r"connection ?string", r"combination", r"alarm ?code", r"(license|product) ?key",
+)
+
+
+def is_secret_column(name, cfg):
+    """True when a column (or KeePass field) name says it holds a secret value."""
+    return matches_any(name or "", BUILTIN_SECRET_COLUMNS) or \
+        matches_any(name or "", (cfg or {}).get("secret_column_patterns") or [])
+
+
 def address_from_url(value):
     """Keep the host part of a URL as the address (https://h.example/x -> h.example)."""
     m = re.match(r"^[a-z][a-z0-9+.-]*://([^/?#]+)", value.strip(), re.IGNORECASE)

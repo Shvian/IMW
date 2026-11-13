@@ -5,6 +5,10 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
 
+# A record note that starts with this is an error, not a warning: the record is not uploaded.
+ERROR_NOTE = "ERROR: "
+
+
 @dataclass
 class Grant:
     """One principal's access to a record, as the source expressed it."""

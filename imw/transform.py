@@ -13,7 +13,7 @@ from typing import List
 from . import csvsafe
 from .adapters.base import address_from_url
 from .config import all_roles, resolve_role
-from .model import Grant, split_folder
+from .model import ERROR_NOTE, Grant, split_folder
 from .naming import Namer
 
 log = logging.getLogger("imw.transform")
@@ -434,7 +434,8 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
 
     for rec in records:
         p = AccountPlan(rec=rec)
-        p.warnings.extend(rec.notes)
+        p.warnings.extend(n for n in rec.notes if not n.startswith(ERROR_NOTE))
+        p.errors.extend(n[len(ERROR_NOTE):] for n in rec.notes if n.startswith(ERROR_NOTE))
         # Access (looked up by the source's own id, before a duplicate id is suffixed)
         if rec.grants is not None:
             p.grants, p.access_source = list(rec.grants), rec.access_source or "source"
@@ -552,6 +553,9 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
             cleaned[p.proposed_safe] = sanitize_safe_name(p.proposed_safe, cfg)
     final = resolve_collisions({k: v[0] for k, v in cleaned.items()}, cfg)
 
+    # Safe names compare without case in Privilege Cloud: a rename onto an existing Safe (or two
+    # renames onto one new name) in another case joins it, spelled as that Safe is.
+    spelling = {name.lower(): name for name, _ in final.values()}
     dupes = defaultdict(list)
     for p in plans:
         _, valid, issues = cleaned[p.proposed_safe]
@@ -566,6 +570,7 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
         if new_name:
             # You renamed this whole Safe: its accounts follow, whatever the rules gave.
             p.safe, p.valid_safe, p.safe_issues = sanitize_safe_name(new_name, cfg)
+            p.safe = spelling.setdefault(p.safe.lower(), p.safe)
             p.safe_source = "Safe renamed by you"
             if not p.valid_safe:
                 p.warnings.insert(0, "Safe name changed: " + "; ".join(p.safe_issues))
