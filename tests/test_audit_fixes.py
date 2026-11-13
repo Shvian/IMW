@@ -237,6 +237,49 @@ class DuplicateIdPermissions(Base):
         self.assertEqual([[g.member for g in p.grants] for p in plan.accounts], [["CORP\\Ops"]] * 2)
 
 
+class DuplicateIdsNotSuffixedTwice(Base):
+    def test_build_plan_twice_is_stable(self):
+        cfg = config_from_dict({})
+        records = [rec("42", "a"), rec("42", "b"), rec("42#2", "c"), rec("42", "d")]
+        ids = [p.rec.record_id for p in build_plan(records, cfg).accounts]
+        self.assertEqual(len(set(ids)), 4)
+        self.assertEqual([i.split(":")[-1] for i in ids], ["42", "42#3", "42#2", "42#4"])
+        again = [p.rec.record_id for p in build_plan(records, cfg).accounts]
+        self.assertEqual(again, ids)
+
+    def test_store_records_not_resuffixed(self):
+        src = self.tmp / "src.csv"
+        src.write_text("x")
+        st = Store(str(self.tmp / "m.db"), create=True, protector="plain")
+        st.ingest("t", src, [rec("42", "a"), rec("42", "b")])
+        loaded = st.load_records()
+        st.close()
+        plan = build_plan(loaded, config_from_dict({}))
+        self.assertEqual(sorted(p.rec.source_id for p in plan.accounts), ["42", "42#2"])
+        self.assertEqual(sum("suffixed in Record_ID" in w for p in plan.accounts for w in p.warnings), 1)
+
+
+class ReviewRoundTrip(Base):
+    def test_import_review_ignores_added_apostrophes(self):
+        src = self.tmp / "in.csv"
+        src.write_text("Name,Address,Username,Password\n=calc,@h,-adm,-pw\n")
+        cfg = self.tmp / "cfg.json"
+        cfg.write_text('{"default_platform": "WinServerLocal"}')
+        db = str(self.tmp / "m.db")
+        self.assertEqual(self.run_cli("ingest", "--db", db, "--insecure-plaintext-secrets", "-i", str(src))[0], 0)
+        self.assertEqual(self.run_cli("map", "--db", db, "-c", str(cfg))[0], 0)
+        out = self.tmp / "x"
+        self.assertEqual(self.run_cli("extract", "--db", db, "-o", str(out), "--include-secrets")[0], 0)
+        review = out / "review" / "Accounts_Review.csv"
+        self.assertEqual(read_csv(review)[0]["Account_Name"], "'=calc")
+        self.assertEqual(read_csv(out / "upload" / "Accounts.csv")[0]["secret"], "-pw")
+        st = Store(db)
+        try:
+            self.assertEqual(st.import_review(review), 0)          # nothing changed, nothing imported
+        finally:
+            st.close()
+
+
 class AccountNames(unittest.TestCase):
     def test_url_stripped_before_name(self):
         cfg = config_from_dict({"account_name": {"template": "{address}-{username}"}})

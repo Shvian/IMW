@@ -403,7 +403,9 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
     perms = perms or Permissions()
     overrides = overrides or {}
     plans = []
-    seen_ids = defaultdict(int)
+    records = list(records)
+    all_ids = {r.record_id for r in records}
+    used_ids, dup_count = set(), defaultdict(lambda: 1)
     namer = Namer(cfg)
     convention_folders = defaultdict(set)
 
@@ -418,10 +420,18 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
             p.grants = list(p.grants)
         else:
             p.access_source = "none"
-        seen_ids[rec.record_id] += 1
-        if seen_ids[rec.record_id] > 1:
-            rec.source_id = f"{rec.source_id}#{seen_ids[rec.record_id]}"
+        # Only a real duplicate in this run is suffixed. Records from the database are already
+        # unique (Store.ingest added any #N), so they are never suffixed again, and a second
+        # build_plan over the same records changes nothing.
+        if rec.record_id in used_ids:
+            base, n = rec.source_id, dup_count[rec.record_id] + 1
+            rec.source_id = f"{base}#{n}"
+            while rec.record_id in used_ids or rec.record_id in all_ids:
+                n += 1
+                rec.source_id = f"{base}#{n}"
+            dup_count[f"{rec.source}:{rec.source_file}:{base}"] = n
             p.warnings.append("duplicate id in the source; suffixed in Record_ID")
+        used_ids.add(rec.record_id)
         ov = overrides.get(rec.record_id, {})
         if not p.grants:
             p.warnings.append("no access groups found; Safe gets no members from the source")

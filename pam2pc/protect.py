@@ -40,7 +40,8 @@ class DpapiProtector:
             fn.restype = wintypes.BOOL
         self._crypt32.CryptProtectData.argtypes = [pblob, wintypes.LPCWSTR, pblob, ctypes.c_void_p,
                                                    ctypes.c_void_p, wintypes.DWORD, pblob]
-        self._crypt32.CryptUnprotectData.argtypes = [pblob, ctypes.POINTER(wintypes.LPWSTR), pblob,
+        # Argument 2 of CryptUnprotectData is an optional LPWSTR* out-pointer; we pass None.
+        self._crypt32.CryptUnprotectData.argtypes = [pblob, ctypes.c_void_p, pblob,
                                                      ctypes.c_void_p, ctypes.c_void_p, wintypes.DWORD, pblob]
         self._kernel32.LocalFree.argtypes = [ctypes.c_void_p]
         self._kernel32.LocalFree.restype = ctypes.c_void_p
