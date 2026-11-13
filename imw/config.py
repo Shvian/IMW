@@ -271,15 +271,27 @@ def resolve_role(name, cfg):
 
 
 def upgrade_config(user):
-    """Bring a stored config from an older version up to date. Settings that still equal
-    the old built-in defaults move to the new defaults; anything the user changed stays."""
+    """Bring a stored config from an older version up to date, one version step at a time.
+    Settings that still equal the old built-in defaults move to the new defaults; anything
+    the user changed stays."""
     user = dict(user or {})
-    if int(user.get("config_version") or 1) >= CONFIG_VERSION:
+    version = int(user.get("config_version") or 1)
+    if version >= CONFIG_VERSION:
         return user
-    # Only whole-config dumps (workbench saves, init-config) carried the old defaults;
-    # a hand-written config lists just what its author chose, so keep it as it is.
-    if "field_aliases" not in user:
-        return user
+    if version < 2:
+        # A version 1 file has no config_version. Only whole-config dumps (workbench saves,
+        # init-config) carried the old defaults, and those always had field_aliases; a
+        # hand-written version 1 config lists just what its author chose, so keep it as it is.
+        if "config_version" not in user and "field_aliases" not in user:
+            return user
+        _upgrade_v1_to_v2(user)
+    # Later versions: add "if version < 3: _upgrade_v2_to_v3(user)" here. Files saved by the
+    # Workbench since version 2 always carry config_version but only the changed settings.
+    user["config_version"] = CONFIG_VERSION
+    return user
+
+
+def _upgrade_v1_to_v2(user):
     if user.get("permission_map") == _V1_PERMISSION_MAP:
         user.pop("permission_map")
     old_roles = user.pop("role_permissions", None)
@@ -297,8 +309,7 @@ def upgrade_config(user):
         conv = dict(conv)
         conv.pop("template")
         user["safe_convention"] = conv
-    user["config_version"] = CONFIG_VERSION
-    return user
+    user["config_version"] = 2
 
 
 def config_diff(cfg, base=None):

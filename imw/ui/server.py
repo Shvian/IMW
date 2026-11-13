@@ -549,14 +549,17 @@ class App:
         in_export = {r["member"].lower(): r["n"] for r in grants}
         people = {}
         for m in members:
-            key = (m["source_member"] or m["member_name"]).lower()
-            p = people.setdefault(key, {
-                "key": key, "source_member": m["source_member"], "member_name": m["member_name"],
-                "member_type": m["member_type"], "search_in": m["search_in"],
-                "directory_source": m["directory_source"], "export_accounts": in_export.get(key, 0),
-                "edited": key in overrides, "override": overrides.get(key), "safes": []})
-            p["safes"].append({"safe_name": m["safe_name"], "role": m["role"], "accounts": m["accounts"],
-                               "source_permission": m["source_permission"], "notes": m["notes"]})
+            # A merged row lists several source members ("CORP\\X | LEGACY\\X"); each one is
+            # its own person here, so a change (keyed by source member) reaches the right one.
+            for source in (m["source_member"] or m["member_name"]).split(" | "):
+                key = source.lower()
+                p = people.setdefault(key, {
+                    "key": key, "source_member": source, "member_name": m["member_name"],
+                    "member_type": m["member_type"], "search_in": m["search_in"],
+                    "directory_source": m["directory_source"], "export_accounts": in_export.get(key, 0),
+                    "edited": key in overrides, "override": overrides.get(key), "safes": []})
+                p["safes"].append({"safe_name": m["safe_name"], "role": m["role"], "accounts": m["accounts"],
+                                   "source_permission": m["source_permission"], "notes": m["notes"]})
         default_type = normalize_member_type(cfg["default_member_type"])
         for r in grants:
             key = r["member"].lower()

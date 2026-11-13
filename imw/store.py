@@ -415,12 +415,12 @@ class Store:
         count = 0
         with open(path, newline="", encoding=encoding) as fh:
             for row in csv.DictReader(fh):
-                rid = csvsafe.unescape((row.get("Record_ID") or "").strip())
+                rid = csvsafe.unescape((row.get("Record_ID") or "").strip()).strip()
                 if rid not in current:
                     continue
                 vals = {}
                 for col, fld in cols.items():
-                    new = csvsafe.unescape((row.get(col) or "").strip())
+                    new = csvsafe.unescape((row.get(col) or "").strip()).strip()
                     if fld == "migrate":
                         if new and new.upper() != current[rid][fld].upper():
                             vals[fld] = new.upper()

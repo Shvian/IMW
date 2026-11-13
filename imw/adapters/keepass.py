@@ -14,7 +14,7 @@ from collections import OrderedDict
 
 from .. import safexml
 from ..model import SourceRecord, split_folder
-from .base import Adapter, AdapterError, address_from_url, file_stem, matches_any, read_head
+from .base import Adapter, AdapterError, file_stem, matches_any, read_head
 from .rows import record_from_row
 
 STANDARD = {"Title", "UserName", "Password", "URL", "Notes"}
@@ -57,7 +57,7 @@ class KeePassAdapter(Adapter):
         stem = file_stem(path)
         try:
             root = safexml.parse(path).getroot()
-        except safexml.UnsafeXmlError as exc:
+        except (safexml.UnsafeXmlError, safexml.ET.ParseError) as exc:
             raise AdapterError(f"{path}: {exc}") from None
         if root.tag != "KeePassFile":
             raise AdapterError(f"{path} is not a KeePass XML export")
@@ -95,7 +95,7 @@ class KeePassAdapter(Adapter):
         rec.name = fields.get("Title", "").strip()
         rec.folder = tuple(folder)
         rec.username = fields.get("UserName", "").strip()
-        rec.address = address_from_url(fields.get("URL", ""))
+        rec.address = fields.get("URL", "").strip()   # build_plan turns it into a host when url_address_to_host is on
         rec.secret = fields.get("Password", "")
         rec.type = "\\".join(folder) if kcfg["type_from"] == "group" else kcfg["fixed_type"]
         for k, v in fields.items():
@@ -139,7 +139,6 @@ class KeePassAdapter(Adapter):
                     continue
                 if kcfg["drop_root_group"]:
                     rec.folder = rec.folder[1:]
-                rec.address = address_from_url(rec.address)
                 rec.type = "\\".join(rec.folder) if kcfg["type_from"] == "group" else kcfg["fixed_type"]
                 out.append(rec)
         return out

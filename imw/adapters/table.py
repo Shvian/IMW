@@ -52,7 +52,10 @@ class TableAdapter(Adapter):
         for n, values in enumerate(rows[header_row:], start=header_row + 1):
             if not any(str(v).strip() for v in values):
                 continue
-            values = list(values) + [""] * (len(headers) - len(values))
+            values = list(values)
+            while len(values) > len(headers) and not str(values[-1]).strip():
+                values.pop()      # blank cells past the last header (e.g. a stray space in XFD)
+            values += [""] * (len(headers) - len(values))
             cols = headers + [f"Extra_{i + 1}" for i in range(len(values) - len(headers))]
             yield f"{label}{n}", n, OrderedDict(zip(cols, values))
 
