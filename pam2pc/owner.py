@@ -19,6 +19,7 @@ does not give away a password.
 """
 
 import getpass
+import logging
 import json
 import os
 import socket
@@ -27,6 +28,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+log = logging.getLogger("pam2pc.owner")
 OWNER_FILE = ".owner"
 SYSTEM_SID = "S-1-5-18"
 
@@ -114,15 +116,21 @@ def restrict(path, sid=None, recursive=False):
     path = Path(path)
     if sys.platform == "win32":
         sid = sid or current_identity()["sid"]
-        inherit = "(OI)(CI)" if path.is_dir() else ""
-        cmd = ["icacls", str(path), "/inheritance:r", "/grant:r", f"*{sid}:{inherit}F",
-               "/grant:r", f"*{SYSTEM_SID}:{inherit}F"]
-        if recursive and path.is_dir():
-            cmd.append("/T")
-        cmd += ["/C", "/Q"]
-        done = subprocess.run(cmd, capture_output=True, text=True)
-        if done.returncode != 0:
-            raise OwnerError(f"could not restrict access to {path}: {(done.stdout + done.stderr).strip()}")
+        is_dir = path.is_dir()
+        inherit = "(OI)(CI)" if is_dir else ""
+        # The explicit grant goes on this folder (or file) only. Never combine an (OI)(CI) grant
+        # with /T: icacls drops those ACEs on files and, with inheritance removed, leaves every
+        # file with an EMPTY permission list that nobody can open.
+        cmds = [["icacls", str(path), "/inheritance:r", "/grant:r", f"*{sid}:{inherit}F",
+                 "/grant:r", f"*{SYSTEM_SID}:{inherit}F", "/C", "/Q"]]
+        if recursive and is_dir and any(path.iterdir()):
+            # Everything inside inherits owner + SYSTEM from the folder (also repairs files
+            # that an earlier version left with an empty permission list).
+            cmds.append(["icacls", str(path / "*"), "/reset", "/T", "/C", "/Q"])
+        for cmd in cmds:
+            done = subprocess.run(cmd, capture_output=True, text=True)
+            if done.returncode != 0:
+                raise OwnerError(f"could not restrict access to {path}: {(done.stdout + done.stderr).strip()}")
         return "owner and SYSTEM only"
     mode_dir, mode_file = 0o700, 0o600
     targets = [path]
@@ -204,9 +212,19 @@ def claim_workspace(ws):
     me = current_identity()
     marker = ws / OWNER_FILE
     try:
-        ws.mkdir(parents=True, exist_ok=True)
-        existing = json.loads(marker.read_text(encoding="utf-8")) if marker.exists() else None
-        entries = {p.name for p in ws.iterdir()}
+        try:
+            ws.mkdir(parents=True, exist_ok=True)
+            existing = json.loads(marker.read_text(encoding="utf-8")) if marker.exists() else None
+            entries = {p.name for p in ws.iterdir()}
+        except PermissionError as exc:
+            # Earlier versions could leave files in the owner's own workspace with an empty
+            # permission list. The folder's owner may always reset them, so repair and retry once.
+            if sys.platform != "win32" or path_owner_sid(ws) != me["sid"]:
+                raise
+            log.warning("access denied in your own workspace (%s); resetting its permissions", exc)
+            restrict(ws, me["sid"], recursive=True)
+            existing = json.loads(marker.read_text(encoding="utf-8")) if marker.exists() else None
+            entries = {p.name for p in ws.iterdir()}
     except PermissionError as exc:
         raise OwnerError(_access_denied(ws, me, exc)) from None
     except ValueError:

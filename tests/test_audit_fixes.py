@@ -358,6 +358,23 @@ class AccessDeniedMessage(Base):
                 owner.claim_workspace(ws)
 
 
+class WindowsAclCommands(Base):
+    def test_files_inherit_instead_of_getting_folder_flags(self):
+        from pam2pc import owner
+        ws = self.tmp / "ws"
+        ws.mkdir()
+        (ws / ".owner").write_text("{}")
+        calls = []
+        done = mock.Mock(returncode=0, stdout="", stderr="")
+        with mock.patch.object(owner.sys, "platform", "win32"), \
+                mock.patch.object(owner.subprocess, "run", side_effect=lambda c, **k: calls.append(c) or done):
+            owner.restrict(ws, "S-1-5-21-1", recursive=True)
+        self.assertEqual(len(calls), 2)
+        self.assertNotIn("/T", calls[0])                       # (OI)(CI) grant on the folder only
+        self.assertIn("*S-1-5-21-1:(OI)(CI)F", calls[0])
+        self.assertEqual(calls[1][1:4], [str(ws / "*"), "/reset", "/T"])
+
+
 @unittest.skipUnless(sys.platform == "win32", "Windows only")
 class WindowsOnly(unittest.TestCase):
     def test_dpapi_roundtrip(self):
