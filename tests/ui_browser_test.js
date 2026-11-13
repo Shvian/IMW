@@ -183,6 +183,15 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   await page.click('#save');
   await page.waitForSelector('#rules-msg .msg.ok');
   console.log('SAFES RULES:', await page.innerText('#rules-msg'));
+  // Removing a placeholder is a change: Save & apply must come back on (round 3 audit)
+  await page.fill('#new-layer', 'zone');
+  await page.click('#add-layer');
+  await page.$eval('#rules-msg', e => e.innerHTML = ''); await page.click('#save'); await page.waitForSelector('#rules-msg .msg.ok');
+  if (!(await page.isDisabled('#save'))) throw new Error('Save still enabled right after saving');
+  await openBlock('layer-zone');
+  await page.click('[data-block="layer-zone"] .l-del');
+  if (await page.isDisabled('#save')) throw new Error('Save stays disabled after removing a placeholder');
+  await page.$eval('#rules-msg', e => e.innerHTML = ''); await page.click('#save'); await page.waitForSelector('#rules-msg .msg.ok');
 
   await page.click('#rules-next');                       // Next goes to the next sub-page
   await page.waitForSelector('#roles table', { state: 'attached' });
@@ -200,6 +209,16 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   await shot(page, '02c_members');
   await page.click('#save');
   await page.waitForSelector('#rules-msg .msg.ok');
+  // Deleting a custom role is a change: Save & apply must come back on (round 3 audit)
+  await page.click('#role-add');
+  await page.fill('.role-name >> nth=-1', 'Temp');
+  await page.$eval('#rules-msg', e => e.innerHTML = ''); await page.click('#save'); await page.waitForSelector('#rules-msg .msg.ok');
+  const rolesBefore = await page.locator('.role-name').count();
+  await page.click('#roles [data-del] >> nth=-1');
+  if (await page.isDisabled('#save')) throw new Error('Save stays disabled after deleting a custom role');
+  await page.$eval('#rules-msg', e => e.innerHTML = ''); await page.click('#save'); await page.waitForSelector('#rules-msg .msg.ok');
+  if (await page.locator('.role-name').count() !== rolesBefore - 1 || await page.$('.role-name[value="Temp"]'))
+    throw new Error('deleted custom role came back');
 
   await navTo('rules-platforms');
   await page.waitForSelector('#t-pm', { state: 'attached' });
@@ -290,6 +309,13 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   await page.waitForSelector('#ra-msg >> text=Undone');
   if (await page.inputValue('#ra-plat') === 'UnixSSHKeys') throw new Error('undo did not hand the platform back to the rules');
   console.log('ACCOUNT PANEL: platform back to', await page.inputValue('#ra-plat'));
+  // "open <Safe> in Safes & members" with unsaved changes: Cancel stays and opens nothing (round 3 audit)
+  await page.fill('#ra-plat', 'SomethingElse');
+  await page.$eval('#ra-open-safe', a => { a.closest('details').open = true; });
+  DISMISS = true;
+  await page.click('#ra-open-safe');
+  if (await page.evaluate(() => PAGE) === 'review-safes') throw new Error('Cancel on the unsaved warning still left the account');
+  if (await page.evaluate(() => SAFES.panel)) throw new Error('Cancelled link still set the Safe panel');
   await page.click('#drawer >> text=Close');
   await page.fill('#f-search', '');
 
@@ -436,6 +462,39 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   await page.click('#sv-undo');
   await page.waitForSelector(`#safes-table tr[data-name="${firstSafe.toLowerCase()}"]`);
   if (await page.$('text=Your Safe changes')) throw new Error('Safe change not undone');
+
+  // Rename one Safe into another: the other keeps its own settings key; Split back out undoes it (round 3 audit)
+  {
+    const names = await page.$$eval('#safes-table [data-members-of]', as => as.map(a => a.dataset.membersOf));
+    const [sa, sb] = names;
+    await page.click(`#safes-table [data-members-of="${sa}"]`);
+    await page.click('#drawer details.edit-block > summary');
+    await page.fill('#sv-name', sb);
+    await page.click('#sv-save');
+    await page.waitForSelector('#drawer [data-split]');
+    if (await page.$(`#safes-table tr[data-name="${sa.toLowerCase()}"]`)) throw new Error('merged Safe still listed');
+    if (!(await page.$eval('#drawer details.edit-block', e => e.open))) await page.click('#drawer details.edit-block > summary');
+    if (await page.inputValue('#sv-name') !== sb) throw new Error('merged Safe panel shows the wrong name');
+    await page.fill('#sv-desc', 'Own description of B');
+    await page.$eval('#sv-msg', e => e.innerHTML = '');
+    await page.click('#sv-save');
+    await page.waitForSelector('#sv-msg .msg.ok');
+    const keys = await page.evaluate(() => SAFES.data.safe_overrides.map(o => o.key).sort());
+    if (JSON.stringify(keys) !== JSON.stringify([sa.toLowerCase(), sb.toLowerCase()].sort()))
+      throw new Error('settings of the merged Safe saved under the wrong key: ' + keys);
+    await shot(page, '09b_safe_merged');
+    await page.click(`#drawer [data-split="${sa}"]`);
+    await page.waitForSelector('#sv-msg >> text=a Safe of its own again');
+    if (!(await page.$(`#safes-table tr[data-name="${sa.toLowerCase()}"]`))) throw new Error('Split back out did not bring back ' + sa);
+    const rowB = await page.innerText(`#safes-table tr[data-name="${sb.toLowerCase()}"]`);
+    if (!/Own description of B/.test(rowB)) throw new Error('splitting A out lost B\'s own settings: ' + rowB);
+    if (!(await page.$eval('#drawer details.edit-block', e => e.open))) await page.click('#drawer details.edit-block > summary');
+    await page.$eval('#sv-msg', e => e.innerHTML = '');
+    await page.click('#sv-undo');
+    await page.waitForSelector('#sv-msg >> text=Back to what the rules give', { state: 'attached' });
+    if (await page.$('text=Your Safe changes')) throw new Error('merge test left Safe changes behind');
+    await page.click('#drawer >> text=Close');
+  }
 
   // Activity log
   await navTo('activity');

@@ -290,6 +290,33 @@ class UiServer(Base):
         members = read_csv(up / "SafeMembers.csv")
         self.assertEqual(sum(1 for m in members if m["memberName"] == "PAM-Auditors"), 2)
 
+    def test_typed_values_lose_invisible_characters(self):
+        """Round 3 audit: Safe settings, member names and searchIn typed in the UI are cleaned."""
+        self.login()
+        st, r = self.req("POST", "/api/ingest", {"files": [{"name": "delinea_export.csv", "source": ""}],
+                                                 "permissions": ["delinea_permissions.csv"]})
+        self.assertEqual(st, 200, r)
+        st, s = self.req("GET", "/api/safes")
+        safe = next(x["safe_name"] for x in s["safes"] if x["accounts_to_upload"])
+        st, r = self.req("POST", "/api/safes/change", {"key": safe, "current": safe, "settings": {
+            "description": "Line1\r\nLine2\u200b", "location": "\\Win\u0007", "managingCPM": "CPM\t1"}})
+        self.assertEqual((st, r["cleaned"]), (200, 3), r)
+        st, r = self.req("POST", "/api/members/edit", {"action": "add", "member_name": "PAM\u200b-Ops\n",
+                                                       "safes": [safe], "search_in": "corp\u2060", "role": "Read only"})
+        self.assertEqual((st, r["cleaned"]), (200, 2), r)
+        st, r = self.req("POST", "/api/config", {"patch": {"safe_defaults": {"description": "Def\u2028ault"}}})
+        self.assertEqual((st, r["cleaned"]), (200, 1), r)
+        st, s = self.req("GET", "/api/safes")
+        row = next(x for x in s["safes"] if x["safe_name"] == safe)
+        self.assertEqual((row["description"], row["location"], row["managing_cpm"]), ("Line1Line2", "\\Win", "CPM1"))
+        added = [m for m in s["members"] if m["member_name"] == "PAM-Ops"]
+        self.assertEqual([(m["safe_name"], m["search_in"]) for m in added], [(safe, "corp")])
+        key = next(p["key"] for p in s["people"] if p["member_name"] == "PAM-Ops")
+        st, r = self.req("POST", "/api/members/change", {"key": key, "member_name": "PAM-Ops2\ufeff", "search_in": "x\u200e"})
+        self.assertEqual((st, r["cleaned"]), (200, 2), r)
+        cfg = json.loads((self.ws / "config.json").read_text(encoding="utf-8"))
+        self.assertEqual(cfg["safe_defaults"]["description"], "Default")
+
 
 class _Quiet:
     """Silence the server's start-up prints during tests."""

@@ -348,20 +348,62 @@ class Store:
 
     def set_safe_override(self, safe_key, settings, reason="", undo=False, old_name=None, new_name=None):
         """Rename one Safe or change its settings, kept across re-mapping. safe_key is the Safe's
-        name as the rules give it. Per-Safe member changes follow a rename (old_name -> new_name)."""
+        name as the rules give it. Per-Safe member changes follow a rename (old_name -> new_name);
+        the ones moved are kept with the change (moved_edits) so Undo moves back only those."""
         key = (safe_key or "").strip().lower()
         if not key:
             raise StoreError("name the Safe to change")
+        row = self.db.execute("SELECT settings_json FROM safe_overrides WHERE safe_key = ?", (key,)).fetchone()
+        moved = list(json.loads(row["settings_json"] or "{}").get("moved_edits") or []) if row else []
         self.db.execute("DELETE FROM safe_overrides WHERE safe_key = ?", (key,))
-        settings = {k: v for k, v in (settings or {}).items() if v not in (None, "")}
+        settings = {k: v for k, v in (settings or {}).items() if v not in (None, "") and k != "moved_edits"}
+        if old_name and new_name and old_name.lower() != new_name.lower():
+            moved = self._move_member_edits(key, old_name, new_name, moved)
         if not undo and settings:
+            if moved:
+                settings["moved_edits"] = moved
             self.db.execute("INSERT INTO safe_overrides VALUES (?,?,?,?,?)",
                             (key, json.dumps(settings), _now(), _user(), reason))
-        if old_name and new_name and old_name.lower() != new_name.lower():
-            self.db.execute("UPDATE OR REPLACE member_edits SET safe_name = ? WHERE lower(safe_name) = lower(?)",
-                            (new_name, old_name))
         self.audit("safe_undo" if undo else "safe_change", safe=safe_key, settings=settings, reason=reason)
         self.db.commit()
+
+    def _move_member_edits(self, key, old_name, new_name, moved):
+        """Move the per-Safe member changes that belong to the rules' Safe `key` from Safe old_name
+        to Safe new_name. When old_name holds only that Safe, all its changes belong to it. When
+        other Safes were put into it too, only the changes moved earlier (moved) and, if it is the
+        Safe's own name, the ones no other rename brought in. Names match ignoring case; if new_name
+        already has a change for the same member, the newer change wins. Returns the moved names."""
+        held = self.db.execute("SELECT rule_names FROM plan_safes WHERE lower(safe_name) = lower(?)",
+                               (old_name,)).fetchone()
+        holders = {n.strip().lower() for n in (held["rule_names"] or "").split(" | ") if n.strip()} if held else set()
+        rows = self.db.execute("SELECT * FROM member_edits WHERE lower(safe_name) = lower(?)", (old_name,)).fetchall()
+        if holders - {key}:
+            mine = {m.lower() for m in moved}
+            if old_name.lower() == key:
+                claimed = set()
+                for other_key, ov in self.safe_overrides().items():
+                    if other_key != key and other_key in holders:
+                        claimed.update(m.lower() for m in ov.get("moved_edits") or [])
+                rows = [r for r in rows if r["member_name"].lower() in mine or r["member_name"].lower() not in claimed]
+            else:
+                rows = [r for r in rows if r["member_name"].lower() in mine]
+        out = []
+        for r in rows:
+            there = self.db.execute("SELECT changed_utc FROM member_edits WHERE lower(safe_name) = lower(?) AND "
+                                    "lower(member_name) = lower(?)", (new_name, r["member_name"])).fetchall()
+            self.db.execute("DELETE FROM member_edits WHERE safe_name = ? AND member_name = ?",
+                            (r["safe_name"], r["member_name"]))
+            if any((t["changed_utc"] or "") > (r["changed_utc"] or "") for t in there):
+                continue                    # the target Safe's own change is newer: it stays
+            self.db.execute("DELETE FROM member_edits WHERE lower(safe_name) = lower(?) AND lower(member_name) = lower(?)",
+                            (new_name, r["member_name"]))
+            vals = dict(r)
+            vals["safe_name"] = new_name
+            self.db.execute("INSERT INTO member_edits VALUES (?,?,?,?,?,?,?,?,?)",
+                            tuple(vals[c] for c in ("safe_name", "member_name", "action", "search_in", "member_type",
+                                                   "role", "changed_utc", "changed_by", "reason")))
+            out.append(r["member_name"])
+        return out
 
     def plan(self, cfg, with_secrets=False):
         return build_plan(self.load_records(with_secrets), cfg, None, self.overrides(), explicit=True,

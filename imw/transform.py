@@ -23,6 +23,8 @@ NO_NAME = "(none)"              # an edit that leaves the account name empty: Pr
 PLATFORM_INVALID = re.compile(r"[^A-Za-z0-9_.\-]")
 # Characters removed from every stored text value: control characters, zero-width and BOM.
 UNSAFE_TEXT = re.compile("[\x00-\x08\x0b-\x1f\x7f\u200b-\u200f\u2028\u2029\u2060\ufeff]")
+# One-line values you type (Safe settings, member names, searchIn): also no tab or line break.
+UNSAFE_LINE = re.compile("[\x00-\x1f\x7f\u200b-\u200f\u2028\u2029\u2060\ufeff]")
 ACCOUNT_NAME_INVALID = re.compile(r'[\\/:*?"<>|\t\r\n]')
 ACCOUNT_NAME_MAX = 128
 
@@ -668,6 +670,9 @@ def safe_settings(name, info, cfg, with_override=True):
     if body.get("description") and "{" in str(body["description"]):
         body["description"] = str(body["description"]).replace("{folder}", folders[0] if folders else "") \
             .replace("{safe}", name)[:100]
+    for k in ("description", "location", "managingCPM"):
+        if isinstance(body.get(k), str):
+            body[k] = clean_line(body[k])     # also covers config.json edited by hand
     body["safeName"] = name
     return body
 
@@ -751,6 +756,14 @@ def apply_member_overrides(members, overrides):
     return members
 
 
+def clean_line(v):
+    """A one-line text value without control or invisible characters, trimmed.
+    Non-text values come back unchanged."""
+    if not isinstance(v, str):
+        return v
+    return UNSAFE_LINE.sub("", v.replace("\u00a0", " ")).strip()
+
+
 def sanitize_record(rec):
     """Remove control and invisible characters from every text value (not the secret).
     Returns the names of the fields that changed and notes them on the record."""
@@ -805,6 +818,11 @@ def _safes(plans, cfg=None, safe_overrides=None):
         s["sources"].add(p.safe_source)
         s["accounts"] += 1
         s["migrating"] += 1 if p.uploadable else 0
+    for name, s in safes.items():
+        # A Safe that other Safes were renamed into keeps its own settings: only your change to
+        # this Safe itself applies (the renamed Safes' other settings don't follow them).
+        if name.lower() in {n.lower() for n in s["rule_names"]}:
+            s["override"] = safe_overrides.get(name.lower())
     if limit:
         for s in safes.values():
             if s["accounts"] > limit:

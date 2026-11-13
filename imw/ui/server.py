@@ -43,8 +43,8 @@ from ..model import SourceRecord
 from ..naming import Namer
 from ..protect import ProtectError
 from ..store import Store, StoreError, run_extract, sha256_file
-from ..transform import (Permissions, apply_member_override, member_target, normalize_member_type,
-                         sanitize_safe_name)
+from ..transform import (Permissions, apply_member_override, clean_line, member_target,
+                         normalize_member_type, sanitize_safe_name)
 from .auth import get_authenticator
 from .tls import fingerprint, server_context, trust_certificate
 from ..owner import claim_workspace, peer_is_owner
@@ -145,6 +145,26 @@ def compare_inputs(inputs):
         cur["file"] = Path(cur["path"]).name
         cur["repeat"] = "; ".join(notes)
     return inputs
+
+
+def _line(v, cleaned):
+    """One typed value without control or invisible characters; notes in cleaned when any went."""
+    raw = str(v if v is not None else "").strip()
+    out = clean_line(raw)
+    if out != raw:
+        cleaned.append(raw)
+    return out
+
+
+def clean_safe_settings(cfg):
+    """Safe settings typed on the pages or in the JSON: no control or invisible characters.
+    Returns how many values changed."""
+    cleaned = []
+    for body in [cfg.get("safe_defaults") or {}] + list(cfg.get("safe_rules") or []):
+        for k in ("description", "location", "managingCPM"):
+            if isinstance(body.get(k), str):
+                body[k] = _line(body[k], cleaned)
+    return len(cleaned)
 
 
 def check_settings(cfg):
@@ -459,6 +479,7 @@ class App:
         tmp.write_text(json.dumps(user, indent=2), encoding="utf-8")
         try:
             cfg = load_config(tmp)
+            cleaned = clean_safe_settings(cfg)
             for rule in cfg["group_rules"]:
                 if not rule.get("safe") or not (rule.get("group") or rule.get("group_pattern")):
                     raise UiError("Every group rule needs a group (or pattern) and a Safe.")
@@ -477,13 +498,13 @@ class App:
         tmp.write_text(json.dumps(config_diff(cfg), indent=2), encoding="utf-8")
         tmp.replace(self.config_path)
         if not self.db_path.exists():
-            return {"saved": True, "mapped": False}
+            return {"saved": True, "mapped": False, "cleaned": cleaned}
         st = self.store()
         try:
             st.map(cfg, str(self.config_path))
         finally:
             st.close()
-        return {"saved": True, "mapped": True}
+        return {"saved": True, "mapped": True, "cleaned": cleaned}
 
     def api_accounts(self, body):
         where, params = build_where(body)
@@ -613,12 +634,13 @@ class App:
         if not key:
             raise UiError("Pick a member first.")
         undo = bool(body.get("undo"))
-        name = (body.get("member_name") or "").strip()
+        cleaned = []
+        name = _line(body.get("member_name"), cleaned)
         mtype = (body.get("member_type") or "").strip()
         if mtype and mtype.lower() not in ("user", "group", "role"):
             raise UiError("Member type must be User, Group or Role.")
         search_in = body.get("search_in")
-        search_in = None if search_in is None else str(search_in).strip()
+        search_in = None if search_in is None else _line(search_in, cleaned)
         if not undo and not name:
             raise UiError("The member name can't be empty.")
         st = self.store()
@@ -630,7 +652,7 @@ class App:
             raise UiError(str(exc))
         finally:
             st.close()
-        return {"changed": 1}
+        return {"changed": 1, "cleaned": len(cleaned)}
 
     def api_safes_change(self, body):
         """Rename one Safe, or change its description, location, CPM, retention, OLAC or auto purge.
@@ -642,7 +664,7 @@ class App:
         undo = bool(body.get("undo"))
         cfg = self.config()
         raw = body.get("settings") or {}
-        settings = {}
+        settings, cleaned = {}, []
         new_name = str(raw.get("new_name") or "").strip()
         if new_name and new_name.lower() != key.lower():
             clean, valid, issues = sanitize_safe_name(new_name, cfg)
@@ -650,7 +672,7 @@ class App:
                 raise UiError(f"The Safe name '{new_name}' can't be used: {'; '.join(issues)}.")
             settings["new_name"] = clean
         for k in ("description", "location", "managingCPM"):
-            v = str(raw.get(k) or "").strip()
+            v = _line(raw.get(k), cleaned)
             if v:
                 settings[k] = v
         if len(settings.get("description", "")) > 100:
@@ -678,13 +700,17 @@ class App:
             raise UiError(str(exc))
         finally:
             st.close()
-        return {"changed": 1, "safe_name": target}
+        return {"changed": 1, "safe_name": target, "cleaned": len(cleaned)}
 
     def api_members_edit(self, body):
         """Add a member to, or remove one from, any number of Safes (kept across re-mapping)."""
         action = body.get("action")
-        name = (body.get("member_name") or "").strip()
+        cleaned = []
+        name = _line(body.get("member_name"), cleaned)
         pairs = body.get("pairs") or [[s, name] for s in body.get("safes") or []]
+        if isinstance(pairs, list):
+            pairs = [[p[0], _line(p[1], cleaned) if action == "add" else p[1]] if isinstance(p, list) and len(p) == 2 else p
+                     for p in pairs]
         if not pairs or not all(isinstance(p, list) and len(p) == 2 and p[0] and p[1] for p in pairs):
             raise UiError("Tick at least one Safe and name the member.")
         role = (body.get("role") or "").strip()
@@ -699,7 +725,7 @@ class App:
             for safe, member in pairs:
                 by_member.setdefault(member, []).append(safe)
             for member, safes in by_member.items():
-                n += st.set_member_edits(safes, member, action, (body.get("search_in") or "").strip(),
+                n += st.set_member_edits(safes, member, action, _line(body.get("search_in"), cleaned),
                                          normalize_member_type(body.get("member_type")) if body.get("member_type") else "",
                                          role, body.get("reason") or "")
             st.map(st.stored_config(), st.meta("config_path"))
@@ -707,7 +733,7 @@ class App:
             raise UiError(str(exc))
         finally:
             st.close()
-        return {"changed": n}
+        return {"changed": n, "cleaned": len(cleaned)}
 
     def api_extract(self, body):
         name = "".join(c for c in (body.get("name") or "") if c.isalnum() or c in "-_ ").strip()
