@@ -19,11 +19,12 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   // The certificate is self-signed for this computer; a real browser warns once (or not after --trust-cert).
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, ignoreHTTPSErrors: true });
   const errors = [];
-  page.on('pageerror', e => errors.push(e.message));
+  page.on('pageerror', e => { errors.push(e.message); console.log('PAGEERROR', e.stack); });
   page.on('console', m => {
     if (m.type() === 'error' && !/status of (400|401|423)/.test(m.text())) errors.push(m.text());
   });
-  page.on('dialog', async d => d.accept());
+  const DIALOGS = []; let DISMISS = false;
+  page.on('dialog', async d => { DIALOGS.push(d.message()); if (DISMISS) { DISMISS = false; await d.dismiss(); } else await d.accept(); });
   // Input tables start folded: open one before using it.
   const openBlock = async (id) => {
     const d = await page.$(`[data-block="${id}"]`);
@@ -45,6 +46,11 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   await page.waitForTimeout(300); await shot(page, '00_login_error');
   await signIn(PASSWORD);
   await page.waitForSelector('#main h2 >> text=Welcome');   // the Overview, not a blank page
+  if (await page.getAttribute('html', 'data-theme') !== 'dark') throw new Error('dark mode is not the default');
+  await page.click('#theme');
+  if (await page.getAttribute('html', 'data-theme') !== 'light') throw new Error('theme switch did not change to light');
+  await shot(page, '00_welcome_light');
+  await page.click('#theme');
   await shot(page, '00_welcome');
 
   // 1. Load (both permissions files ticked and merged)
@@ -175,6 +181,13 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   await page.click('nav >> text=C. Platforms');
   await page.waitForSelector('#t-pm', { state: 'attached' });
   if (!(await page.$('.explain >> text=How a platform is chosen'))) throw new Error('platforms page does not explain rules vs record type');
+  // unsaved changes: leaving asks first, and Cancel stays on the page
+  await page.fill('#defplat', 'WinServerLocal');
+  DISMISS = true;
+  await page.click('nav >> text=D. Accounts');
+  if (!/not saved/.test(DIALOGS[DIALOGS.length - 1] || '')) throw new Error('no unsaved-changes warning when leaving a page');
+  if (!(await page.innerText('h2')).includes('C. Platforms')) throw new Error('Cancel on the unsaved warning still left the page');
+  await page.fill('#defplat', '');
   await shot(page, '02e_platforms');
   await page.click('#save');
   await page.waitForSelector('#rules-msg .msg.ok');
@@ -234,6 +247,26 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   await page.waitForSelector('#drawer:not(.hidden)');
   await shot(page, '04_record');
   await page.click('#drawer >> text=Close');
+  // edit one account in its panel: platform and name, then undo the platform
+  await page.selectOption('#view', 'all');
+  await page.fill('#f-search', 'web01');
+  await page.waitForTimeout(800);
+  await page.click('tr.clickable >> nth=0');
+  await page.waitForSelector('#ra-plat');
+  await page.fill('#ra-plat', 'UnixSSHKeys');
+  await page.fill('#ra-name', 'web-service-account');
+  await page.fill('#ra-reason', 'checked with app team');
+  await page.click('#ra-save');
+  await page.waitForSelector('#ra-msg .msg.ok');
+  if (await page.inputValue('#ra-plat') !== 'UnixSSHKeys') throw new Error('platform not saved from the account panel');
+  await page.waitForSelector('#list >> text=web-service-account');
+  await shot(page, '04_account_panel');
+  await page.click('#drawer [data-undo-field="platform_id"]');
+  await page.waitForSelector('#ra-msg >> text=Undone');
+  if (await page.inputValue('#ra-plat') === 'UnixSSHKeys') throw new Error('undo did not hand the platform back to the rules');
+  console.log('ACCOUNT PANEL: platform back to', await page.inputValue('#ra-plat'));
+  await page.click('#drawer >> text=Close');
+  await page.fill('#f-search', '');
 
   // 3A. Safes & Safe members: add one member to two Safes, then undo one of them
   await page.click('nav >> text=A. Safes & Safe members');
@@ -361,6 +394,7 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   await page.waitForSelector('text=Session ended');
   if (!(await page.content()).includes('still on disk')) throw new Error('end session message wrong');
 
+  console.log('UNSAVED WARNINGS:', DIALOGS.filter(m => /not saved/.test(m)).length);
   if (errors.length) throw new Error('JS errors: ' + errors.join('; '));
   console.log('PASS');
   await browser.close();
