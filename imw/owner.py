@@ -147,7 +147,8 @@ def restrict(path, sid=None, recursive=False):
 # ---------------------------------------------------------------- workspace owner
 
 WORKSPACE_ENTRIES = {OWNER_FILE, "inbox", "output", "tls", "config.json", "migration.db", "migration.db-journal",
-                     "migration.db-wal", "migration.db-shm"}
+                     "migration.db-wal", "migration.db-shm",
+                     "SAMPLE_DATA_README.txt"}   # tools/generate_sample_pack.py writes a ready-to-open workspace
 ADMINISTRATORS_SID = "S-1-5-32-544"
 
 

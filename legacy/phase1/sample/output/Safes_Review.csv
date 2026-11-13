@@ -1,8 +1,0 @@
-﻿Target CyberArk Safe,Length,Valid_Safe_Name,Proposed_Safe_Names,Safe_Name_Issues,Mapping_Sources,Account_Count
-DB-Production-Privileged-Acc,28,FALSE,DB-Production-Privileged-Accounts,length 33 > 28,group_rule:CORP\DBA-Team,1
-IT-Backup,9,TRUE,IT-Backup,,fallback:folder_path,1
-WEB-Ops,7,TRUE,WEB-Ops,,group_rule:CORP\Web-Ops,1
-UNIX-Admins,11,TRUE,UNIX-Admins,,group_rule:CORP\Unix-Admins,2
-APP-Storefront,14,TRUE,APP-Storefront,,group_pattern:^CORP\\APP-(.+)-Owners$,1
-FIN-Vendors,11,TRUE,FIN-Vendors,,group_rule:CORP\Finance-Admins,1
-NET-Devices,11,TRUE,NET-Devices,,folder_rule:\it\network,1

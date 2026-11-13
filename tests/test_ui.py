@@ -136,7 +136,8 @@ class UiServer(Base):
         self.req("POST", "/api/ingest", {"files": [{"name": "keepass_export.xml", "source": ""}]})
         self.assertTrue((self.ws / "migration.db").exists())
         self.assertEqual(self.req("POST", "/api/end", {"confirm": "end"})[0], 400)
-        st, r = self.req("POST", "/api/end", {"confirm": "END SESSION", "delete_db": True})
+        self.assertEqual(self.req("POST", "/api/end", {"confirm": "END SESSION", "delete_db": True})[0], 400)  # needs DELETE DB
+        st, r = self.req("POST", "/api/end", {"confirm": "DELETE DB", "delete_db": True})
         self.assertEqual((st, r["database_deleted"]), (200, True))
         self.assertFalse((self.ws / "migration.db").exists())
         self.ended = True
