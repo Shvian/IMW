@@ -11,7 +11,7 @@ from .adapters import ADAPTERS, AdapterError, detect_adapter, get_adapter
 from .config import load_config, write_default_config
 from .protect import ProtectError
 from .store import REPORTS, Store, StoreError, print_table, run_extract
-from .transform import Permissions, build_plan, load_overrides
+from .transform import sanitize_record, Permissions, build_plan, load_overrides
 from .writers import write_manifest, write_review, write_upload
 
 log = logging.getLogger("pam2pc")
@@ -232,7 +232,13 @@ def cmd_ui(args):
     except AuthError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
-    return serve(args.workspace, args.port, not args.no_browser, flag, authenticator=auth)
+    from .ui.tls import TlsError
+    try:
+        return serve(args.workspace, args.port, not args.no_browser, flag, authenticator=auth,
+                     use_tls=not args.no_tls, new_cert=args.new_cert, trust_cert=args.trust_cert)
+    except TlsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
 
 
 def cmd_sources(_args):
@@ -257,6 +263,9 @@ def cmd_convert(args):
         return 2
     records = [r for _, _, got in loaded for r in got]
     inputs = [(name, path) for name, path, _ in loaded]
+    cleaned = sum(1 for r in records if sanitize_record(r))
+    if cleaned:
+        log.warning("%d records had control or invisible characters removed (see their Notes)", cleaned)
     if not records:
         log.error("No records found. Check --source and the column names (field_aliases).")
         return 1
@@ -368,7 +377,7 @@ def main(argv=None):
     p.add_argument("--force", action="store_true", help="Replace an existing output folder")
     p.set_defaults(func=cmd_extract)
 
-    p = sub.add_parser("ui", help="Start the local web UI (menus for load, rules, review, output)")
+    p = sub.add_parser("ui", help="Start the Idira Migration Workbench (local web UI over HTTPS)")
     p.add_argument("--workspace", "-w", default="pam2pc_workspace",
                    help="Folder for the database, config, inbox and outputs (default: pam2pc_workspace)")
     p.add_argument("--port", type=int, default=0, help="Port on 127.0.0.1 (default: any free port)")
@@ -376,6 +385,11 @@ def main(argv=None):
     p.add_argument("--no-secrets", action="store_true", help="New database only: metadata, no secrets")
     p.add_argument("--insecure-plaintext-secrets", action="store_true",
                    help="New database only: secrets UNENCRYPTED (test data on non-Windows only)")
+    p.add_argument("--trust-cert", action="store_true",
+                   help="Windows: trust the Workbench's self-signed HTTPS certificate for your user "
+                        "(Windows asks you to confirm), so the browser stops warning")
+    p.add_argument("--new-cert", action="store_true", help="Make a new HTTPS certificate and key")
+    p.add_argument("--no-tls", action="store_true", help="Plain HTTP instead of HTTPS (troubleshooting only)")
     p.set_defaults(func=cmd_ui)
 
     args = ap.parse_args(argv)

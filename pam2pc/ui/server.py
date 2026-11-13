@@ -1,7 +1,8 @@
 """Local web UI for the staging database: python -m pam2pc ui
 
 Security model
-  * Listens on 127.0.0.1 only; the Host and Origin headers must match.
+  * Listens on 127.0.0.1 only, over HTTPS with a self-signed certificate made for this
+    computer (see tls.py); the Host and Origin headers must match.
   * The start-up link carries a one-time token that is exchanged for an HttpOnly,
     SameSite=Strict session cookie. Changes also need a custom request header.
   * Nothing is shown until the Windows user who started the tool signs in with their
@@ -20,6 +21,7 @@ import logging
 import os
 import secrets
 import shutil
+import ssl
 import subprocess
 import sys
 import threading
@@ -33,15 +35,17 @@ from urllib.parse import parse_qs, urlparse
 from .. import __version__
 from ..adapters import ADAPTERS, AdapterError, detect_adapter, get_adapter
 from ..config import (ALL_PERMISSIONS, DEFAULT_CONFIG, PERMISSION_PRESETS, config_diff,
-                      config_from_dict, load_config, resolve_role)
+                      all_roles, config_from_dict, load_config, resolve_role)
 from ..model import SourceRecord
 from ..naming import Namer
 from ..protect import ProtectError
 from ..store import Store, StoreError, run_extract
 from ..transform import Permissions, member_target
 from .auth import get_authenticator
+from .tls import fingerprint, server_context, trust_certificate
 
 log = logging.getLogger("pam2pc.ui")
+PRODUCT = "Idira Migration Workbench"
 STATIC = Path(__file__).parent / "static"
 IDLE_SECONDS = 10 * 60          # auto-lock
 MAX_FAILURES = 5                # then a growing wait between attempts
@@ -61,6 +65,8 @@ VIEWS = {
     "fallback": ("Safe from folder fallback (no rule matched)", "safe_mapping_source LIKE 'fallback:%'"),
     "duplicates": ("Possible duplicates", "notes LIKE '%possible duplicate%'"),
     "edited": ("Changed by you", "record_id IN (SELECT record_id FROM edits)"),
+    "sanitized": ("Forbidden characters changed", "(notes LIKE '%forbidden characters%' OR valid_safe_name = 'FALSE' "
+                  "OR record_id IN (SELECT record_id FROM records WHERE notes_json LIKE '%forbidden characters%'))"),
 }
 FILTER_COLUMNS = {"safe": "target_safe", "source": "source", "platform": "platform_id",
                   "status": "status", "type": "source_type"}
@@ -276,6 +282,9 @@ class App:
                 state["invalid_safes"] = st.db.execute(
                     "SELECT COUNT(*) FROM plan_safes WHERE valid_safe_name = 'FALSE'").fetchone()[0]
                 state["edits"] = st.db.execute("SELECT COUNT(DISTINCT record_id) FROM edits").fetchone()[0]
+                state["sanitized"] = st.db.execute(
+                    "SELECT COUNT(*) FROM accounts WHERE " + VIEWS["sanitized"][1]).fetchone()[0]
+                state["member_edits"] = st.db.execute("SELECT COUNT(*) FROM member_edits").fetchone()[0]
                 state["stale"] = bool(st.db.execute(
                     "SELECT COUNT(*) FROM records WHERE record_id NOT IN (SELECT record_id FROM plan_accounts)"
                 ).fetchone()[0])
@@ -301,7 +310,8 @@ class App:
                 adapter = get_adapter(f["source"]) if f.get("source") else detect_adapter(path)
                 records = list(adapter.read(path, cfg))
                 n, replaced = st.ingest(adapter.name, path, records, perms, [str(p) for p in perm_paths])
-                results.append({"name": f["name"], "source": adapter.name, "records": n, "replaced": replaced})
+                results.append({"name": f["name"], "source": adapter.name, "records": n, "replaced": replaced,
+                                "sanitized": st.last_sanitized})
             st.map(cfg, str(self.config_path) if self.config_path.exists() else None)
         except (AdapterError, ValueError, OSError, ProtectError, StoreError) as exc:
             raise UiError(f"{exc}")
@@ -501,9 +511,43 @@ class App:
         try:
             cols, rows = st.query("SELECT * FROM plan_safes ORDER BY safe_name")
             mcols, mrows = st.query("SELECT * FROM plan_members ORDER BY safe_name, member_name")
+            edits = st.member_edits()
         finally:
             st.close()
-        return {"safes": [dict(zip(cols, r)) for r in rows], "members": [dict(zip(mcols, r)) for r in mrows]}
+        cfg = self.config()
+        roles = list(all_roles(cfg))
+        members = [dict(zip(mcols, r)) for r in mrows]
+        return {"safes": [dict(zip(cols, r)) for r in rows], "members": members, "member_edits": edits,
+                "roles": roles, "directories": sorted({m["search_in"] for m in members} | {"Vault"}),
+                "known_members": sorted({m["member_name"] for m in members}, key=str.lower)}
+
+    def api_members_edit(self, body):
+        """Add a member to, or remove one from, any number of Safes (kept across re-mapping)."""
+        action = body.get("action")
+        name = (body.get("member_name") or "").strip()
+        pairs = body.get("pairs") or [[s, name] for s in body.get("safes") or []]
+        if not pairs or not all(isinstance(p, list) and len(p) == 2 and p[0] and p[1] for p in pairs):
+            raise UiError("Tick at least one Safe and name the member.")
+        role = (body.get("role") or "").strip()
+        if action == "add":
+            cfg = self.config()
+            if not resolve_role(role, cfg):
+                raise UiError("Pick the member's role.")
+        st = self.store()
+        try:
+            n = 0
+            by_member = {}
+            for safe, member in pairs:
+                by_member.setdefault(member, []).append(safe)
+            for member, safes in by_member.items():
+                n += st.set_member_edits(safes, member, action, (body.get("search_in") or "Vault").strip(),
+                                         body.get("member_type") or "Group", role, body.get("reason") or "")
+            st.map(st.stored_config(), st.meta("config_path"))
+        except StoreError as exc:
+            raise UiError(str(exc))
+        finally:
+            st.close()
+        return {"changed": n}
 
     def api_extract(self, body):
         name = "".join(c for c in (body.get("name") or "") if c.isalnum() or c in "-_ ").strip()
@@ -710,18 +754,20 @@ class App:
         ("POST", "/api/output/delete"): "api_output_delete", ("GET", "/api/audit"): "api_audit",
         ("POST", "/api/naming/preview"): "api_naming_preview", ("POST", "/api/open"): "api_open_folder",
         ("POST", "/api/lock"): "api_lock", ("POST", "/api/end"): "api_end", ("POST", "/api/ping"): "api_ping",
-        ("POST", "/api/members/preview"): "api_members_preview",
+        ("POST", "/api/members/preview"): "api_members_preview", ("POST", "/api/members/edit"): "api_members_edit",
     }
     # Allowed while locked.
     OPEN_ROUTES = {("GET", "/api/session"): "api_session", ("POST", "/api/unlock"): "api_unlock"}
 
 
-def make_handler(app, port):
+def make_handler(app, port, scheme="https"):
     allowed_hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
+    secure = "; Secure" if scheme == "https" else ""
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "pam2pc-ui"
         sys_version = ""
+        timeout = 60      # a browser that opens a connection and stops talking does not hold a thread
 
         def log_message(self, fmt, *args):
             log.debug("%s %s", self.address_string(), fmt % args)
@@ -754,7 +800,7 @@ def make_handler(app, port):
             if self.headers.get("Host") not in allowed_hosts:
                 return "bad host"
             origin = self.headers.get("Origin")
-            if origin and origin not in {f"http://{h}" for h in allowed_hosts}:
+            if origin and origin not in {f"{scheme}://{h}" for h in allowed_hosts}:
                 return "bad origin"
             if mutating and self.headers.get("X-Pam2pc") != "1":
                 return "missing header"
@@ -793,7 +839,7 @@ def make_handler(app, port):
                         app.launch_token = None
                         app.sid = secrets.token_urlsafe(32)
                         app.unlocked = False
-                        cookie = f"pam2pc_sid={app.sid}; HttpOnly; SameSite=Strict; Path=/"
+                        cookie = f"pam2pc_sid={app.sid}; HttpOnly; SameSite=Strict; Path=/{secure}"
                         return self._send(HTTPStatus.SEE_OTHER, b"", "text/plain",
                                           {"Location": "/", "Set-Cookie": cookie})
                 if not self._session_ok():
@@ -852,15 +898,46 @@ def make_handler(app, port):
     return Handler
 
 
-def serve(workspace, port=0, open_browser=True, protector_flag=None, ready=None, authenticator=None):
+class WorkbenchServer(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        # Browsers drop connections while they show the certificate warning; that is not an error.
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (ssl.SSLError, ConnectionError, TimeoutError)):
+            log.debug("connection from %s closed: %s", client_address, exc)
+            return
+        super().handle_error(request, client_address)
+
+
+def serve(workspace, port=0, open_browser=True, protector_flag=None, ready=None, authenticator=None,
+          use_tls=True, new_cert=False, trust_cert=False):
     app = App(workspace, protector_flag, authenticator)
-    httpd = ThreadingHTTPServer(("127.0.0.1", port), None)
+    httpd = WorkbenchServer(("127.0.0.1", port), None)
     port = httpd.server_address[1]
-    httpd.RequestHandlerClass = make_handler(app, port)
+    scheme = "https" if use_tls else "http"
+    cert_note = None
+    if use_tls:
+        ctx, cert_path, created = server_context(app.ws, renew=new_cert)
+        # Handshake in the request thread, so one slow client cannot stall the listener.
+        httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True, do_handshake_on_connect=False)
+        if trust_cert:
+            trust_certificate(cert_path)
+            print("Certificate added to your Windows user's Trusted Root store.")
+        cert_note = (f"HTTPS certificate: {cert_path} ({'new' if created else 'existing'}), "
+                     f"SHA-256 {fingerprint(cert_path)}")
+    httpd.RequestHandlerClass = make_handler(app, port, scheme)
     app.httpd = httpd
-    url = f"http://127.0.0.1:{port}/?t={app.launch_token}"
-    print(f"pam2pc UI running. Workspace: {app.ws}")
+    url = f"{scheme}://127.0.0.1:{port}/?t={app.launch_token}"
+    print(f"{PRODUCT} running. Workspace: {app.ws}")
     print(f"Put export files in: {app.inbox}")
+    if cert_note:
+        print(cert_note)
+        if not trust_cert:
+            print("The browser warns once about this self-signed certificate: choose Advanced, then "
+                  "Continue. To stop the warning, start once with --trust-cert.")
+    else:
+        print("WARNING: plain HTTP (--no-tls). Use only for troubleshooting.")
     print(f"Open this link (works once): {url}")
     print(f"Sign in as {app.auth.display}. Press Ctrl+C to stop.")
     if ready:

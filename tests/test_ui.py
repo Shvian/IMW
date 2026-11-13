@@ -3,15 +3,30 @@
 import http.client
 import json
 import shutil
+import ssl
+import tempfile
 import threading
 import unittest
+from pathlib import Path
 
 from test_pam2pc import SAMPLES, Base, read_csv  # noqa: F401
 
-from pam2pc.ui import server
+from pam2pc.ui import server, tls
 from pam2pc.ui.auth import TestAuth
 
 PASSWORD = "correct horse"
+
+
+_CERT_DIR = None
+
+
+def _shared_cert():
+    """One certificate for the whole test run (making one takes about half a second)."""
+    global _CERT_DIR
+    if _CERT_DIR is None:
+        _CERT_DIR = Path(tempfile.mkdtemp(prefix="pam2pc-cert-"))
+        tls.ensure_certificate(_CERT_DIR)
+    return _CERT_DIR / "tls"
 
 
 class UiServer(Base):
@@ -19,6 +34,7 @@ class UiServer(Base):
         super().setUp()
         self.ws = self.tmp / "ws"
         (self.ws / "inbox").mkdir(parents=True)
+        shutil.copytree(_shared_cert(), self.ws / "tls")
         for f in ("delinea_export.csv", "delinea_permissions.csv", "keepass_export.xml"):
             shutil.copy(SAMPLES / f, self.ws / "inbox" / f)
         started = threading.Event()
@@ -38,6 +54,7 @@ class UiServer(Base):
         self.port = self.httpd.server_address[1]
         self.token = holder["url"].split("t=")[1]
         self.cookie = None
+        self.tls = ssl.create_default_context(cafile=str(self.ws / "tls" / tls.CERT_NAME))
 
     def tearDown(self):
         if not getattr(self, "ended", False):
@@ -45,7 +62,7 @@ class UiServer(Base):
         super().tearDown()
 
     def req(self, method, path, body=None, headers=None, host=None):
-        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        c = http.client.HTTPSConnection("127.0.0.1", self.port, timeout=10, context=self.tls)
         h = {"Host": host or f"127.0.0.1:{self.port}"}
         if self.cookie:
             h["Cookie"] = self.cookie
@@ -68,6 +85,20 @@ class UiServer(Base):
         self.assertEqual(status, 303)
         if unlock:
             self.assertEqual(self.req("POST", "/api/unlock", {"password": PASSWORD})[0], 200)
+
+    def test_https_only(self):
+        c = http.client.HTTPSConnection("127.0.0.1", self.port, timeout=10, context=self.tls)
+        c.request("GET", f"/?t={self.token}", headers={"Host": f"127.0.0.1:{self.port}"})
+        r = c.getresponse()
+        self.assertEqual(r.status, 303)
+        self.assertIn("Secure", r.getheader("Set-Cookie"))
+        self.assertIn("HttpOnly", r.getheader("Set-Cookie"))
+        self.cookie = r.getheader("Set-Cookie").split(";")[0]
+        plain = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        with self.assertRaises((http.client.HTTPException, OSError)):
+            plain.request("GET", "/api/session")
+            plain.getresponse().read()
+        self.assertEqual(self.req("GET", "/api/session")[0], 200)     # server still fine afterwards
 
     def test_sign_in_and_lock(self):
         self.login(unlock=False)
@@ -108,6 +139,8 @@ class UiServer(Base):
         self.assertEqual(self.req("GET", "/api/state")[0], 200)
         self.assertEqual(self.req("POST", "/api/ingest", {}, headers={"X-Pam2pc": ""})[0], 403)
         self.assertEqual(self.req("POST", "/api/ingest", {}, headers={"Origin": "http://evil.example"})[0], 403)
+        plain_origin = {"Origin": f"http://127.0.0.1:{self.port}"}    # the http:// twin of this page
+        self.assertEqual(self.req("POST", "/api/ingest", {}, headers=plain_origin)[0], 403)
         self.assertEqual(self.req("POST", "/api/inbox/delete", {"name": "../x"})[0], 400)
         self.cookie = "pam2pc_sid=forged"
         self.assertEqual(self.req("GET", "/api/state")[0], 401)
@@ -188,6 +221,63 @@ class UiServer(Base):
         self.assertTrue(text.decode("utf-8-sig").startswith("id,ts,user,host,action,detail"))
         st, text = self.req("GET", "/api/export/edits.csv")
         self.assertTrue(text.decode("utf-8-sig").startswith("record_id,field,value"))
+
+
+    def test_members_platforms_and_sanitizing(self):
+        dirty = (SAMPLES / "delinea_export.csv").read_text(encoding="utf-8-sig").replace("svc_sql", "svc\u200b_sql", 1)
+        (self.ws / "inbox" / "delinea_export.csv").write_text(dirty, encoding="utf-8")
+        self.login()
+        st, r = self.req("POST", "/api/ingest", {"files": [{"name": "delinea_export.csv", "source": ""}],
+                                                 "permissions": ["delinea_permissions.csv"]})
+        self.assertEqual(st, 200, r)
+        self.assertEqual(r["results"][0]["sanitized"], 1)
+        st, d = self.req("POST", "/api/accounts", {"view": "sanitized"})
+        self.assertEqual(d["total"], 1)
+        self.assertEqual(d["rows"][0]["username"], "svc_sql_prod")
+
+        st, s = self.req("GET", "/api/safes")
+        safes = [x["safe_name"] for x in s["safes"] if x["accounts_to_upload"]][:2]
+        self.assertEqual(len(safes), 2)
+        st, r = self.req("POST", "/api/members/edit", {"action": "add", "member_name": "PAM-Auditors",
+                                                       "safes": safes, "search_in": "corp.example.com",
+                                                       "member_type": "Group", "role": "Read only"})
+        self.assertEqual((st, r["changed"]), (200, 2), r)
+        self.assertEqual(self.req("POST", "/api/members/edit", {"action": "add", "member_name": "X",
+                                                                "safes": safes, "role": "nope"})[0], 400)
+        st, s = self.req("GET", "/api/safes")
+        added = [m for m in s["members"] if m["member_name"] == "PAM-Auditors"]
+        self.assertEqual(sorted(m["safe_name"] for m in added), sorted(safes))
+        self.assertEqual({m["search_in"] for m in added}, {"corp.example.com"})
+        victim = next(m for m in s["members"] if m["safe_name"] == safes[0] and m["member_name"] != "PAM-Auditors")
+        st, r = self.req("POST", "/api/members/edit", {"action": "remove",
+                                                       "pairs": [[safes[0], victim["member_name"]]]})
+        self.assertEqual(st, 200, r)
+        st, s = self.req("GET", "/api/safes")
+        self.assertNotIn((safes[0], victim["member_name"]), {(m["safe_name"], m["member_name"]) for m in s["members"]})
+        self.assertEqual(len(s["member_edits"]), 3)
+        self.req("POST", "/api/members/edit", {"action": "undo", "pairs": [[safes[0], victim["member_name"]]]})
+        st, s = self.req("GET", "/api/safes")
+        self.assertIn((safes[0], victim["member_name"]), {(m["safe_name"], m["member_name"]) for m in s["members"]})
+
+        st, d = self.req("POST", "/api/accounts", {"view": "all", "filters": {"search": "svc_sql"}})
+        rid = d["rows"][0]["record_id"]
+        st, r = self.req("POST", "/api/edit", {"ids": [rid], "values": {"platform_id": "(none)"}})
+        self.assertEqual(st, 200, r)
+        st, d = self.req("POST", "/api/accounts", {"view": "all", "filters": {"search": "svc_sql"}})
+        self.assertEqual((d["rows"][0]["platform_id"], d["rows"][0]["status"]), ("", "ERROR"))
+        self.assertIn("no platform", d["rows"][0]["notes"])
+        st, r = self.req("POST", "/api/edit", {"ids": [rid], "values": {"platform_id": "Win Server/Local"}})
+        st, d = self.req("POST", "/api/accounts", {"view": "all", "filters": {"search": "svc_sql"}})
+        self.assertEqual(d["rows"][0]["platform_id"], "Win_Server_Local")
+
+        st, r = self.req("POST", "/api/extract", {"name": "o1"})
+        self.assertEqual(st, 200, r)
+        up = self.ws / "output" / "o1" / "upload"
+        cats = {c["column"]: c for c in read_csv(up / "FileCategories.csv")}
+        self.assertIn("address", cats)
+        self.assertTrue(read_csv(up / "PlatformProperties.csv"))
+        members = read_csv(up / "SafeMembers.csv")
+        self.assertEqual(sum(1 for m in members if m["memberName"] == "PAM-Auditors"), 2)
 
 
 class _Quiet:

@@ -17,6 +17,10 @@ from .naming import Namer
 
 log = logging.getLogger("pam2pc.transform")
 
+NO_PLATFORM = "(none)"          # an edit that removes the platform on purpose
+PLATFORM_INVALID = re.compile(r"[^A-Za-z0-9_.\-]")
+# Characters removed from every stored text value: control characters, zero-width and BOM.
+UNSAFE_TEXT = re.compile("[\x00-\x08\x0b-\x1f\x7f\u200b-\u200f\u2028\u2029\u2060\ufeff]")
 ACCOUNT_NAME_INVALID = re.compile(r'[\\/:*?"<>|\t\r\n]')
 ACCOUNT_NAME_MAX = 128
 
@@ -348,6 +352,7 @@ class Plan:
     accounts: List[AccountPlan]
     safes: "OrderedDict"
     members: "OrderedDict"
+    member_edits: list = field(default_factory=list)
 
 
 def load_overrides(path, encoding="utf-8-sig"):
@@ -383,7 +388,7 @@ def _changed(edited, computed):
 def rebuild_totals(plan, cfg):
     """Recompute Safe and member totals after in_scope or migrate changed."""
     plan.safes = _safes(plan.accounts, cfg)
-    plan.members = _members(plan.accounts, cfg)
+    plan.members = _members(plan.accounts, cfg, plan.member_edits)
     return plan
 
 
@@ -391,7 +396,7 @@ def _explicit_changed(edited, computed):
     return bool(edited) and edited.strip().lower() != (computed or "").strip().lower()
 
 
-def build_plan(records, cfg, perms=None, overrides=None, explicit=False):
+def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_edits=None):
     """explicit=True: overrides are deliberate edits (database), not a re-fed review file."""
     changed = _explicit_changed if explicit else _changed
     perms = perms or Permissions()
@@ -423,9 +428,18 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False):
 
         # Platform
         p.platform, p.platform_source = resolve_platform(rec, cfg)
-        if changed(ov.get("Platform_ID"), p.platform):
+        if ov.get("Platform_ID") == NO_PLATFORM:
+            p.platform, p.platform_source = "", "override"
+            p.errors.append("no platform: removed by you")
+        elif changed(ov.get("Platform_ID"), p.platform):
             p.platform, p.platform_source = ov["Platform_ID"], "override"
-        if not p.platform:
+        if p.platform and PLATFORM_INVALID.search(p.platform):
+            bad = " ".join(sorted({repr(c)[1:-1] if c != " " else "space" for c in PLATFORM_INVALID.findall(p.platform)}))
+            clean = PLATFORM_INVALID.sub("_", p.platform)
+            p.warnings.append(f"forbidden characters in platform ID '{p.platform}' ({bad}); changed to "
+                              f"'{clean}', check that platform exists")
+            p.platform = clean
+        if not p.platform and p.platform_source != "override":
             p.errors.append(f"no platform for type '{rec.type}'; add it to platform_map")
 
         # Safe
@@ -466,7 +480,8 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False):
             clean = clean[:ACCOUNT_NAME_MAX]
             p.warnings.append(f"account name cut to {ACCOUNT_NAME_MAX} characters")
         if clean != name and len(name) <= ACCOUNT_NAME_MAX:
-            p.warnings.append("invalid characters in account name replaced with _")
+            bad = " ".join(sorted({repr(c)[1:-1] for c in ACCOUNT_NAME_INVALID.findall(name)}))
+            p.warnings.append(f"forbidden characters in account name ({bad}) replaced with _")
         p.account_name = clean
 
         if cfg.get("url_address_to_host") and "://" in rec.address:
@@ -521,7 +536,7 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False):
                 x.warnings.append("possible duplicate: same username/address/type in this Safe as "
                                   + ", ".join(others[:3]) + more)
 
-    return Plan(plans, _safes(plans, cfg), _members(plans, cfg))
+    return Plan(plans, _safes(plans, cfg), _members(plans, cfg, member_edits), list(member_edits or []))
 
 
 def account_name_for(rec, p, cfg):
@@ -558,6 +573,67 @@ def safe_settings(name, info, cfg):
     return body
 
 
+def apply_member_edits(members, plans, edits):
+    """Your member changes on the Safes page: remove a member from a Safe, or add one."""
+    if not edits:
+        return members
+    uploading = defaultdict(int)
+    names = {}
+    for p in plans:
+        if p.uploadable:
+            uploading[p.safe.lower()] += 1
+            names[p.safe.lower()] = p.safe
+    for e in edits:
+        safe_l, name_l = e["safe_name"].lower(), e["member_name"].lower()
+        for key in [k for k, m in members.items() if k[0].lower() == safe_l and
+                    name_l in (m["member_name"].lower(), m["source_name"].lower())]:
+            del members[key]
+        if e["action"] == "add" and safe_l in uploading:
+            members[(names[safe_l], "edit:" + name_l)] = {
+                "source_name": e["member_name"], "type": e.get("member_type") or "Group",
+                "member_type": e.get("member_type") or "Group", "role": e.get("role") or "",
+                "permission": "(added by you)", "accounts": uploading[safe_l], "seen": set(),
+                "member_name": e["member_name"], "search_in": e.get("search_in") or "Vault",
+                "directory_source": "added by you",
+                "notes": ["added by you" + (f": {e['reason']}" if e.get("reason") else "")]}
+    return members
+
+
+def sanitize_record(rec):
+    """Remove control and invisible characters from every text value (not the secret).
+    Returns the names of the fields that changed and notes them on the record."""
+    changed = []
+
+    def clean(v):
+        if not isinstance(v, str):
+            return v
+        out = UNSAFE_TEXT.sub("", v.replace("\u00a0", " "))
+        return out.strip() if out != v else v
+    for f in ("name", "type", "address", "username", "source_ref"):
+        v = getattr(rec, f)
+        c = clean(v)
+        if c != v:
+            setattr(rec, f, c)
+            changed.append(f)
+    folder = tuple(x for x in (clean(x) for x in rec.folder) if x)
+    if folder != tuple(rec.folder):
+        rec.folder = folder
+        changed.append("folder")
+    for k in list(rec.extra):
+        c = clean(rec.extra[k])
+        if c != rec.extra[k]:
+            rec.extra[k] = c
+            changed.append(k)
+    for g in rec.grants or []:
+        c = clean(g.member)
+        if c != g.member:
+            g.member = c
+            changed.append("access group")
+    if changed:
+        rec.notes.append("forbidden characters (control or invisible) removed from: " + ", ".join(changed))
+    return changed
+
+
 def _safes(plans, cfg=None):
     safes = OrderedDict()
     limit = (cfg or {}).get("safe_max_accounts") or 0
@@ -578,8 +654,8 @@ def _safes(plans, cfg=None):
     return safes
 
 
-def _members(plans, cfg):
-    """Strongest role per (Safe, member) over the accounts that migrate."""
+def _members(plans, cfg, edits=None):
+    """Strongest role per (Safe, member) over the accounts that migrate, then your member edits."""
     members = OrderedDict()
     for p in plans:
         if not p.uploadable:
@@ -607,4 +683,5 @@ def _members(plans, cfg):
         m["member_type"] = m["type"] or cfg["default_member_type"]
         m["member_name"], m["search_in"], m["directory_source"] = member_target(
             m["source_name"], cfg, m["member_type"])
+    apply_member_edits(members, plans, edits)
     return members

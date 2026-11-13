@@ -12,7 +12,7 @@
 
 Requirements: Python 3.8 or later, **standard library only** (Excel files included). There's nothing to `pip install` on the migration host.
 
-## Easiest: the Migration Workbench (menus, no SQL)
+## Easiest: the Idira Migration Workbench (menus, no SQL)
 
 Double-click `start-ui.cmd`, or run `python -m pam2pc ui`. A page opens in your browser. **Sign in with your Windows password first**: only the Windows user who started the Workbench can unlock it, and Windows itself checks the password (nothing is stored). The page then walks through these steps:
 

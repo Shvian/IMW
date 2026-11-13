@@ -28,7 +28,7 @@ from pathlib import Path
 
 from .model import Grant, SourceRecord
 from .protect import ProtectError, get_protector, new_salt
-from .transform import _changed, build_plan, rebuild_totals, safe_settings
+from .transform import _changed, build_plan, rebuild_totals, safe_settings, sanitize_record
 from .writers import write_manifest, write_review, write_upload
 
 log = logging.getLogger("pam2pc.store")
@@ -62,6 +62,9 @@ CREATE TABLE IF NOT EXISTS plan_safes (
 CREATE TABLE IF NOT EXISTS plan_members (
   safe_name TEXT, source_member TEXT, member_name TEXT, search_in TEXT, member_type TEXT,
   source_permission TEXT, role TEXT, accounts INTEGER, notes TEXT, directory_source TEXT);
+CREATE TABLE IF NOT EXISTS member_edits (
+  safe_name TEXT, member_name TEXT, action TEXT, search_in TEXT, member_type TEXT, role TEXT,
+  changed_utc TEXT, changed_by TEXT, reason TEXT, PRIMARY KEY (safe_name, member_name));
 CREATE TABLE IF NOT EXISTS audit (
   id INTEGER PRIMARY KEY, ts TEXT, user TEXT, host TEXT, action TEXT, detail TEXT);
 CREATE VIEW IF NOT EXISTS accounts AS SELECT * FROM plan_accounts;
@@ -173,7 +176,10 @@ class Store:
         input_id = cur.lastrowid
         seen = {}
         replaced = 0
+        self.last_sanitized = 0
         for rec in records:
+            if sanitize_record(rec):
+                self.last_sanitized += 1
             base = rec.record_id
             seen[base] = seen.get(base, 0) + 1
             if seen[base] > 1:
@@ -203,6 +209,7 @@ class Store:
                                 (rid, g.member, g.permission, g.member_type))
             rec.secret = ""  # drop the plaintext as soon as it is stored
         self.audit("ingest", source=source, path=str(path), records=len(records), replaced=replaced,
+                   sanitized=self.last_sanitized,
                    permissions=" | ".join(map(str, perms_paths)), secrets_stored=store_secrets)
         self.db.commit()
         return len(records), replaced
@@ -242,8 +249,30 @@ class Store:
             raise StoreError("no config stored yet; run 'map' first")
         return json.loads(text)
 
+    def member_edits(self):
+        return [dict(r) for r in self.db.execute("SELECT * FROM member_edits ORDER BY changed_utc")]
+
+    def set_member_edits(self, safes, member_name, action, search_in="", member_type="", role="", reason=""):
+        """action: add | remove | undo, for each Safe in safes."""
+        if action not in ("add", "remove", "undo"):
+            raise StoreError("action must be add, remove or undo")
+        for safe in safes:
+            if action == "undo":
+                self.db.execute("DELETE FROM member_edits WHERE lower(safe_name) = lower(?) AND "
+                                "lower(member_name) = lower(?)", (safe, member_name))
+            else:
+                self.db.execute("DELETE FROM member_edits WHERE lower(safe_name) = lower(?) AND "
+                                "lower(member_name) = lower(?)", (safe, member_name))
+                self.db.execute("INSERT INTO member_edits VALUES (?,?,?,?,?,?,?,?,?)",
+                                (safe, member_name, action, search_in, member_type, role, _now(), _user(), reason))
+        self.audit("member_" + action, safes=list(safes), member=member_name, role=role, search_in=search_in,
+                   reason=reason)
+        self.db.commit()
+        return len(safes)
+
     def plan(self, cfg, with_secrets=False):
-        return build_plan(self.load_records(with_secrets), cfg, None, self.overrides(), explicit=True)
+        return build_plan(self.load_records(with_secrets), cfg, None, self.overrides(), explicit=True,
+                          member_edits=self.member_edits())
 
     def map(self, cfg, cfg_path=None):
         plan = self.plan(cfg)

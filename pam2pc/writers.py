@@ -19,6 +19,61 @@ ACCOUNT_FIELDS = ["safeName", "platformId", "name", "address", "userName", "secr
                   "secretManagement.manualManagementReason"]
 
 
+# Accounts.csv column -> Vault file category (what the account stores it as) and a note.
+FILE_CATEGORIES = {
+    "safeName": ("", "Safe the account is stored in (not a file category)"),
+    "platformId": ("PolicyID", "Platform ID"),
+    "name": ("", "Account (object) name in the Safe (not a file category)"),
+    "address": ("Address", "Target address"),
+    "userName": ("UserName", "Account username"),
+    "secretType": ("", "password or key (the type of the account's secret)"),
+    "secret": ("", "The password or private key itself"),
+    "secretManagement.automaticManagementEnabled": ("CPMDisabled", "false sets CPMDisabled on the account"),
+    "secretManagement.manualManagementReason": ("CPMDisabled", "Text stored in CPMDisabled when the CPM does not manage it"),
+}
+
+
+def _category(col):
+    if col.startswith("platformAccountProperties."):
+        prop = col.split(".", 1)[1]
+        return prop, "Platform account property from the source column(s) mapped in account_property_map"
+    return FILE_CATEGORIES.get(col, ("", ""))
+
+
+def write_categories(out, header, rows):
+    """FileCategories.csv: every Accounts.csv column and how often it is filled.
+    PlatformProperties.csv: per platform, which file categories its accounts use."""
+    cols = header[1:]                                   # without recordId
+    used = {c: 0 for c in cols}
+    per_platform = {}
+    for row in rows:
+        plat = row["platformId"]
+        pp = per_platform.setdefault(plat, {"accounts": 0, "cols": {c: 0 for c in cols}})
+        pp["accounts"] += 1
+        for c in cols:
+            if str(row.get(c, "")).strip():
+                used[c] += 1
+                pp["cols"][c] += 1
+    cat_path = out / "FileCategories.csv"
+    with _open(cat_path) as fh:
+        w = csv.writer(fh)
+        w.writerow(["column", "fileCategory", "accountsWithValue", "accountsTotal", "platforms", "description"])
+        for c in cols:
+            fc, desc = _category(c)
+            plats = sorted(p for p, v in per_platform.items() if v["cols"][c])
+            w.writerow([c, fc, used[c], len(rows), "; ".join(plats), desc])
+    plat_path = out / "PlatformProperties.csv"
+    with _open(plat_path) as fh:
+        w = csv.writer(fh)
+        w.writerow(["platformId", "column", "fileCategory", "accountsWithValue", "accountsOnPlatform"])
+        for plat in sorted(per_platform):
+            v = per_platform[plat]
+            for c in cols:
+                if v["cols"][c]:
+                    w.writerow([plat, c, _category(c)[0], v["cols"][c], v["accounts"]])
+    return [cat_path, plat_path]
+
+
 def _fmt(v):
     if isinstance(v, bool):
         return "true" if v else "false"
@@ -131,9 +186,11 @@ def write_upload(plan, cfg, out_dir, include_secrets):
     acct_defaults = cfg["account_defaults"]
     accounts = out / "Accounts.csv"
     count = 0
+    header = ["recordId"] + ACCOUNT_FIELDS + [f"platformAccountProperties.{c}" for c in prop_cols]
+    usage = []
     with _open(accounts) as fh:
         w = csv.writer(fh, quoting=csv.QUOTE_ALL)
-        w.writerow(["recordId"] + ACCOUNT_FIELDS + [f"platformAccountProperties.{c}" for c in prop_cols])
+        w.writerow(header)
         for p in plan.accounts:
             if not p.uploadable:
                 continue
@@ -144,15 +201,20 @@ def write_upload(plan, cfg, out_dir, include_secrets):
                 val = extra_lower.get(src.lower(), "")
                 if val.strip() and not props.get(dst):
                     props[dst] = val
-            w.writerow([r.record_id, p.safe, p.platform, p.account_name, r.address, r.username,
-                        r.secret_type, r.secret if include_secrets else "",
-                        _fmt(acct_defaults.get("automaticManagementEnabled", False)),
-                        acct_defaults.get("manualManagementReason", "")] +
-                       [props.get(c, "") for c in prop_cols])
+            values = [r.record_id, p.safe, p.platform, p.account_name, r.address, r.username,
+                      r.secret_type, r.secret if include_secrets else "",
+                      _fmt(acct_defaults.get("automaticManagementEnabled", False)),
+                      "" if acct_defaults.get("automaticManagementEnabled") else
+                      acct_defaults.get("manualManagementReason", "")] + [props.get(c, "") for c in prop_cols]
+            w.writerow(values)
+            row = dict(zip(header, values))
+            row["secret"] = "x" if r.has_secret or (r.secret or "").strip() else ""   # usage only, never the value
+            usage.append(row)
             count += 1
     if include_secrets:
         restrict(accounts)
-    return [safes, members, accounts], {"safes": len(upload_safes), "members": len(plan.members) -
+    extra_files = write_categories(out, header, usage)
+    return [safes, members, accounts] + extra_files, {"safes": len(upload_safes), "members": len(plan.members) -
                                         skipped_members, "members_skipped": skipped_members,
                                         "accounts": count}
 
