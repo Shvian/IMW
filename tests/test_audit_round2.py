@@ -1,6 +1,7 @@
 """Regression tests for the round 2 audit (2026-11-13)."""
 
 import unittest
+from pathlib import Path
 import zipfile
 from collections import OrderedDict
 from unittest import mock
@@ -183,6 +184,27 @@ class XmlReadOnce(Base):
         f.write_bytes(b"<KeePassFile><Root>")
         with self.assertRaises(AdapterError):
             KeePassAdapter()._read_xml(f, config_from_dict({}))
+
+
+class FrontendCsp(unittest.TestCase):
+    def test_no_inline_scripts_or_handlers(self):
+        import re
+        from imw.ui import server
+        static = server.STATIC
+        html = (static / "index.html").read_text()
+        self.assertEqual(re.findall(r"<script(?![^>]*\bsrc=)", html), [])
+        for name in ["index.html"] + list(server.STATIC_SCRIPTS.values()):
+            text = (static / name).read_text()
+            self.assertEqual(re.findall(r"\son[a-z]+\s*=\s*[\"']", text), [], name)
+        src = (Path(server.__file__)).read_text()
+        self.assertIn("script-src 'self';", src)
+        self.assertNotIn("script-src 'self' 'unsafe-inline'", src)
+
+    def test_security_notice_on_overview(self):
+        from imw.ui import server
+        js = (server.STATIC / "app.js").read_text()
+        self.assertIn("SECURITY_NOTICE", js)
+        self.assertEqual(js.count("${SECURITY_NOTICE}"), 2)          # welcome page and overview
 
 
 if __name__ == "__main__":
