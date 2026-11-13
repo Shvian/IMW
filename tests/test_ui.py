@@ -100,6 +100,16 @@ class UiServer(Base):
             plain.getresponse().read()
         self.assertEqual(self.req("GET", "/api/session")[0], 200)     # server still fine afterwards
 
+    def test_other_windows_users_are_refused(self):
+        self.httpd.app.peer_check = lambda *a: False
+        st, body = self.req("GET", f"/?t={self.token}")
+        self.assertEqual(st, 403)
+        self.assertIn(b"Connections from other Windows users are refused", body)
+        self.httpd.app.peer_check = lambda *a: (_ for _ in ()).throw(OSError("table failed"))
+        self.assertEqual(self.req("GET", "/api/session")[0], 403)          # can't confirm: refused
+        self.httpd.app.peer_check = lambda *a: True
+        self.assertEqual(self.req("GET", f"/?t={self.token}")[0], 303)
+
     def test_sign_in_and_lock(self):
         self.login(unlock=False)
         st, s = self.req("GET", "/api/session")

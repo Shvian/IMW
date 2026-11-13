@@ -14,9 +14,9 @@ Requirements: Python 3.8 or later, **standard library only** (Excel files includ
 
 ## Easiest: the Idira Migration Workbench (menus, no SQL)
 
-Double-click `start-ui.cmd`, or run `python -m pam2pc ui`. A page opens in your browser. **Sign in with your Windows password first**: only the Windows user who started the Workbench can unlock it, and Windows itself checks the password (nothing is stored). The page then walks through these steps:
+Double-click `start-ui.cmd`, or run `python -m pam2pc ui`. A page opens in your browser over HTTPS. **Sign in with your Windows password first**: only the Windows user who started the Workbench can unlock it, and Windows itself checks the password (nothing is stored). The page then walks through these steps:
 
-1. **Load exports.** Copy the export files into `pam2pc_workspace\inbox` (click the path to open it in Explorer), tick them and click Load. Tick one or more permissions files; several are merged. Secrets are encrypted as they load, and you can securely delete each export straight from this page.
+1. **Load exports.** Copy the export files into `pam2pc_workspace\inbox` (click the path to open it in Explorer), tick them under **Load** and click Load. For a permissions file also tick **Permissions file** (that ticks Load for you); several are merged. Secrets are encrypted as they load, and you can securely delete each export straight from this page. Invisible and control characters (zero-width spaces, line breaks inside a name) are removed as records load; the Overview counts the accounts this touched and links to them.
 2. **Mapping rules**, one page per topic, each with its own **Save & apply** that saves only that page:
    - **A. Directory sources.** Where Privilege Cloud finds each group and user (searchIn), with name rules per source: drop the domain, find and replace, add text before or after, change case. A preview shows every member as it will be uploaded.
    - **B. Permissions: Safes.** Safe from folder (the default), folder exceptions, the naming convention (folder abbreviations, every placeholder's values, your own placeholders), Safe settings (CPM, description, retention by versions or days, automatic CPM management), and the optional access-group rules.
@@ -24,9 +24,12 @@ Double-click `start-ui.cmd`, or run `python -m pam2pc ui`. A page opens in your 
    - **C. Platforms.** Platform rules, record type to platform, and the default platform.
    - **D. Accounts.** How accounts are named, URL addresses, and extra account properties.
    - **Settings file (JSON)** for anything else.
-3. **Review & change.** Pick a list from the menu (Needs a look, Errors, Safe name was changed, No access groups, Possible duplicates, Changed by you...), narrow it with filters or search, tick accounts and use the buttons: Exclude, Include, Move to Safe, Set platform, Rename or Undo. You can add a reason, which goes into the log. Click a row to see everything about that account.
-4. **Safes & members.** See the Safes (with their CPM, description and retention) and the members the upload will create.
-5. **Create upload files.** Choose everything or one wave (by Safe, platform or source), and a dry run or upload-ready. Upload-ready needs you to type a confirmation. Old upload files can be securely deleted from the same page.
+
+   Input tables start folded: click the row (arrow or **Edit**) to open one. **Next** at the bottom goes to the next page. Every input has a tooltip that explains it and its syntax, and Safe names, platform IDs and account names warn as you type when they hold characters Privilege Cloud doesn't allow.
+3. **Review & change**, in two parts:
+   - **A. Safes & Safe members.** The Safes (with their CPM, description and retention) and the members the upload will create. Tick any number of Safes, then add a member to all of them (name, directory, user or group, role) or remove one from all of them. You can also tick rows in the Members table to remove them. Your member changes are listed with an Undo button and survive re-running the rules.
+   - **B. Accounts & platforms.** Pick a list from the menu (Needs a look, Errors, Forbidden characters changed, Safe name was changed, No access groups, Possible duplicates, Changed by you...), narrow it with filters or search, tick accounts (or "all accounts in this list") and move them to another Safe, give them another platform or `(none)` for no platform, rename one, leave them out, or undo. You can add a reason, which goes into the log. Click a row to see everything about that account.
+4. **Create upload files.** Choose everything or one wave (by Safe, platform or source), and a dry run or upload-ready. Upload-ready needs you to type a confirmation. Old upload files can be securely deleted from the same page.
 
 The **Overview** boxes open the matching list (Needs a look opens Review with that list picked, and so on). It also lists every loaded file with its SHA-256 checksum, and marks a file loaded more than once as the same or different content. Loading a file with the same name again replaces its records (matched by record ID) and keeps your changes; loading the same content under another name loads every record twice.
 
@@ -36,7 +39,11 @@ The **Activity log** page shows a summary (by action, by person, changes by fiel
 
 **Locking and ending.** After 10 minutes without activity, or when you click **Lock session**, the page goes back to the sign-in screen. **End session** explains what it does and needs you to type END SESSION: it stops the Workbench, and the database stays on disk, encrypted for your Windows account, until you start the Workbench again and sign in. Tick the box in that pop-up to securely delete the database as well. Output files and the inbox are kept either way.
 
-The page is served only to this computer (`127.0.0.1`), through a one-time link that becomes a session cookie. Five wrong passwords in a row add a growing wait, and every sign-in, lock and failed attempt is logged. Your Windows account lockout policy also counts failed attempts. No page ever shows a secret. The UI runs as you, so DPAPI works the same as on the command line. Everything lives in the workspace folder: `migration.db`, `config.json`, `inbox\` and `output\`. More screenshots are in [docs/ui](docs/ui).
+**Only the Windows user who created the workspace can use it.** The first start records you as the owner of the workspace folder and its database, and sets the folder's permissions so that only you (and SYSTEM) can open anything in it: the inbox exports, the database, the config and the outputs. Inherited permissions are removed, so other users of the machine, including administrators, can't read the files without taking ownership (which needs admin rights and leaves a trace in Windows). Another user who starts the Workbench or the command line on your workspace or database gets a "belongs to" message and nothing opens. While the Workbench runs, it also checks which Windows user owns each browser connection and refuses everyone but you, because `127.0.0.1` is shared by every session on the machine. A workspace must be a new or empty folder (or an existing Workbench workspace), because its permissions are locked down.
+
+**HTTPS.** The page is served over HTTPS with a certificate the Workbench makes for this computer on first start (RSA 2048, valid for `127.0.0.1` and `localhost` for 397 days; standard library only). It is kept in `<workspace>\tls\`, with the private key encrypted by DPAPI for your account. The browser warns once because the certificate is self-signed: choose Advanced, then Continue. To stop the warning, start once with `python -m pam2pc ui --trust-cert`, which adds the certificate to your own Windows user's Trusted Root store (Windows asks you to confirm). `--new-cert` makes a new one; `--no-tls` serves plain HTTP for troubleshooting only. The start-up window prints the certificate's SHA-256 fingerprint.
+
+The page is served only to this computer (`127.0.0.1`), through a one-time link that becomes a Secure, HttpOnly session cookie. Five wrong passwords in a row add a growing wait, and every sign-in, lock and failed attempt is logged. Your Windows account lockout policy also counts failed attempts. No page ever shows a secret. The UI runs as you, so DPAPI works the same as on the command line. Everything lives in the workspace folder: `migration.db`, `config.json`, `inbox\` and `output\`. More screenshots are in [docs/ui](docs/ui).
 
 Sign-in needs Windows. For automated tests on other systems, set `PAM2PC_UI_TEST_PASSWORD`; never use that with real data.
 
@@ -181,6 +188,10 @@ Each record gets a Status:
     SafeMembers.csv             safeName, memberName, memberType, searchIn, role, permissions.<flag>...
     Accounts.csv                recordId, safeName, platformId, name, address, userName, secretType,
                                 secret, secretManagement.*, platformAccountProperties.*
+    FileCategories.csv          every property column used in Accounts.csv: file category name,
+                                how many accounts fill it, which platforms use it
+    PlatformProperties.csv      per platform, which file categories its accounts use (to check or
+                                create the platforms before the upload)
   manifest.json                 SHA-256 of every input and output file, counts, timestamp, host
 ```
 

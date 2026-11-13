@@ -232,11 +232,12 @@ def cmd_ui(args):
     except AuthError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
+    from .owner import OwnerError
     from .ui.tls import TlsError
     try:
         return serve(args.workspace, args.port, not args.no_browser, flag, authenticator=auth,
                      use_tls=not args.no_tls, new_cert=args.new_cert, trust_cert=args.trust_cert)
-    except TlsError as exc:
+    except (TlsError, OwnerError, StoreError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 

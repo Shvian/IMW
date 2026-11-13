@@ -18,7 +18,6 @@ import getpass
 import hashlib
 import json
 import logging
-import os
 import platform as _platform
 import sqlite3
 import sys
@@ -27,6 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .model import Grant, SourceRecord
+from .owner import OwnerError, current_identity, restrict
 from .protect import ProtectError, get_protector, new_salt
 from .transform import _changed, build_plan, rebuild_totals, safe_settings, sanitize_record
 from .writers import write_manifest, write_review, write_upload
@@ -122,7 +122,18 @@ class Store:
         if not self.path.exists() and not create:
             raise StoreError(f"database {self.path} does not exist; run 'ingest' first")
         new = not self.path.exists()
-        self.db = sqlite3.connect(str(self.path))
+        try:
+            me = current_identity()
+        except OwnerError as exc:
+            raise StoreError(str(exc))
+        try:
+            self.db = sqlite3.connect(str(self.path))
+            self.db.execute("SELECT 1 FROM sqlite_master LIMIT 1")
+        except sqlite3.OperationalError as exc:
+            if not new:
+                raise StoreError(f"Can't open {self.path} ({exc}). It probably belongs to another Windows user: "
+                                 "only the user who created a database can open it.")
+            raise
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA foreign_keys = ON")
         # Plan tables are rebuilt by every map, so an older layout is simply recreated.
@@ -132,15 +143,42 @@ class Store:
                 self.db.execute(f"DROP TABLE {table}")
         self.db.executescript(SCHEMA)
         if new:
-            if os.name == "posix":
-                os.chmod(self.path, 0o600)
             self._set_meta("schema_version", SCHEMA_VERSION)
             self._set_meta("created_utc", _now())
             self._set_meta("created_by", f"{_user()}@{_platform.node()}")
             self._set_meta("salt", base64.b64encode(new_salt()).decode())
             self._set_meta("protector", protector or "dpapi")
+            self._set_meta("owner_sid", me["sid"])
+            self._set_meta("owner_name", me["display"])
             self.db.commit()
+            try:
+                restrict(self.path, me["sid"])
+            except OwnerError as exc:
+                self.db.close()
+                self.path.unlink()
+                raise StoreError(str(exc))
+        else:
+            self._check_owner(me)
         self._protector = None
+
+    def _check_owner(self, me):
+        """Only the Windows user who created the database may open it (see owner.py)."""
+        owner = self.meta("owner_sid")
+        if owner is None:      # made before owners were recorded: the creator's name decides
+            creator = (self.meta("created_by") or "").rsplit("@", 1)[0]
+            if creator.lower() != (me["user"] or "").lower():
+                self.db.close()
+                raise StoreError(f"This database was created by {creator}. You are signed in to Windows as "
+                                 f"{me['display']}, so it stays closed.")
+            self._set_meta("owner_sid", me["sid"])
+            self._set_meta("owner_name", me["display"])
+            self.db.commit()
+            restrict(self.path, me["sid"])
+        elif owner != me["sid"]:
+            name = self.meta("owner_name") or owner
+            self.db.close()
+            raise StoreError(f"This database belongs to {name}. You are signed in to Windows as "
+                             f"{me['display']}, so it stays closed. Only the user who created a database can open it.")
 
     # -- meta / audit -----------------------------------------------------
     def _set_meta(self, key, value):

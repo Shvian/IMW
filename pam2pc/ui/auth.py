@@ -1,6 +1,8 @@
 """Sign-in for the Workbench: only the Windows user who started the tool can unlock it.
 
-On Windows the password is checked by Windows itself (LogonUserW); nothing is stored.
+On Windows the password is checked by Windows itself (LogonUserW); nothing is stored. The
+account is read from this process's own token (not from environment variables, which anyone
+can change), and a password only counts if Windows logs on that same account (same SID).
 Elsewhere there is no sign-in, except a test password for automated tests
 (PAM2PC_UI_TEST_PASSWORD), which must never be used with real data.
 """
@@ -18,8 +20,9 @@ class WindowsAuth:
     kind = "windows"
 
     def __init__(self):
-        self.user = os.environ.get("USERNAME") or getpass.getuser()
-        self.domain = os.environ.get("USERDOMAIN") or "."
+        from ..owner import current_identity
+        me = current_identity()
+        self.sid, self.user, self.domain = me["sid"], me["user"], me["domain"] or "."
 
     @property
     def display(self):
@@ -39,8 +42,11 @@ class WindowsAuth:
         for logon_type in (3, 2):   # LOGON32_LOGON_NETWORK, LOGON32_LOGON_INTERACTIVE
             token = wintypes.HANDLE()
             if logon(self.user, self.domain, password, logon_type, 0, ctypes.byref(token)):
-                kernel32.CloseHandle(token)
-                return True
+                try:
+                    from ..owner import token_sid
+                    return token_sid(token) == self.sid
+                finally:
+                    kernel32.CloseHandle(token)
             if ctypes.get_last_error() != 1385:   # ERROR_LOGON_TYPE_NOT_GRANTED
                 return False
         return False

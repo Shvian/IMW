@@ -27,6 +27,7 @@ import sys
 import threading
 import time
 import webbrowser
+from html import escape as html_escape
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -43,6 +44,7 @@ from ..store import Store, StoreError, run_extract
 from ..transform import Permissions, member_target
 from .auth import get_authenticator
 from .tls import fingerprint, server_context, trust_certificate
+from ..owner import claim_workspace, peer_is_owner
 
 log = logging.getLogger("pam2pc.ui")
 PRODUCT = "Idira Migration Workbench"
@@ -202,9 +204,17 @@ class App:
         self.ws = Path(workspace).resolve()
         self.inbox = self.ws / "inbox"
         self.output = self.ws / "output"
-        for d in (self.ws, self.inbox, self.output):
-            d.mkdir(parents=True, exist_ok=True)
         self.db_path = self.ws / "migration.db"
+        try:
+            has_db = self.db_path.exists()
+        except PermissionError:
+            has_db = False                       # claim_workspace explains
+        if has_db:
+            Store(self.db_path).close()          # refuses another user's database before anything starts
+        # Only the Windows user who created the workspace may use it; it is locked to that user.
+        self.owner = claim_workspace(self.ws)
+        for d in (self.inbox, self.output):
+            d.mkdir(parents=True, exist_ok=True)
         self.config_path = self.ws / "config.json"
         self.protector_flag = protector_flag
         self.lock = threading.RLock()
@@ -216,6 +226,7 @@ class App:
         self.failures = 0
         self.wait_until = 0.0
         self.httpd = None
+        self.peer_check = peer_is_owner
 
     # -- helpers ----------------------------------------------------------
     def store(self, create=False):
@@ -827,8 +838,24 @@ def make_handler(app, port, scheme="https"):
         def do_POST(self):
             self._handle("POST")
 
+        def _peer_ok(self):
+            """The browser connecting must run as the Workbench's Windows user (checked once per connection)."""
+            if not hasattr(self, "_peer"):
+                try:
+                    self._peer = app.peer_check(self.client_address, port, app.owner["sid"])
+                except Exception as exc:  # noqa: BLE001 - can't confirm: refuse
+                    log.warning("could not check who is connecting: %s", exc)
+                    self._peer = False
+            return self._peer
+
         def _handle(self, method):
             url = urlparse(self.path)
+            if not self._peer_ok():
+                with app.lock:
+                    app._audit_if_db("refused_connection", reason="another Windows user")
+                return self._send(HTTPStatus.FORBIDDEN, f"<p>This Workbench belongs to {html_escape(app.owner['display'])}. "
+                                  "Connections from other Windows users are refused.</p>".encode(),
+                                  "text/html; charset=utf-8")
             problem = self._guard(method == "POST")
             if problem:
                 return self._send(HTTPStatus.FORBIDDEN, {"error": problem})
@@ -928,6 +955,7 @@ def serve(workspace, port=0, open_browser=True, protector_flag=None, ready=None,
                      f"SHA-256 {fingerprint(cert_path)}")
     httpd.RequestHandlerClass = make_handler(app, port, scheme)
     app.httpd = httpd
+    httpd.app = app
     url = f"{scheme}://127.0.0.1:{port}/?t={app.launch_token}"
     print(f"{PRODUCT} running. Workspace: {app.ws}")
     print(f"Put export files in: {app.inbox}")
