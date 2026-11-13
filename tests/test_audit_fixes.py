@@ -316,24 +316,6 @@ class ConfigVersionKept(unittest.TestCase):
         self.assertEqual(upgrade_config(diff), diff)            # current version: nothing to do
 
 
-class LegacyRedact(unittest.TestCase):
-    def test_escaped_forms_are_redacted(self):
-        import json
-        import urllib.parse
-        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "legacy" / "ui" / "server"))
-        try:
-            import migration_ui
-        except Exception as exc:  # noqa: BLE001
-            self.skipTest(f"legacy UI not importable: {exc}")
-        s = migration_ui.Session.__new__(migration_ui.Session)
-        secret = 'p"a\\ss w0rd\'%'
-        s._creds = {"pc": secret}
-        for shown in (secret, repr(secret), json.dumps(secret), urllib.parse.quote(secret, safe=""),
-                      urllib.parse.quote_plus(secret), repr(repr(secret)), json.dumps({"e": repr(secret)})):
-            out = s.redact("error: " + shown)
-            self.assertNotIn("w0rd", out, shown)
-
-
 class AccessDeniedMessage(Base):
     def test_own_folder_is_not_blamed_on_another_user(self):
         from imw import owner

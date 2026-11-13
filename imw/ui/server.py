@@ -42,7 +42,7 @@ from ..config import (ALL_PERMISSIONS, DEFAULT_CONFIG, PERMISSION_PRESETS, confi
 from ..model import SourceRecord
 from ..naming import Namer
 from ..protect import ProtectError
-from ..store import Store, StoreError, run_extract
+from ..store import Store, StoreError, run_extract, sha256_file
 from ..transform import (Permissions, apply_member_override, member_target, normalize_member_type,
                          sanitize_safe_name)
 from .auth import get_authenticator
@@ -63,13 +63,13 @@ EDITABLE = ("migrate", "target_safe", "platform_id", "account_name")
 VIEWS = {
     "all": ("All accounts", "1=1"),
     "upload": ("Will be uploaded", "migrate = 'Y' AND status <> 'ERROR'"),
-    "review": ("Needs a look (REVIEW)", "status = 'REVIEW'"),
-    "errors": ("Errors - will NOT be uploaded", "status = 'ERROR'"),
-    "excluded": ("Excluded by you (Migrate = N)", "migrate = 'N'"),
+    "review": ("Needs a look", "status = 'REVIEW'"),
+    "errors": ("Errors (not uploaded)", "status = 'ERROR'"),
+    "excluded": ("Left out by you", "migrate = 'N'"),
     "renamed_safes": ("Safe name was changed", "valid_safe_name = 'FALSE'"),
     "no_access": ("No access groups", "access_groups = ''"),
     "no_secret": ("Empty secret", "has_secret = 'N'"),
-    "fallback": ("Safe from folder fallback (no rule matched)", "safe_mapping_source LIKE 'fallback:%'"),
+    "fallback": ("Safe named by the convention (no rule matched)", "safe_mapping_source LIKE 'fallback:%'"),
     "duplicates": ("Possible duplicates", "notes LIKE '%possible duplicate%'"),
     "edited": ("Changed by you", "record_id IN (SELECT record_id FROM edits)"),
     "sanitized": ("Forbidden characters changed", "(notes LIKE '%forbidden characters%' OR valid_safe_name = 'FALSE' "
@@ -312,7 +312,31 @@ class App:
                 ).fetchone()[0])
             finally:
                 st.close()
+            self._mark_loaded(state)
         return state
+
+    def _mark_loaded(self, state):
+        """Tell the Load page which inbox files are already loaded, with the same or changed content."""
+        known = {}
+        for i in state.get("inputs") or []:
+            known[Path(i["path"]).name.lower()] = i["sha256"]
+            for pth, sha in zip((i.get("permissions_path") or "").split(" | "), (i.get("permissions_sha256") or "").split(" | ")):
+                if pth:
+                    known[Path(pth).name.lower()] = sha
+        cache = self.__dict__.setdefault("_sha_cache", {})
+        for f in state["inbox_files"]:
+            sha = known.get(f["name"].lower())
+            if not sha:
+                continue
+            path = self.inbox / f["name"]
+            try:
+                st = path.stat()
+                key = (str(path), st.st_size, st.st_mtime_ns)
+                if key not in cache:
+                    cache[key] = sha256_file(path)
+                f["loaded"] = "same" if cache[key] == sha else "changed"
+            except OSError:
+                pass
 
     def api_ingest(self, body):
         files = body.get("files") or []

@@ -96,7 +96,40 @@ code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; font-si
 .roles .tick { color: var(--ok); font-weight: 700; }
 .roles th input { width: auto; }
 .hidden { display: none !important; }
-nav .sub { padding: 6px 10px 6px 42px; font-size: 13px; }
+nav .sub { padding: 6px 10px 6px 42px; font-size: 13px; display: none; }
+/* Only the step you are in shows its pages. */
+nav[data-open="rules"] .sub[data-sub="rules"], nav[data-open="review"] .sub[data-sub="review"] { display: flex; }
+button.btn.icon { width: 36px; padding: 7px 0; text-align: center; font-size: 15px; }
+/* Folded "How this page works" help */
+details.explain { padding: 6px 14px; }
+details.explain > summary { cursor: pointer; color: var(--muted); font-size: 13px; list-style: none; }
+details.explain > summary::-webkit-details-marker { display: none; }
+details.explain > summary::before { content: "▸ "; }
+details.explain[open] > summary::before { content: "▾ "; }
+details.card.fold > summary { cursor: pointer; font-weight: 600; font-size: 15px; list-style: none; }
+details.card.fold > summary::-webkit-details-marker { display: none; }
+details.card.fold > summary::before { content: "▸ "; color: var(--muted); }
+details.card.fold[open] > summary::before { content: "▾ "; }
+details.card.fold[open] > summary { margin-bottom: 10px; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 0 0 14px; }
+.tabs button { font: inherit; border: 0; background: none; color: var(--muted); padding: 8px 14px; cursor: pointer; border-bottom: 2px solid transparent; }
+.tabs button.on { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+td.nowrap, th.nowrap { white-space: nowrap; }
+/* Why an account needs a look: one line under its name, the whole text on hover. */
+.row-note { color: var(--muted); font-size: 12px; max-width: 520px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+input.need { border-color: var(--err); }
+input.need::placeholder { color: var(--err); }
+.steps { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.steps li { display: flex; gap: 12px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.steps .dot { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; flex-shrink: 0;
+  background: var(--line); color: var(--ink); }
+.steps li.done .dot { background: var(--ok-bg); color: var(--ok); }
+.steps li.todo .dot { background: var(--warn-bg); color: var(--warn); }
+.steps li.next { border-color: var(--accent); }
+.steps b { display: block; }
+.steps .st { color: var(--muted); font-size: 12px; }
+.linkbtn { font: inherit; font-size: 12px; background: none; border: 0; color: var(--link); cursor: pointer; padding: 0; text-decoration: underline; }
+.floatbar .adv { margin-left: auto; font-size: 12px; }
 .stat.link { cursor: pointer; }
 .stat.link:hover { border-color: var(--accent); }
 .overlay { position: fixed; inset: 0; background: #1b2333; display: flex; align-items: center; justify-content: center; z-index: 50; }
@@ -134,7 +167,7 @@ details.edit-block > summary { list-style: none; cursor: pointer; display: flex;
 details.edit-block > summary::-webkit-details-marker { display: none; }
 details.edit-block > summary .arrow { display: inline-block; transition: transform .15s; color: var(--muted); }
 details.edit-block[open] > summary .arrow { transform: rotate(90deg); }
-details.edit-block > summary .edit-btn { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 2px 10px; font-size: 12px; }
+details.edit-block > summary .edit-btn { white-space: nowrap; border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 2px 10px; font-size: 12px; }
 details.edit-block[open] > summary .edit-btn .o, details.edit-block:not([open]) > summary .edit-btn .c { display: none; }
 details.edit-block > summary:hover .edit-btn { border-color: var(--accent); color: var(--accent); }
 details.edit-block[open] > summary { border-style: solid; margin-bottom: 6px; }
@@ -218,7 +251,7 @@ input.chk-bad { border-color: var(--warn); background: var(--warn-bg); }
   <h1>Idira Migration Workbench</h1>
   <span class="sub" id="hdr-sub"></span>
   <span class="spacer"></span>
-  <button class="btn" id="theme" style="background:transparent;color:#fff;border-color:#45526e;margin-right:8px" title="Switch between dark and light colours. Your choice is remembered in this browser."></button>
+  <button class="btn icon" id="theme" style="background:transparent;color:#fff;border-color:#45526e;margin-right:8px" title="Switch between dark and light colours. Your choice is remembered in this browser."></button>
   <button class="btn" id="lock" style="background:transparent;color:#fff;border-color:#45526e">Lock session</button>
   <button class="btn" id="logout" style="background:transparent;color:#fff;border-color:#45526e;margin-left:8px">End session</button>
 </header>
@@ -227,17 +260,15 @@ input.chk-bad { border-color: var(--warn); background: var(--warn-bg); }
     <button data-page="overview"><span class="num">⌂</span>Overview</button>
     <hr>
     <button data-page="load"><span class="num">1</span>Load exports</button>
-    <button data-page="rules-dir" data-group="rules"><span class="num">2</span>Mapping rules</button>
-    <button class="sub" data-page="rules-dir">A. Directory sources</button>
-    <button class="sub" data-page="rules-safes">B. Permissions: Safes</button>
-    <button class="sub" data-page="rules-members">B. Permissions: Safe members</button>
-    <button class="sub" data-page="rules-platforms">C. Platforms</button>
-    <button class="sub" data-page="rules-accounts">D. Accounts</button>
-    <button class="sub" data-page="rules-json">Settings file (JSON)</button>
+    <button data-page="rules-safes" data-group="rules"><span class="num">2</span>Mapping rules</button>
+    <button class="sub" data-sub="rules" data-page="rules-safes">A. Safes</button>
+    <button class="sub" data-sub="rules" data-page="rules-members">B. Safe members</button>
+    <button class="sub" data-sub="rules" data-page="rules-platforms">C. Platforms</button>
+    <button class="sub" data-sub="rules" data-page="rules-accounts">D. Accounts</button>
+    <button class="sub" data-sub="rules" data-page="rules-dir">E. Member names (optional)</button>
     <button data-page="review-safes" data-group="review"><span class="num">3</span>Review &amp; change</button>
-    <button class="sub" data-page="review-safes">A. Safes &amp; Safe members</button>
-    <button class="sub" data-page="review">B. Accounts &amp; platforms</button>
-    <button class="sub" data-page="review-finalize">C. Finalize</button>
+    <button class="sub" data-sub="review" data-page="review-safes">A. Safes &amp; members</button>
+    <button class="sub" data-sub="review" data-page="review">B. Accounts &amp; platforms</button>
     <button data-page="output"><span class="num">4</span>Create upload files</button>
     <hr>
     <button data-page="activity"><span class="num">≡</span>Activity log</button>

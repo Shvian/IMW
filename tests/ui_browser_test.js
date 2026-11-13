@@ -31,6 +31,14 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
     if (!(await d.evaluate(e => e.open))) await page.click(`[data-block="${id}"] > summary`);
   };
   const addRow = async (id) => { await openBlock(id); await page.click(`[data-add="${id}"]`); return page.$$(`#${id} tr`); };
+  // Only the step you are in shows its sub-pages: open the step first when needed.
+  const navTo = async (id) => {
+    const sub = page.locator(`nav button.sub[data-page="${id}"]`);
+    if (await sub.count()) {
+      if (!(await sub.isVisible())) await page.click(`nav button[data-group="${id.startsWith('rules') ? 'rules' : 'review'}"]`);
+      await sub.click();
+    } else await page.click(`nav button[data-page="${id}"]`);
+  };
   const signIn = async (password) => {
     await page.waitForSelector('#login:not(.hidden)');
     await page.fill('#login-pw', password);
@@ -56,7 +64,7 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   // 1. Load (both permissions files ticked and merged)
   await page.click('nav >> text=Load exports');
   await page.waitForSelector('#go-load');
-  for (const r of await page.$$('table tr')) {
+  for (const r of await page.$$('#main div.card table tr')) {
     const t = await r.innerText();
     if (t.includes('accounts_by_group.xlsx')) { const cb = await r.$('.pick'); if (await cb.isChecked()) await cb.uncheck(); }
     if (t.includes('delinea_permissions')) {
@@ -66,7 +74,7 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   }
   // Ticking "Permissions file" must tick Load, never untick it
   {
-    const r = (await page.$$('table tr'))[1];
+    const r = (await page.$$('#main div.card table tr'))[1];
     const pick = await r.$('.pick'), perm = await r.$('.perm');
     const was = [await pick.isChecked(), await perm.isChecked()];
     await pick.uncheck(); await perm.uncheck(); await perm.check();
@@ -84,17 +92,26 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   console.log('LOAD:', loadMsg.replace(/\n/g, ' | '));
   if (!loadMsg.includes('delinea_export.csv: 8 records')) throw new Error('load failed');
   if (!loadMsg.includes('delinea_permissions_extra.csv')) throw new Error('second permissions file not merged');
+  // Loaded files say so, and are no longer ticked to load again
+  for (const r of await page.$$('#main div.card table tr')) {
+    const t = await r.innerText();
+    if (t.includes('keepass_export.xml')) {
+      if (!/loaded/.test(t)) throw new Error('loaded file not marked as loaded: ' + t);
+      if (await (await r.$('.pick')).isChecked()) throw new Error('loaded file still ticked to load');
+    }
+  }
+  if (!(await page.$('#del-loaded'))) throw new Error('no button to securely delete the loaded exports');
   // load the same KeePass file again: the Overview must say it is the same content
   await page.click('nav >> text=Load exports');
   await page.waitForFunction(() => document.querySelector('#go-load') && !document.querySelector('#load-msg').textContent);
   for (const cb of await page.$$('.perm')) if (await cb.isChecked()) await cb.uncheck();
   for (const cb of await page.$$('.pick')) if (await cb.isChecked()) await cb.uncheck();
-  for (const r of await page.$$('table tr')) if ((await r.innerText()).includes('keepass_export.xml')) await (await r.$('.pick')).check();
+  for (const r of await page.$$('#main div.card table tr')) if ((await r.innerText()).includes('keepass_export.xml')) await (await r.$('.pick')).check();
   await page.click('#go-load');
   await page.waitForSelector('#load-msg .msg.ok', { timeout: 10000 });
 
   // 2. Mapping rules, page by page
-  await page.click('nav >> text=A. Directory sources');
+  await navTo('rules-dir');
   await page.waitForSelector('#dir-out table');
   if (await page.$eval('[data-block="t-dg"]', e => e.open)) throw new Error('input table not folded by default');
   // Every column heading explains its field with an example; so does every cell
@@ -120,9 +137,11 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   await page.waitForSelector('#rules-msg .msg.ok');
   if ((await page.$eval('nav', e => getComputedStyle(e).position)) !== 'sticky') throw new Error('left nav does not stay in view');
 
-  await page.click('#rules-next');                       // Next goes to the next sub-page, not to Review
+  if (!(await page.innerText('#rules-next')).includes('3. Review')) throw new Error('the last rules page does not lead to Review');
+  await navTo('rules-safes');
   await page.waitForSelector('text=Safe from access groups');
-  if (!(await page.innerText('h2')).includes('B. Permissions: Safes')) throw new Error('Next did not open B. Safes');
+  if (!(await page.innerText('h2')).includes('A. Safes')) throw new Error('A. Safes did not open');
+  if (!(await page.isDisabled('#save'))) throw new Error('Save & apply enabled with nothing changed');
   if (await page.inputValue('#fallback') !== 'convention') throw new Error('folder naming is not the default');
   rows = await addRow('t-gr');
   await (await rows[rows.length - 1].$('[data-k=group]')).fill('CORP\\DBA-Team');
@@ -137,7 +156,9 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   if (!(await page.getAttribute('#s-cpm', 'title'))) throw new Error('no tooltip on the CPM field');
   await page.waitForSelector('#conv-folders input[data-folder]', { state: 'attached' });
   console.log('FOLDER CODES:', (await page.$$('#conv-folders input[data-folder]')).length);
-  // Placeholders start folded: the whole section, and each placeholder inside it
+  // Codes start folded; so do the placeholders section and each placeholder inside it
+  if (await page.$eval('[data-block="codes"]', e => e.open)) throw new Error('codes not folded by default');
+  await openBlock('codes');
   if (await page.$eval('[data-block="layers-all"]', e => e.open)) throw new Error('placeholders not folded by default');
   console.log('PLACEHOLDERS:', await page.innerText('#layers-sum'));
   await openBlock('layers-all');
@@ -163,7 +184,9 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   await page.waitForSelector('#rules-msg .msg.ok');
   console.log('SAFES RULES:', await page.innerText('#rules-msg'));
 
-  await page.click('nav >> text=B. Permissions: Safe members');
+  await page.click('#rules-next');                       // Next goes to the next sub-page
+  await page.waitForSelector('#roles table', { state: 'attached' });
+  if (!(await page.innerText('h2')).includes('B. Safe members')) throw new Error('Next did not open B. Safe members');
   await page.waitForSelector('#roles table', { state: 'attached' });
   await page.selectOption('#role-from', 'Read only');
   await page.click('#role-add');
@@ -178,20 +201,20 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   await page.click('#save');
   await page.waitForSelector('#rules-msg .msg.ok');
 
-  await page.click('nav >> text=C. Platforms');
+  await navTo('rules-platforms');
   await page.waitForSelector('#t-pm', { state: 'attached' });
   if (!(await page.$('.explain >> text=How a platform is chosen'))) throw new Error('platforms page does not explain rules vs record type');
   // unsaved changes: leaving asks first, and Cancel stays on the page
   await page.fill('#defplat', 'WinServerLocal');
   DISMISS = true;
-  await page.click('nav >> text=D. Accounts');
+  await navTo('rules-accounts');
   if (!/not saved/.test(DIALOGS[DIALOGS.length - 1] || '')) throw new Error('no unsaved-changes warning when leaving a page');
   if (!(await page.innerText('h2')).includes('C. Platforms')) throw new Error('Cancel on the unsaved warning still left the page');
   await page.fill('#defplat', '');
   await shot(page, '02e_platforms');
   await page.click('#save');
   await page.waitForSelector('#rules-msg .msg.ok');
-  await page.click('nav >> text=D. Accounts');
+  await navTo('rules-accounts');
   await page.waitForSelector('#an-t');
   await page.check('input[name=an-mode][value=none]');
   if (!(await page.isDisabled('#an-t'))) throw new Error('name pattern still editable with names left to Privilege Cloud');
@@ -201,7 +224,7 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   await page.waitForSelector('#rules-msg .msg.ok');
 
   // 3B. Accounts & platforms
-  await page.click('nav >> text=B. Accounts & platforms');
+  await navTo('review');
   await page.waitForSelector('#list table');
   await page.selectOption('#view', 'all');
   await page.waitForTimeout(500);
@@ -228,7 +251,8 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   await page.selectOption('#view', 'errors');
   await page.waitForTimeout(800);
   console.log('ERRORS:', await page.innerText('#list p'));
-  await page.check('#allmatch');
+  if (await page.isVisible('#acts')) throw new Error('actions shown with nothing ticked');
+  await page.click('#allmatch-link');
   await page.click('[data-act=exclude]');
   await page.waitForSelector('#act-msg .msg.ok');
   console.log('EXCLUDE:', await page.innerText('#act-msg'));
@@ -237,6 +261,7 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   await page.fill('#f-search', 'svc_backup');
   await page.waitForTimeout(800);
   await page.check('.sel >> nth=0');
+  if (!(await page.isVisible('[data-act=noname]'))) await page.click('#acts details > summary');
   await page.click('[data-act=noname]');
   await page.waitForSelector('#act-msg .msg.ok');
   await page.waitForSelector('#list >> text=(named by Privilege Cloud)');
@@ -269,14 +294,14 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   await page.fill('#f-search', '');
 
   // 3A. Safes & Safe members: add one member to two Safes, then undo one of them
-  await page.click('nav >> text=A. Safes & Safe members');
+  await navTo('review-safes');
   await page.waitForSelector('text=Members (');
   // clicking a Safe shows its members (in a panel on this page), not its accounts
   {
     const first = await page.$('[data-members-of="UNIX-Servers"]');
     await first.click();
     await page.waitForSelector('#drawer:not(.hidden) >> text=Safe UNIX-Servers');
-    if (!(await page.innerText('h2')).includes('Safes & Safe members')) throw new Error('Safe click left the page');
+    if (!(await page.innerText('h2')).includes('Safes & members')) throw new Error('Safe click left the page');
     const n = (await page.$$('#drawer [data-open-person]')).length;
     console.log('SAFE CLICK: UNIX-Servers has', n, 'members');
     if (n < 2) throw new Error('Safe panel does not list its members');
@@ -293,10 +318,11 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
     await page.fill('#pe-dir', '');
     await page.click('#pe-save');
     await page.waitForSelector('#panel-msg .msg.ok');
-    await page.waitForSelector('#people-table >> text=PAM-Unix-Admins');
+    await page.waitForSelector('#people-table >> text=PAM-Unix-Admins', { state: 'attached' });
     await shot(page, '05_member_panel');
     await page.click('#panel-close');
     // every member in the list is clickable, including members on no Safe
+    await page.click('[data-tab=members]');
     const rowsAll = (await page.$$('#people-table tr[data-person]')).length;
     await page.check('#p-nosafe');
     const noSafe = (await page.$$('#people-table tr[data-person]:not(.hidden)')).length;
@@ -307,9 +333,11 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
       await page.click('#panel-close');
     }
     await page.uncheck('#p-nosafe');
+    await page.click('[data-tab=safes]');
   }
   if ((await page.$$eval('#m-type option', os => os.map(o => o.value))).join() !== 'Group,User,Role') throw new Error('member types are not Group, User, Role');
   if (await page.inputValue('#m-dir') !== '') throw new Error('searchIn not blank by default');
+  if (await page.isVisible('#s-acts')) throw new Error('member actions shown with no Safe ticked');
   const ticks = await page.$$('.s-sel');
   await ticks[0].check(); await ticks[1].check();
   await page.fill('#m-name', 'PAM-Auditors');
@@ -320,17 +348,19 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   console.log('ADD MEMBER:', await page.innerText('#m-msg'));
   await page.waitForSelector('text=Your member changes (4)');
   await shot(page, '05_safes_bulk');
+  await page.click('#member-edits > summary');
   await page.click('[data-undo="0"]');
   await page.waitForSelector('text=Your member changes (3)');
   const safesHtml = await page.content();
   if (!safesHtml.includes('Helpdesk')) throw new Error('custom role not used for any member');
   if (!safesHtml.includes('PasswordManager') || !safesHtml.includes('10 versions')) throw new Error('Safe settings missing');
-  if (!safesHtml.includes('Corporate AD')) throw new Error('directory source not used');
+  if (!safesHtml.includes('corp.example.com')) throw new Error('directory source (searchIn) not used');
   await shot(page, '05_safes');
 
   // 5. Output
-  await page.click('nav >> text=Create upload files');
+  await navTo('output');
   await page.waitForSelector('#extract');
+  if (!/^\d{4}-\d{2}-\d{2}-all-dryrun/.test(await page.inputValue('#o-name'))) throw new Error('no ready-made output name');
   await page.check('input[name=sec][value="1"]');
   await page.fill('#o-name', 'wave1');
   await page.click('#extract');
@@ -345,33 +375,30 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   if (!extractMsg.includes('FileCategories.csv') || !extractMsg.includes('PlatformProperties.csv')) throw new Error('category lists missing');
   await shot(page, '06_output');
 
-  // Overview keeps the loaded files; the count tiles live on 3C. Finalize and open their lists
-  await page.click('nav >> text=Overview');
-  await page.waitForSelector('text=Loaded files');
-  if (!(await page.content()).includes('same content')) throw new Error('repeated load not marked');
-  if (await page.$('.stat')) throw new Error('count tiles still on the Overview');
+  // Overview: steps with what to do next, and the count tiles that open their lists; loaded files are on the Load page
+  await navTo('overview');
+  await page.waitForSelector('text=Steps');
   if (!(await page.$('.security-notice'))) throw new Error('security notice missing from the Overview');
+  if (await page.$eval('.security-notice', e => e.open)) throw new Error('security notice not folded on the Overview');
   await shot(page, '07_overview');
-  await page.click('nav >> text=C. Finalize');
-  await page.waitForSelector('text=records loaded');
-  if (!(await page.isVisible('.floatbar >> text=Next: 4. Create upload files'))) throw new Error('Finalize has no floating Next');
-  await page.waitForTimeout(200);
-  if (await page.isVisible('#more-below')) throw new Error('down arrow shown on a page with nothing below');
-  await shot(page, '07_finalize');
   await page.click('.stat[data-view=errors]');
   await page.waitForSelector('#list table');
   if (await page.inputValue('#view') !== 'errors') throw new Error('errors box did not open the errors list');
-  await page.click('nav >> text=C. Finalize');
-  await page.waitForSelector('text=records loaded');
+  if (!(await page.isVisible('.floatbar >> text=Next: 4. Create upload files'))) throw new Error('Accounts page has no floating Next');
+  await navTo('output');
+  await page.waitForSelector('text=Ready check');
   await page.click('.stat[data-view=review]');
   await page.waitForSelector('#list');
   if (await page.inputValue('#view') !== 'review') throw new Error('review box did not open the review list');
-  await page.click('nav >> text=C. Finalize');
   await page.click('.floatbar >> text=Next: 4. Create upload files');
   await page.waitForSelector('#main h2 >> text=4. Create upload files');
+  await navTo('load');
+  await page.waitForSelector('#loaded-files');
+  if (!(await page.content()).includes('same content')) throw new Error('repeated load not marked');
+  await shot(page, '01_load_after');
 
   // Save & apply / Next float at the bottom of the window; the down arrow shows only while there is more below
-  await page.click('nav >> text=B. Permissions: Safes');
+  await navTo('rules-safes');
   await page.waitForSelector('.floatbar #save');
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(200);
@@ -388,7 +415,7 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   }
 
   // Rename one Safe and change its settings directly; Undo puts back the rules' values
-  await page.click('nav >> text=A. Safes & Safe members');
+  await navTo('review-safes');
   await page.waitForSelector('#safes-table');
   const firstSafe = await page.$eval('#safes-table [data-members-of]', a => a.dataset.membersOf);
   await page.click(`#safes-table [data-members-of="${firstSafe}"]`);
@@ -411,9 +438,10 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   if (await page.$('text=Your Safe changes')) throw new Error('Safe change not undone');
 
   // Activity log
-  await page.click('nav >> text=Activity log');
+  await navTo('activity');
   await page.waitForSelector('text=Your changes to accounts');
-  await page.waitForSelector('text=By action');
+  await page.waitForSelector('text=Latest entries');
+  if (!(await page.innerText('#main')).includes('Loaded keepass_export.xml')) throw new Error('log entries not written as sentences');
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('text=Export the activity log (CSV)')]);
   const csv = fs.readFileSync(await download.path(), 'utf8');
   if (!csv.includes('action') || !csv.includes('ingest')) throw new Error('activity export is empty');

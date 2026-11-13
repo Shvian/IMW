@@ -203,8 +203,9 @@ class FrontendCsp(unittest.TestCase):
     def test_security_notice_on_overview(self):
         from imw.ui import server
         js = (server.STATIC / "app.js").read_text()
-        self.assertIn("SECURITY_NOTICE", js)
-        self.assertEqual(js.count("${SECURITY_NOTICE}"), 2)          # welcome page and overview
+        self.assertIn("const securityNotice", js)
+        self.assertIn("${securityNotice(true)}", js)                 # welcome page: open
+        self.assertIn("${securityNotice(false)}", js)                # overview: folded
 
 
 if __name__ == "__main__":
