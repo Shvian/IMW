@@ -265,7 +265,7 @@ async function refresh() {
     : "No data loaded yet";
 }
 function go(page) {
-  PAGE = page; onTableCount = null;
+  PAGE = page; onTableCount = null; if (typeof SAFES !== "undefined") SAFES.panel = null;
   document.querySelectorAll("#nav button").forEach(b => b.classList.toggle("active",
     b.dataset.group ? page.startsWith(b.dataset.group) : b.dataset.page === page));
   closeDrawer();
@@ -298,8 +298,8 @@ $("#pw-toggle").onclick = () => {
 $("#login-pw").addEventListener("input", () => $("#signin").classList.remove("error"));
 $("#login-form").onsubmit = async (e) => {
   e.preventDefault();
-  const go = $("#login-go");
-  go.disabled = true; go.innerHTML = '<span class="spinner"></span><span>Checking…</span>';
+  const btn = $("#login-go");   // not "go": that would hide go(), and the page would stay blank
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span><span>Checking…</span>';
   try {
     await api("/api/unlock", { password: $("#login-pw").value });
     $("#login-pw").value = ""; $("#login-msg").innerHTML = ""; $("#signin").classList.remove("error");
@@ -309,7 +309,7 @@ $("#login-form").onsubmit = async (e) => {
   } catch (err) {
     $("#login-msg").innerHTML = `<span>⚠</span><span>${esc(err.message)}</span>`;
     $("#signin").classList.add("error"); $("#login-pw").select();
-  } finally { go.disabled = false; go.innerHTML = "<span>Unlock</span>"; }
+  } finally { btn.disabled = false; btn.innerHTML = "<span>Unlock</span>"; }
 };
 $("#lock").onclick = async () => { await api("/api/lock", {}).catch(() => {}); showLogin("Session locked."); };
 $("#logout").onclick = () => {
@@ -1204,16 +1204,22 @@ PAGES["review-safes"] = async () => {
   await refresh();
   if (!STATE.has_db) return msg($("#main"), "warn", "Load some exports first (step 1).");
   const d = await api("/api/safes");
+  SAFES.data = d;
   const names = new Set(d.safes.map(s => s.safe_name));
   SAFES.selected = new Set([...SAFES.selected].filter(n => names.has(n)));
   SAFES.members.clear();
-  const editsHtml = d.member_edits.length ? `<div class="card"><h3>Your member changes (${d.member_edits.length})</h3>
+  const changed = d.people.filter(p => p.edited);
+  const editsHtml = d.member_edits.length || changed.length ? `<div class="card"><h3>Your member changes (${d.member_edits.length + changed.length})</h3>
       <p class="muted small">These are kept when the rules or exports change. Undo puts back what the rules give.</p>
       <div class="tablewrap" style="max-height:30vh"><table class="small"><tr><th>Safe</th><th>Member</th><th>Change</th><th>searchIn</th><th>Type</th><th>Role</th><th>When / who</th><th>Reason</th><th></th></tr>
       ${d.member_edits.map((e, i) => `<tr><td>${esc(e.safe_name)}</td><td>${esc(e.member_name)}</td><td>${e.action === "add" ? '<span class="pill OK">added</span>' : '<span class="pill REVIEW">removed</span>'}</td>
         <td>${esc(e.action === "add" ? e.search_in || "(all)" : "")}</td><td>${esc(e.action === "add" ? e.member_type : "")}</td><td>${esc(e.action === "add" ? e.role : "")}</td>
         <td>${esc(e.changed_utc)}<br>${esc(e.changed_by)}</td><td>${esc(e.reason)}</td>
-        <td><button class="btn small" data-undo="${i}">Undo</button></td></tr>`).join("")}</table></div></div>` : "";
+        <td><button class="btn small" data-undo="${i}">Undo</button></td></tr>`).join("")}
+      ${changed.map(p => `<tr><td class="muted">(every Safe)</td><td>${esc(p.source_member)}</td><td><span class="pill REVIEW">edited</span></td>
+        <td>${esc(p.search_in || "(all)")}</td><td>${esc(p.member_type)}</td><td class="muted">name: ${esc(p.member_name)}</td>
+        <td>${esc(p.override.changed_utc)}<br>${esc(p.override.changed_by)}</td><td>${esc(p.override.reason || "")}</td>
+        <td><button class="btn small" data-undo-person="${esc(p.key)}">Undo</button></td></tr>`).join("")}</table></div></div>` : "";
   $("#main").innerHTML = `<h2>3. Review &amp; change · A. Safes &amp; Safe members</h2>
     <p class="lead">The Safes the upload will create and who gets access. Tick Safes to add a member to all of them at once, or to remove one. To change how Safes are named or who gets access everywhere, adjust the rules in step 2
       (<a href="#" onclick="go('rules-safes');return false">Safes</a>, <a href="#" onclick="go('rules-members');return false">Safe members</a>, <a href="#" onclick="go('rules-dir');return false">directory sources</a>).</p>
@@ -1223,10 +1229,10 @@ PAGES["review-safes"] = async () => {
         <span class="muted small" id="s-count"></span></div>
       <div class="tablewrap"><table id="safes-table"><tr><th></th><th>Safe</th><th>Length</th><th>Name OK?</th><th>Original name(s)</th><th>Why changed</th><th>Chosen by</th><th>CPM</th><th>Description</th><th>Keeps</th><th>Accounts</th><th>To upload</th></tr>
       ${d.safes.map(s => `<tr data-name="${esc(s.safe_name.toLowerCase())}"><td><input type="checkbox" class="s-sel" value="${esc(s.safe_name)}" ${SAFES.selected.has(s.safe_name) ? "checked" : ""}></td>
-        <td><a href="#" data-members-of="${esc(s.safe_name)}" title="Show this Safe's members below">${esc(s.safe_name)}</a></td><td>${s.length}</td><td>${s.valid_safe_name === "TRUE" ? "✓" : '<span class="pill REVIEW">renamed</span>'}</td>
+        <td><a href="#" data-members-of="${esc(s.safe_name)}" title="Show this Safe's members">${esc(s.safe_name)}</a></td><td>${s.length}</td><td>${s.valid_safe_name === "TRUE" ? "✓" : '<span class="pill REVIEW">renamed</span>'}</td>
         <td class="small">${esc(s.proposed_names)}</td><td class="small">${esc(s.issues)}</td><td class="small">${esc(s.mapping_sources)}</td>
         <td class="small">${esc(s.managing_cpm || "")}</td><td class="small">${esc(s.description || "")}</td><td class="small">${esc(s.retention || "")}</td><td><a href="#" data-safe="${esc(s.safe_name)}" title="Show this Safe's accounts in B. Accounts &amp; platforms">${s.accounts}</a></td><td>${s.accounts_to_upload}</td></tr>`).join("")}</table></div>
-      <p class="muted small">Click a Safe's name to see its members below; click its Accounts number to see its accounts.</p>
+      <p class="muted small">Click a Safe's name to see and change its members; click its Accounts number to see its accounts.</p>
       <div class="actionbar"><div class="row"><b id="s-selinfo"></b><input type="text" id="m-reason" placeholder="Reason (optional, kept in the log)" size="30"></div>
         <div class="bulk" style="margin-top:8px">
           <div><h4>Add a member to the ticked Safes</h4>
@@ -1243,13 +1249,17 @@ PAGES["review-safes"] = async () => {
       <datalist id="dl-members">${d.known_members.map(m => `<option value="${esc(m)}">`).join("")}</datalist>
       <datalist id="dl-dirs">${d.directories.map(m => `<option value="${esc(m)}">`).join("")}</datalist></div>
     ${editsHtml}
-    <div class="card" id="members-card"><h3>Members <span id="m-title">(${d.members.length})</span></h3>
-      <div class="row" style="margin-bottom:8px"><span id="m-showing" class="hidden"><b id="m-showing-txt"></b> <button class="btn small" id="m-showall">Show all members</button></span>
-        <button class="btn small danger" id="m-remove-ticked">Remove the ticked members</button><span class="muted small">from the Safe on their row</span></div>
-      <div class="tablewrap"><table id="members-table"><tr><th><input type="checkbox" id="m-selall" title="Tick every member shown"></th><th>Safe</th><th>Member</th><th>searchIn</th><th>Type</th><th>Directory source</th><th>In the export</th><th>Source permission</th><th>Role</th><th>Accounts</th><th>Notes</th></tr>
-      ${d.members.map((m, i) => `<tr data-safe-l="${esc(m.safe_name.toLowerCase())}"><td><input type="checkbox" class="m-sel" data-i="${i}"></td><td>${esc(m.safe_name)}</td><td>${esc(m.member_name)}</td><td>${m.search_in ? esc(m.search_in) : '<span class="muted">(all)</span>'}</td><td>${esc(m.member_type)}</td>
-        <td class="small">${esc(m.directory_source || "default")}</td><td class="small">${esc(m.source_member)}</td><td>${esc(m.source_permission)}</td>
-        <td>${m.role === "UNMAPPED" ? '<span class="pill ERROR">no role</span>' : esc(m.role)}</td><td>${m.accounts}</td><td class="notes">${esc(m.notes)}</td></tr>`).join("")}</table></div></div>`;
+    <div class="card" id="members-card"><h3>Members (${d.people.length})</h3>
+      <p class="muted small">Every user, group and role: those on a Safe, and those in your export whose accounts are not being uploaded.
+        Click a member to see its Safes, change its role on each Safe, or change its name, type or searchIn.</p>
+      <div class="row" style="margin-bottom:8px"><input type="search" id="p-filter" placeholder="Show members containing…" size="28" value="${esc(SAFES.pfilter || "")}">
+        <label class="inline"><input type="checkbox" id="p-nosafe" ${SAFES.nosafe ? "checked" : ""}> only members on no Safe</label><span class="muted small" id="p-count"></span></div>
+      <div class="tablewrap"><table id="people-table"><tr><th>Member</th><th>Type</th><th>searchIn</th><th>Safes</th><th>In the export as</th><th>Directory source</th><th>Export accounts</th></tr>
+      ${d.people.map((m, i) => `<tr class="clickable" data-person="${i}" data-name="${esc((m.member_name + " " + m.source_member).toLowerCase())}" data-nosafe="${m.safes.length ? "" : 1}">
+        <td><a href="#" data-person-link="${i}">${esc(m.member_name)}</a>${m.edited ? ' <span class="pill REVIEW">edited</span>' : ""}</td><td>${esc(m.member_type)}</td>
+        <td>${m.search_in ? esc(m.search_in) : '<span class="muted">(all)</span>'}</td>
+        <td>${m.safes.length ? m.safes.length : '<span class="pill REVIEW">no Safe</span>'}</td>
+        <td class="small">${esc(m.source_member || "")}</td><td class="small">${esc(m.directory_source || "default")}</td><td>${m.export_accounts || ""}</td></tr>`).join("")}</table></div></div>`;
   const showInfo = () => { $("#s-selinfo").textContent = `${SAFES.selected.size} of ${d.safes.length} Safes ticked`; };
   const applyFilter = () => {
     const f = SAFES.filter.toLowerCase(); let n = 0;
@@ -1284,36 +1294,117 @@ PAGES["review-safes"] = async () => {
     if (!confirm(`Remove ${name} from ${SAFES.selected.size} Safes?`)) return;
     send({ action: "remove", member_name: name, safes: [...SAFES.selected] }, n => `${name} removed from ${n} Safes.`);
   };
-  $("#m-selall").onchange = () => document.querySelectorAll("#members-table tr:not(.hidden) .m-sel").forEach(cb => { cb.checked = $("#m-selall").checked; });
-  // Clicking a Safe's name shows only its members, here on this page.
-  const showMembersOf = (safe) => {
-    SAFES.membersOf = safe || "";
-    const f = SAFES.membersOf.toLowerCase(); let n = 0;
-    document.querySelectorAll("#members-table tr[data-safe-l]").forEach(tr => {
-      const hit = !f || tr.dataset.safeL === f; tr.classList.toggle("hidden", !hit); n += hit;
-      if (!hit) { const cb = $(".m-sel", tr); if (cb) cb.checked = false; } });
-    document.querySelectorAll("#safes-table tr[data-name]").forEach(tr => tr.classList.toggle("current", !!f && tr.dataset.name === f));
-    $("#m-showing").classList.toggle("hidden", !f);
-    $("#m-showing-txt").textContent = f ? `${n} ${n === 1 ? "member" : "members"} of ${safe}` : "";
-    $("#m-title").textContent = f ? `of ${safe} (${n})` : `(${d.members.length})`;
-    return n;
+  // Members list: filter, and click a member or a Safe to open its panel on the right
+  const pFilter = () => {
+    const f = (SAFES.pfilter || "").toLowerCase(); let n = 0;
+    document.querySelectorAll("#people-table tr[data-person]").forEach(tr => {
+      const hit = (!f || tr.dataset.name.includes(f)) && (!SAFES.nosafe || tr.dataset.nosafe); tr.classList.toggle("hidden", !hit); n += hit; });
+    $("#p-count").textContent = f || SAFES.nosafe ? `${n} shown` : "";
   };
-  $("#m-showall").onclick = () => showMembersOf("");
-  document.querySelectorAll("[data-members-of]").forEach(a => a.onclick = (e) => {
-    e.preventDefault(); showMembersOf(a.dataset.membersOf); $("#members-card").scrollIntoView({ behavior: "smooth", block: "start" }); });
-  if (SAFES.membersOf && d.safes.some(x => x.safe_name === SAFES.membersOf)) showMembersOf(SAFES.membersOf);
-  $("#m-remove-ticked").onclick = () => {
-    const pairs = [...document.querySelectorAll(".m-sel:checked")].map(cb => d.members[cb.dataset.i]).map(m => [m.safe_name, m.member_name]);
-    if (!pairs.length) return msg($("#m-msg"), "err", "Tick some members in the table first.");
-    if (!confirm(`Remove ${pairs.length} members from their Safes?`)) return;
-    send({ action: "remove", pairs }, n => `${n} members removed.`);
-  };
+  $("#p-filter").oninput = () => { SAFES.pfilter = $("#p-filter").value; pFilter(); };
+  $("#p-nosafe").onchange = () => { SAFES.nosafe = $("#p-nosafe").checked; pFilter(); };
+  pFilter();
+  document.querySelectorAll("#people-table tr[data-person]").forEach(tr => tr.onclick = (e) => { e.preventDefault(); showPerson(d, d.people[tr.dataset.person]); });
+  document.querySelectorAll("[data-members-of]").forEach(a => a.onclick = (e) => { e.preventDefault(); showSafe(d, a.dataset.membersOf); });
+  document.querySelectorAll("[data-undo-person]").forEach(b => b.onclick = async () => {
+    try { await api("/api/members/change", { key: b.dataset.undoPerson, undo: true }); await PAGES["review-safes"](); msg($("#m-msg"), "ok", "Member change undone."); }
+    catch (e) { msg($("#m-msg"), "err", e.message); }
+  });
+  if (SAFES.panel && SAFES.panel.kind === "safe" && d.safes.some(x => x.safe_name === SAFES.panel.id)) showSafe(d, SAFES.panel.id);
+  if (SAFES.panel && SAFES.panel.kind === "person") { const p = d.people.find(x => x.key === SAFES.panel.id); if (p) showPerson(d, p); }
   document.querySelectorAll("[data-undo]").forEach(b => b.onclick = () => {
     const e = d.member_edits[b.dataset.undo];
     send({ action: "undo", pairs: [[e.safe_name, e.member_name]] }, () => `Undone: ${e.member_name} on ${e.safe_name}.`);
   });
   document.querySelectorAll("[data-safe]").forEach(a => a.onclick = (e) => { e.preventDefault(); REVIEW.view = "all"; REVIEW.filters = { safe: a.dataset.safe }; REVIEW.page = 0; go("review"); });
 };
+
+/* Side panels on the Safes & Safe members page: one Safe with its members, one member with its Safes. */
+const roleSelect = (d, value, attrs) => `<select ${attrs}>${d.roles.concat(d.roles.includes(value) || !value ? [] : [value])
+  .map(r => `<option ${r === value ? "selected" : ""}>${esc(r)}</option>`).join("")}</select>`;
+async function memberEdit(body, again) {
+  try {
+    await api("/api/members/edit", body);
+    await PAGES["review-safes"]();
+    again();
+    msg($("#panel-msg"), "ok", "Saved. Rules re-applied.");
+  } catch (e) { msg($("#panel-msg") || $("#m-msg"), "err", e.message); }
+}
+function showSafe(d, safe) {
+  SAFES.panel = { kind: "safe", id: safe };
+  const s = d.safes.find(x => x.safe_name === safe) || {};
+  const people = d.people.filter(p => p.safes.some(x => x.safe_name === safe));
+  document.querySelectorAll("#safes-table tr[data-name]").forEach(tr => tr.classList.toggle("current", tr.dataset.name === safe.toLowerCase()));
+  $("#drawer").innerHTML = `<div class="row"><h3 style="margin:0;flex:1">Safe ${esc(safe)}</h3><button class="btn" id="panel-close">Close</button></div>
+    <p class="muted small">${s.accounts_to_upload ?? 0} accounts to upload${s.description ? " · " + esc(s.description) : ""}. Change a member's role here, or click a member to see all its Safes.</p>
+    <h4>Members (${people.length})</h4>
+    ${people.length ? `<table class="small"><tr><th>Member</th><th>Type</th><th>Role</th><th></th></tr>
+      ${people.map((p, i) => { const m = p.safes.find(x => x.safe_name === safe);
+        return `<tr><td><a href="#" data-open-person="${esc(p.key)}">${esc(p.member_name)}</a><div class="muted">${esc(p.search_in || "searchIn: all")}</div></td><td>${esc(p.member_type)}</td>
+          <td>${roleSelect(d, m.role, `class="pr-role" data-key="${esc(p.source_member || p.member_name)}" title="Role this member gets on this Safe"`)}</td>
+          <td><button class="btn small danger" data-remove="${esc(p.source_member || p.member_name)}" title="Take this member off this Safe">Remove</button></td></tr>`; }).join("")}</table>`
+      : '<p class="muted">No members. Add one with the form under the Safes list (tick this Safe first).</p>'}
+    <p><a href="#" id="panel-accounts">Show this Safe's accounts ›</a></p><div id="panel-msg"></div>`;
+  $("#drawer").classList.remove("hidden");
+  $("#panel-close").onclick = () => { SAFES.panel = null; closeDrawer(); };
+  $("#panel-accounts").onclick = (e) => { e.preventDefault(); REVIEW.view = "all"; REVIEW.filters = { safe }; REVIEW.page = 0; go("review"); };
+  const again = () => showSafe(SAFES.data, safe);
+  document.querySelectorAll("#drawer [data-open-person]").forEach(a => a.onclick = (e) => { e.preventDefault(); showPerson(d, d.people.find(p => p.key === a.dataset.openPerson)); });
+  document.querySelectorAll("#drawer .pr-role").forEach(sel => sel.onchange = () =>
+    memberEdit({ action: "add", pairs: [[safe, sel.dataset.key]], role: sel.value }, again));
+  document.querySelectorAll("#drawer [data-remove]").forEach(b => b.onclick = () => {
+    if (confirm(`Remove this member from ${safe}?`)) memberEdit({ action: "remove", pairs: [[safe, b.dataset.remove]] }, again); });
+}
+function showPerson(d, p) {
+  if (!p) return;
+  SAFES.panel = { kind: "person", id: p.key };
+  document.querySelectorAll("#safes-table tr.current").forEach(tr => tr.classList.remove("current"));
+  const others = d.safes.map(s => s.safe_name).filter(n => !p.safes.some(x => x.safe_name === n));
+  $("#drawer").innerHTML = `<div class="row"><h3 style="margin:0;flex:1">${esc(p.member_name)}</h3><button class="btn" id="panel-close">Close</button></div>
+    <p class="muted small">${p.source_member && p.source_member !== p.member_name ? `In the export as <b>${esc(p.source_member)}</b>. ` : ""}Named by: ${esc(p.directory_source || "default")}.
+      ${p.export_accounts ? `Has access to ${p.export_accounts} accounts in the export.` : ""}</p>
+    <h4>How Privilege Cloud finds this member</h4>
+    <div class="bulk"><div>
+      <label>memberName <input type="text" id="pe-name" value="${esc(p.member_name)}" data-check="member" title="The member's name exactly as Privilege Cloud will search for it, e.g. PAM-Auditors or jdoe@corp.example.com."></label>
+      <div class="row"><label style="flex:1">memberType <select id="pe-type" title="User = one person's account; Group = a directory or Privilege Cloud group; Role = an Identity role.">${MEMBER_TYPES.map(t => `<option ${t === p.member_type ? "selected" : ""}>${t}</option>`).join("")}</select></label>
+        <label style="flex:2">searchIn (optional) <input type="text" id="pe-dir" list="dl-dirs" value="${esc(p.search_in || "")}" placeholder="empty = all directories"
+          title="Leave empty so Privilege Cloud searches every directory. Fill it only if the name exists in more than one directory: the directory's ID (GUID) from Identity, or Vault."></label></div>
+      <label>Reason (optional) <input type="text" id="pe-reason" placeholder="kept in the activity log"></label>
+      <div class="row"><button class="btn primary" id="pe-save">Save for every Safe</button>${p.edited ? '<button class="btn" id="pe-undo">Undo my changes</button>' : ""}</div>
+      <p class="muted small">Your change replaces what the directory source rules give, on every Safe, and is kept when rules or exports change.</p></div></div>
+    <h4>Safes (${p.safes.length})</h4>
+    ${p.safes.length ? `<table class="small"><tr><th>Safe</th><th>Role</th><th>In the export</th><th></th></tr>
+      ${p.safes.map(x => `<tr><td><a href="#" data-open-safe="${esc(x.safe_name)}">${esc(x.safe_name)}</a></td>
+        <td>${roleSelect(d, x.role, `class="ps-role" data-safe="${esc(x.safe_name)}" title="Role this member gets on this Safe"`)}</td>
+        <td class="small">${esc(x.source_permission || "")}</td>
+        <td><button class="btn small danger" data-remove-from="${esc(x.safe_name)}" title="Take this member off this Safe">Remove</button></td></tr>`).join("")}</table>`
+      : `<p class="muted">On no Safe. ${p.export_accounts ? "Its accounts in the export are not being uploaded (left out, or errors), or another rule removed it." : ""}</p>`}
+    ${others.length ? `<h4>Add to a Safe</h4><div class="row"><select id="pa-safe" title="Safe to add this member to">${others.map(n => `<option>${esc(n)}</option>`).join("")}</select>
+      ${roleSelect(d, d.roles[0], 'id="pa-role" title="Role on that Safe"')}<button class="btn" id="pa-add">Add</button></div>` : ""}
+    <div id="panel-msg"></div>`;
+  $("#drawer").classList.remove("hidden");
+  $("#panel-close").onclick = () => { SAFES.panel = null; closeDrawer(); };
+  const again = () => { const q = SAFES.data.people.find(x => x.key === p.key); if (q) showPerson(SAFES.data, q); };
+  $("#pe-save").onclick = async () => {
+    const name = $("#pe-name").value.trim();
+    if (!name) return msg($("#panel-msg"), "err", "The member name can't be empty.");
+    try {
+      await api("/api/members/change", { key: p.key, member_name: name, member_type: $("#pe-type").value, search_in: $("#pe-dir").value.trim(), reason: $("#pe-reason").value });
+      await PAGES["review-safes"](); again(); msg($("#panel-msg"), "ok", "Saved for every Safe. Rules re-applied.");
+    } catch (e) { msg($("#panel-msg"), "err", e.message); }
+  };
+  if ($("#pe-undo")) $("#pe-undo").onclick = async () => {
+    try { await api("/api/members/change", { key: p.key, undo: true }); await PAGES["review-safes"](); again(); msg($("#panel-msg"), "ok", "Back to what the rules give."); }
+    catch (e) { msg($("#panel-msg"), "err", e.message); }
+  };
+  document.querySelectorAll("#drawer [data-open-safe]").forEach(a => a.onclick = (e) => { e.preventDefault(); showSafe(d, a.dataset.openSafe); });
+  document.querySelectorAll("#drawer .ps-role").forEach(sel => sel.onchange = () =>
+    memberEdit({ action: "add", pairs: [[sel.dataset.safe, p.source_member || p.member_name]], role: sel.value }, again));
+  document.querySelectorAll("#drawer [data-remove-from]").forEach(b => b.onclick = () => {
+    if (confirm(`Remove ${p.member_name} from ${b.dataset.removeFrom}?`)) memberEdit({ action: "remove", pairs: [[b.dataset.removeFrom, p.source_member || p.member_name]] }, again); });
+  if ($("#pa-add")) $("#pa-add").onclick = () => memberEdit({ action: "add", pairs: [[$("#pa-safe").value, p.member_name]], role: $("#pa-role").value,
+    member_type: p.member_type, search_in: p.search_in || "" }, again);
+}
 
 /* ---------------- 4. Output ---------------- */
 PAGES.output = async () => {

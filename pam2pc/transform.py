@@ -368,6 +368,7 @@ class Plan:
     safes: "OrderedDict"
     members: "OrderedDict"
     member_edits: list = field(default_factory=list)
+    member_overrides: dict = field(default_factory=dict)
 
 
 def load_overrides(path, encoding="utf-8-sig"):
@@ -403,7 +404,7 @@ def _changed(edited, computed):
 def rebuild_totals(plan, cfg):
     """Recompute Safe and member totals after in_scope or migrate changed."""
     plan.safes = _safes(plan.accounts, cfg)
-    plan.members = _members(plan.accounts, cfg, plan.member_edits)
+    plan.members = _members(plan.accounts, cfg, plan.member_edits, plan.member_overrides)
     return plan
 
 
@@ -411,7 +412,8 @@ def _explicit_changed(edited, computed):
     return bool(edited) and edited.strip().lower() != (computed or "").strip().lower()
 
 
-def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_edits=None):
+def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_edits=None,
+               member_overrides=None):
     """explicit=True: overrides are deliberate edits (database), not a re-fed review file."""
     changed = _explicit_changed if explicit else _changed
     perms = perms or Permissions()
@@ -561,7 +563,8 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
                                   + ("; with no account name Privilege Cloud gives both the same "
                                      "name and rejects the second" if not x.account_name else ""))
 
-    return Plan(plans, _safes(plans, cfg), _members(plans, cfg, member_edits), list(member_edits or []))
+    return Plan(plans, _safes(plans, cfg), _members(plans, cfg, member_edits, member_overrides),
+                list(member_edits or []), dict(member_overrides or {}))
 
 
 def _unique_account_names(plans):
@@ -631,7 +634,9 @@ def safe_settings(name, info, cfg):
 
 
 def apply_member_edits(members, plans, edits):
-    """Your member changes on the Safes page: remove a member from a Safe, or add one."""
+    """Your member changes on the Safes page: remove a member from a Safe, or add one.
+    Adding a member that is already on the Safe changes its role (and its type or searchIn
+    when the change gives one) and keeps everything else."""
     if not edits:
         return members
     uploading = defaultdict(int)
@@ -642,8 +647,22 @@ def apply_member_edits(members, plans, edits):
             names[p.safe.lower()] = p.safe
     for e in edits:
         safe_l, name_l = e["safe_name"].lower(), e["member_name"].lower()
-        for key in [k for k, m in members.items() if k[0].lower() == safe_l and
-                    name_l in (m["member_name"].lower(), m["source_name"].lower())]:
+        found = [k for k, m in members.items() if k[0].lower() == safe_l and
+                 name_l in (m["member_name"].lower(), m["source_name"].lower())]
+        why = f": {e['reason']}" if e.get("reason") else ""
+        if e["action"] == "add" and found:
+            for key in found[1:]:
+                del members[key]
+            m = members[found[0]]
+            if e.get("role"):
+                m["role"] = e["role"]
+            if (e.get("member_type") or "").strip():
+                m["member_type"] = m["type"] = normalize_member_type(e["member_type"], m["member_type"])
+            if (e.get("search_in") or "").strip():
+                m["search_in"] = e["search_in"].strip()
+            m["notes"] = list(m.get("notes") or []) + ["role changed by you" + why]
+            continue
+        for key in found:
             del members[key]
         if e["action"] == "add" and safe_l in uploading:
             members[(names[safe_l], "edit:" + name_l)] = {
@@ -652,7 +671,37 @@ def apply_member_edits(members, plans, edits):
                 "permission": "(added by you)", "accounts": uploading[safe_l], "seen": set(),
                 "member_name": e["member_name"], "search_in": e.get("search_in") or "",
                 "directory_source": "added by you",
-                "notes": ["added by you" + (f": {e['reason']}" if e.get("reason") else "")]}
+                "notes": ["added by you" + why]}
+    return members
+
+
+def apply_member_override(m, ov):
+    """Your change to one member everywhere (its memberName, memberType or searchIn).
+    A None value keeps what the rules give; searchIn may be set to empty on purpose."""
+    if not ov:
+        return m
+    changed = []
+    if ov.get("member_name"):
+        m["member_name"] = ov["member_name"]
+        changed.append("name")
+    if ov.get("member_type"):
+        m["member_type"] = m["type"] = normalize_member_type(ov["member_type"], m.get("member_type") or "Group")
+        changed.append("type")
+    if ov.get("search_in") is not None:
+        m["search_in"] = ov["search_in"]
+        changed.append("searchIn")
+    if changed:
+        m["directory_source"] = "edited by you"
+        if "notes" in m:
+            m["notes"] = list(m["notes"]) + ["edited by you (" + ", ".join(changed) + ")"
+                                             + (f": {ov['reason']}" if ov.get("reason") else "")]
+    return m
+
+
+def apply_member_overrides(members, overrides):
+    if overrides:
+        for m in members.values():
+            apply_member_override(m, overrides.get(m["source_name"].lower()))
     return members
 
 
@@ -711,7 +760,7 @@ def _safes(plans, cfg=None):
     return safes
 
 
-def _members(plans, cfg, edits=None):
+def _members(plans, cfg, edits=None, overrides=None):
     """Strongest role per (Safe, member) over the accounts that migrate, then your member edits."""
     members = OrderedDict()
     for p in plans:
@@ -741,4 +790,5 @@ def _members(plans, cfg, edits=None):
         m["member_name"], m["search_in"], m["directory_source"] = member_target(
             m["source_name"], cfg, m["member_type"])
     apply_member_edits(members, plans, edits)
+    apply_member_overrides(members, overrides)
     return members

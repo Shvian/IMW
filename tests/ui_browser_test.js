@@ -44,7 +44,7 @@ const PASSWORD = process.env.PAM2PC_UI_TEST_PASSWORD || 'test-pass';
   await page.waitForSelector('#login-msg >> text=not right');
   await page.waitForTimeout(300); await shot(page, '00_login_error');
   await signIn(PASSWORD);
-  await page.waitForSelector('text=Welcome');
+  await page.waitForSelector('#main h2 >> text=Welcome');   // the Overview, not a blank page
   await shot(page, '00_welcome');
 
   // 1. Load (both permissions files ticked and merged)
@@ -238,19 +238,42 @@ const PASSWORD = process.env.PAM2PC_UI_TEST_PASSWORD || 'test-pass';
   // 3A. Safes & Safe members: add one member to two Safes, then undo one of them
   await page.click('nav >> text=A. Safes & Safe members');
   await page.waitForSelector('text=Members (');
-  // clicking a Safe shows its members here, not its accounts
+  // clicking a Safe shows its members (in a panel on this page), not its accounts
   {
-    const first = await page.$('[data-members-of]');
-    const safe = await first.getAttribute('data-members-of');
+    const first = await page.$('[data-members-of="UNIX-Servers"]');
     await first.click();
-    await page.waitForSelector('#m-showing:not(.hidden)');
-    const shown = await page.$$eval('#members-table tr[data-safe-l]:not(.hidden) td:nth-child(2)', tds => tds.map(t => t.textContent));
-    if (!shown.length || shown.some(t => t !== safe)) throw new Error('Safe click did not show only its members: ' + shown.join());
+    await page.waitForSelector('#drawer:not(.hidden) >> text=Safe UNIX-Servers');
     if (!(await page.innerText('h2')).includes('Safes & Safe members')) throw new Error('Safe click left the page');
-    console.log('SAFE CLICK:', await page.innerText('#m-showing-txt'));
-    await shot(page, '05_safe_members');
-    await page.click('#m-showall');
-    if (await page.$('#members-table tr.hidden')) throw new Error('Show all members did not show all');
+    const n = (await page.$$('#drawer [data-open-person]')).length;
+    console.log('SAFE CLICK: UNIX-Servers has', n, 'members');
+    if (n < 2) throw new Error('Safe panel does not list its members');
+    await shot(page, '05_safe_panel');
+    // change one member's role on this Safe from the panel
+    await page.selectOption('#drawer .pr-role >> nth=0', 'Read only');
+    await page.waitForSelector('#panel-msg .msg.ok');
+    // open a member from the Safe panel: its Safes, editable values
+    await page.click('#drawer [data-open-person] >> nth=0');
+    await page.waitForSelector('#pe-name');
+    console.log('MEMBER PANEL:', (await page.innerText('#drawer h3')));
+    await page.fill('#pe-name', 'PAM-Unix-Admins');
+    await page.selectOption('#pe-type', 'Role');
+    await page.fill('#pe-dir', '');
+    await page.click('#pe-save');
+    await page.waitForSelector('#panel-msg .msg.ok');
+    await page.waitForSelector('#people-table >> text=PAM-Unix-Admins');
+    await shot(page, '05_member_panel');
+    await page.click('#panel-close');
+    // every member in the list is clickable, including members on no Safe
+    const rowsAll = (await page.$$('#people-table tr[data-person]')).length;
+    await page.check('#p-nosafe');
+    const noSafe = (await page.$$('#people-table tr[data-person]:not(.hidden)')).length;
+    console.log('MEMBERS:', rowsAll, 'listed,', noSafe, 'on no Safe');
+    if (noSafe) {
+      await page.click('#people-table tr[data-person]:not(.hidden) >> nth=0');
+      await page.waitForSelector('#drawer >> text=On no Safe');
+      await page.click('#panel-close');
+    }
+    await page.uncheck('#p-nosafe');
   }
   if ((await page.$$eval('#m-type option', os => os.map(o => o.value))).join() !== 'Group,User,Role') throw new Error('member types are not Group, User, Role');
   if (await page.inputValue('#m-dir') !== '') throw new Error('searchIn not blank by default');
@@ -262,10 +285,10 @@ const PASSWORD = process.env.PAM2PC_UI_TEST_PASSWORD || 'test-pass';
   await page.click('#m-add');
   await page.waitForSelector('#m-msg .msg.ok');
   console.log('ADD MEMBER:', await page.innerText('#m-msg'));
-  await page.waitForSelector('text=Your member changes (2)');
+  await page.waitForSelector('text=Your member changes (4)');
   await shot(page, '05_safes_bulk');
   await page.click('[data-undo="0"]');
-  await page.waitForSelector('text=Your member changes (1)');
+  await page.waitForSelector('text=Your member changes (3)');
   const safesHtml = await page.content();
   if (!safesHtml.includes('Helpdesk')) throw new Error('custom role not used for any member');
   if (!safesHtml.includes('PasswordManager') || !safesHtml.includes('10 versions')) throw new Error('Safe settings missing');

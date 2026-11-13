@@ -51,6 +51,18 @@ class DirectorySources(unittest.TestCase):
         m = next(iter(plan.members.values()))
         self.assertEqual((m["member_type"], m["search_in"]), ("Role", ""))
 
+    def test_member_changed_everywhere_and_role_per_safe(self):
+        r1 = rec("\\Apps", grants=[("CORP\\DBA", "View")])
+        r2 = rec("\\Data", username="sa", grants=[("CORP\\DBA", "View")])
+        cfg = load_config()
+        plan = build_plan([r1, r2], cfg, member_overrides={"corp\\dba": {"member_name": "PAM-DBA", "member_type": "Role",
+                                                                          "search_in": None}},
+                          member_edits=[{"safe_name": "APPS", "member_name": "CORP\\DBA", "action": "add", "role": "Full",
+                                         "member_type": "", "search_in": ""}])
+        ms = {s: m for (s, _), m in plan.members.items()}
+        self.assertEqual({s: (m["member_name"], m["member_type"], m["role"]) for s, m in ms.items()},
+                         {"APPS": ("PAM-DBA", "Role", "Full"), "DATA": ("PAM-DBA", "Role", "Read only")})
+
     def test_old_directory_map_still_works(self):
         cfg = config_from_dict({"directory_map": {"CORP": "corp.example.com", "*": "Vault"}})
         self.assertEqual(member_target("CORP\\DBA", cfg)[:2], ("DBA", "corp.example.com"))
