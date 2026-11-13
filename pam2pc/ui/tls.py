@@ -11,8 +11,8 @@ name no longer matches, and is kept in <workspace>/tls/ so you can trust it once
   workbench.key.dpapi   the private key, encrypted with Windows DPAPI for your user.
                         On other systems (tests only) workbench.key.pem, readable by you only.
 
-At start-up the key is decrypted into a private temporary file only for as long as it takes
-Python to load it, then that file is overwritten and deleted.
+At start-up the key is decrypted into a temporary file inside <workspace>/tls (owner-only)
+only for as long as it takes Python to load it, then that file is overwritten and deleted.
 """
 
 import base64
@@ -334,7 +334,9 @@ def ensure_certificate(workspace, renew=False):
 def _context(cert_path, key_pem):
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-    tmp = Path(tempfile.mkdtemp(prefix="pam2pc-tls-"))
+    # The decrypted key goes next to the certificate, in <workspace>/tls, which is locked to
+    # the owner and SYSTEM (claim_workspace), not in %TEMP%, which may be shared.
+    tmp = Path(tempfile.mkdtemp(prefix="load-", dir=Path(cert_path).parent))
     key_file = tmp / "k.pem"
     try:
         fd = os.open(key_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)

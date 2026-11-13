@@ -194,8 +194,9 @@ def cmd_query(args):
         return 2
     if args.csv:
         import csv
+        from . import csvsafe
         with open(args.csv, "w", newline="", encoding="utf-8-sig") as fh:
-            w = csv.writer(fh)
+            w = csvsafe.SafeWriter(csv.writer(fh))
             w.writerow(cols)
             w.writerows(rows)
         print(f"Wrote {len(rows)} rows to {args.csv}")

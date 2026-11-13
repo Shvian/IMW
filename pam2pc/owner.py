@@ -151,6 +151,16 @@ def path_owner_sid(path):
     from ctypes import wintypes
     advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    advapi32.GetNamedSecurityInfoW.argtypes = [
+        wintypes.LPCWSTR, ctypes.c_int, wintypes.DWORD,                     # name, SE_FILE_OBJECT, info
+        ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(ctypes.c_void_p),    # owner, group
+        ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(ctypes.c_void_p),    # dacl, sacl
+        ctypes.POINTER(ctypes.c_void_p)]                                     # security descriptor
+    advapi32.GetNamedSecurityInfoW.restype = wintypes.DWORD
+    advapi32.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.LPWSTR)]
+    advapi32.ConvertSidToStringSidW.restype = wintypes.BOOL
+    kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+    kernel32.LocalFree.restype = ctypes.c_void_p
     p_owner, p_sd = ctypes.c_void_p(), ctypes.c_void_p()
     rc = advapi32.GetNamedSecurityInfoW(str(path), 1, 1, ctypes.byref(p_owner), None, None, None, ctypes.byref(p_sd))
     if rc != 0:
@@ -160,7 +170,7 @@ def path_owner_sid(path):
         if not advapi32.ConvertSidToStringSidW(p_owner, ctypes.byref(out)):
             raise OwnerError("ConvertSidToStringSidW failed")
         sid = out.value
-        kernel32.LocalFree(out)
+        kernel32.LocalFree(ctypes.cast(out, ctypes.c_void_p))
         return sid
     finally:
         kernel32.LocalFree(p_sd)
@@ -206,6 +216,9 @@ def _win_peer_pid(client_ip, client_port, server_port):
     import ctypes
     from ctypes import wintypes
     iphlpapi = ctypes.WinDLL("iphlpapi")
+    iphlpapi.GetExtendedTcpTable.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.DWORD), wintypes.BOOL,
+                                             wintypes.ULONG, ctypes.c_int, wintypes.ULONG]
+    iphlpapi.GetExtendedTcpTable.restype = wintypes.DWORD
     size = wintypes.DWORD(0)
     TCP_TABLE_OWNER_PID_CONNECTIONS, AF_INET = 4, 2
     iphlpapi.GetExtendedTcpTable(None, ctypes.byref(size), False, AF_INET, TCP_TABLE_OWNER_PID_CONNECTIONS, 0)
@@ -221,8 +234,11 @@ def _win_peer_pid(client_ip, client_port, server_port):
         raise OwnerError("GetExtendedTcpTable kept growing")
     raw = buf.raw
     count = struct.unpack_from("<I", raw, 0)[0]
+    MIB_TCP_STATE_ESTAB = 5
     for i in range(count):
         state, laddr, lport, raddr, rport, pid = struct.unpack_from("<6I", raw, 4 + i * 24)
+        if state != MIB_TCP_STATE_ESTAB:      # TIME_WAIT and other closed rows report pid 0
+            continue
         if (socket.ntohs(lport & 0xFFFF) == client_port and socket.ntohs(rport & 0xFFFF) == server_port
                 and socket.inet_ntoa(struct.pack("<I", laddr)) == client_ip):
             return pid

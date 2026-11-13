@@ -36,9 +36,12 @@ def record_from_row(row, cfg, *, source, source_file, row_ref, row_number,
     for logical, col in columns.items():
         if col:
             aliases[logical] = [col]
-    skip_cols = {c.lower() for c in (group_column, permission_column) if c}
-    lookup = {k: v for k, v in column_lookup([c for c in row if not c.startswith("_")]).items()
-              if k not in skip_cols}
+    skip_cols = {c.strip().lower() for c in (group_column, permission_column) if c}
+    full_lookup = column_lookup([c for c in row if not c.startswith("_")])
+    lookup = {k: v for k, v in full_lookup.items() if k not in skip_cols}
+    # The configured group/permission columns match the header whatever its case.
+    group_col = full_lookup.get(group_column.strip().lower()) if group_column else None
+    perm_col = full_lookup.get(permission_column.strip().lower()) if permission_column else None
 
     def get(logical):
         return first_value(row, lookup, aliases.get(logical, []))
@@ -76,9 +79,10 @@ def record_from_row(row, cfg, *, source, source_file, row_ref, row_number,
 
     if used["access"][0]:
         rec.grants = parse_access(used["access"][1])
-    if group_column and row.get(group_column, "").strip():
-        rec.grants = (rec.grants or []) + [Grant(row[group_column].strip(),
-                                                 row.get(permission_column, "").strip())]
+    group_val = str(row.get(group_col) or "").strip() if group_col else ""
+    if group_val:
+        perm_val = str(row.get(perm_col) or "").strip() if perm_col else ""
+        rec.grants = (rec.grants or []) + [Grant(group_val, perm_val)]
 
     rec.extra = OrderedDict()
     for col, val in row.items():

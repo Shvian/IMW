@@ -208,6 +208,8 @@ The earlier design never stored a secret: it fetched each one from Delinea just 
 - **Exports:** with the database workflow, `ingest` encrypts the secrets with DPAPI as it stores them. You can securely delete the plaintext exports straight away instead of keeping them for the whole project.
 - **Outputs:** secrets are written **only** to `upload/Accounts.csv`, and only with `--include-secrets`. The default is a dry run. The review files, the query results and the manifest never contain secrets, and the tests check this. Any column whose name looks like a secret (password, passphrase, private key, PIN, TOTP/OTP) is left out of the review files.
 - **File permissions:** the database and `Accounts.csv` are created as owner-only (`0600`) on Linux and macOS. On Windows, control access with the folder's ACLs.
+- **Opening review files in Excel:** values in the review files, `FileCategories.csv`, `PlatformProperties.csv` and `query --csv` output that start with `=`, `+`, `-`, `@`, a tab or a carriage return get a leading apostrophe, so Excel shows them as text instead of running them as formulas. The apostrophe is removed again when you feed an edited `Accounts_Review.csv` back (`--overrides`, `--from-review`). `upload/` files are API input and are written exactly as they are.
+- **Source files:** XML files (KeePass exports and the parts of an `.xlsx`) that declare a DTD or entities are refused. An `.xlsx` part that unpacks to more than 512 MB is refused too (save that sheet as CSV instead), and empty formatted cells far down or right of the data are ignored.
 - **Proof:** `manifest.json` records the SHA-256 of every input and output. The database `audit` table records who did what and when.
 
 What you still need to do:

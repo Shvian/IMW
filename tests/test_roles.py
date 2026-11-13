@@ -3,7 +3,7 @@
 import unittest
 
 from pam2pc.config import (_V1_PERMISSION_MAP, _V1_ROLE_PERMISSIONS, ALL_PERMISSIONS, PERMISSION_PRESETS,
-                           all_roles, config_diff, config_from_dict, load_config, resolve_role)
+                           CONFIG_VERSION, all_roles, config_diff, config_from_dict, load_config, resolve_role)
 from pam2pc.model import Grant, SourceRecord, split_folder
 from pam2pc.transform import build_plan
 
@@ -78,7 +78,8 @@ class Upgrade(unittest.TestCase):
 
     def test_diff_keeps_only_changes(self):
         cfg = config_from_dict({"safe_convention": {"default_environment": "P"}, "default_platform": "X"})
-        self.assertEqual(config_diff(cfg), {"safe_convention": {"default_environment": "P"}, "default_platform": "X"})
+        self.assertEqual(config_diff(cfg), {"safe_convention": {"default_environment": "P"}, "default_platform": "X",
+                                            "config_version": CONFIG_VERSION})
 
 
 if __name__ == "__main__":
