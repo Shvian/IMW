@@ -43,7 +43,8 @@ from ..model import SourceRecord
 from ..naming import Namer
 from ..protect import ProtectError
 from ..store import Store, StoreError, run_extract
-from ..transform import Permissions, apply_member_override, member_target, normalize_member_type
+from ..transform import (Permissions, apply_member_override, member_target, normalize_member_type,
+                         sanitize_safe_name)
 from .auth import get_authenticator
 from .tls import fingerprint, server_context, trust_certificate
 from ..owner import claim_workspace, peer_is_owner
@@ -534,6 +535,7 @@ class App:
             mcols, mrows = st.query("SELECT * FROM plan_members ORDER BY safe_name, member_name")
             edits = st.member_edits()
             overrides = st.member_overrides()
+            safe_ov = st.safe_overrides()
             grants = st.db.execute("SELECT member, max(member_type) AS member_type, COUNT(DISTINCT record_id) AS n "
                                    "FROM grants GROUP BY lower(member)").fetchall()
         finally:
@@ -542,6 +544,7 @@ class App:
         roles = list(all_roles(cfg))
         members = [dict(zip(mcols, r)) for r in mrows]
         return {"safes": [dict(zip(cols, r)) for r in rows], "members": members, "member_edits": edits,
+                "safe_overrides": sorted(safe_ov.values(), key=lambda o: o.get("changed_utc") or ""),
                 "people": self._people(members, grants, overrides, cfg),
                 "roles": roles, "directories": sorted({m["search_in"] for m in members if m["search_in"]} | {"Vault"}),
                 "known_members": sorted({m["member_name"] for m in members}, key=str.lower)}
@@ -604,6 +607,54 @@ class App:
         finally:
             st.close()
         return {"changed": 1}
+
+    def api_safes_change(self, body):
+        """Rename one Safe, or change its description, location, CPM, retention, OLAC or auto purge.
+        Kept across re-mapping and always wins over the rules. Empty fields keep the rules' value."""
+        key = (body.get("key") or "").strip()
+        current = (body.get("current") or "").strip()
+        if not key:
+            raise UiError("Pick a Safe first.")
+        undo = bool(body.get("undo"))
+        cfg = self.config()
+        raw = body.get("settings") or {}
+        settings = {}
+        new_name = str(raw.get("new_name") or "").strip()
+        if new_name and new_name.lower() != key.lower():
+            clean, valid, issues = sanitize_safe_name(new_name, cfg)
+            if not valid:
+                raise UiError(f"The Safe name '{new_name}' can't be used: {'; '.join(issues)}.")
+            settings["new_name"] = clean
+        for k in ("description", "location", "managingCPM"):
+            v = str(raw.get(k) or "").strip()
+            if v:
+                settings[k] = v
+        if len(settings.get("description", "")) > 100:
+            raise UiError("The description can be at most 100 characters.")
+        if len(settings.get("managingCPM", "")) > 20:
+            raise UiError("The CPM name can be at most 20 characters.")
+        kind, value = raw.get("retention_kind") or "", str(raw.get("retention_value") or "").strip()
+        if kind and value:
+            if not value.isdigit() or not (0 < int(value) <= (999 if kind == "versions" else 3650)):
+                raise UiError("Keep: type a whole number (versions 1-999, days 1-3650).")
+            settings["numberOfVersionsRetention" if kind == "versions" else "numberOfDaysRetention"] = int(value)
+        for k in ("olacEnabled", "autoPurgeEnabled"):
+            v = str(raw.get(k) or "").lower()
+            if v in ("true", "false"):
+                settings[k] = v == "true"
+        if not undo and not settings:
+            undo = True                         # nothing differs from the rules
+        target = key if undo else settings.get("new_name", key)
+        st = self.store()
+        try:
+            st.set_safe_override(key, settings, body.get("reason") or "", undo=undo,
+                                 old_name=current or key, new_name=target)
+            st.map(st.stored_config(), st.meta("config_path"))
+        except StoreError as exc:
+            raise UiError(str(exc))
+        finally:
+            st.close()
+        return {"changed": 1, "safe_name": target}
 
     def api_members_edit(self, body):
         """Add a member to, or remove one from, any number of Safes (kept across re-mapping)."""
@@ -846,7 +897,7 @@ class App:
         ("POST", "/api/naming/preview"): "api_naming_preview", ("POST", "/api/open"): "api_open_folder",
         ("POST", "/api/lock"): "api_lock", ("POST", "/api/end"): "api_end", ("POST", "/api/ping"): "api_ping",
         ("POST", "/api/members/preview"): "api_members_preview", ("POST", "/api/members/edit"): "api_members_edit",
-        ("POST", "/api/members/change"): "api_members_change",
+        ("POST", "/api/members/change"): "api_members_change", ("POST", "/api/safes/change"): "api_safes_change",
     }
     # Allowed while locked.
     OPEN_ROUTES = {("GET", "/api/session"): "api_session", ("POST", "/api/unlock"): "api_unlock"}
