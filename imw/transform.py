@@ -352,6 +352,7 @@ class AccountPlan:
     warnings: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
     in_scope: bool = True          # False when an extract filter leaves the record out
+    rule_safe: str = ""            # the Safe name the rules gave, before you renamed the Safe
 
     @property
     def status(self):
@@ -369,6 +370,7 @@ class Plan:
     members: "OrderedDict"
     member_edits: list = field(default_factory=list)
     member_overrides: dict = field(default_factory=dict)
+    safe_overrides: dict = field(default_factory=dict)
 
 
 def load_overrides(path, encoding="utf-8-sig"):
@@ -403,7 +405,7 @@ def _changed(edited, computed):
 
 def rebuild_totals(plan, cfg):
     """Recompute Safe and member totals after in_scope or migrate changed."""
-    plan.safes = _safes(plan.accounts, cfg)
+    plan.safes = _safes(plan.accounts, cfg, plan.safe_overrides)
     plan.members = _members(plan.accounts, cfg, plan.member_edits, plan.member_overrides)
     return plan
 
@@ -413,8 +415,11 @@ def _explicit_changed(edited, computed):
 
 
 def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_edits=None,
-               member_overrides=None):
-    """explicit=True: overrides are deliberate edits (database), not a re-fed review file."""
+               member_overrides=None, safe_overrides=None):
+    """explicit=True: overrides are deliberate edits (database), not a re-fed review file.
+    safe_overrides: {lower Safe name as the rules give it: {"new_name": ..., settings...}},
+    your direct changes to whole Safes (name, description, CPM, retention, ...)."""
+    safe_overrides = safe_overrides or {}
     changed = _explicit_changed if explicit else _changed
     perms = perms or Permissions()
     overrides = overrides or {}
@@ -549,7 +554,15 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
             p.safe_issues.append(f"same name as '{collided}' after cleanup; suffixed")
             valid = False
         p.valid_safe = valid
-        if not valid:
+        p.rule_safe = p.safe
+        new_name = (safe_overrides.get(p.safe.lower()) or {}).get("new_name")
+        if new_name:
+            # You renamed this whole Safe: its accounts follow, whatever the rules gave.
+            p.safe, p.valid_safe, p.safe_issues = sanitize_safe_name(new_name, cfg)
+            p.safe_source = "Safe renamed by you"
+            if not p.valid_safe:
+                p.warnings.insert(0, "Safe name changed: " + "; ".join(p.safe_issues))
+        elif not valid:
             p.warnings.insert(0, "Safe name changed: " + "; ".join(p.safe_issues))
         if not p.uploadable:
             continue
@@ -566,8 +579,16 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
                                   + ("; with no account name Privilege Cloud gives both the same "
                                      "name and rejects the second" if not x.account_name else ""))
 
-    return Plan(plans, _safes(plans, cfg), _members(plans, cfg, member_edits, member_overrides),
-                list(member_edits or []), dict(member_overrides or {}))
+    # A Safe you renamed onto a name another Safe already has: both now share one Safe.
+    from_rules = {p.safe.lower() for p in plans if p.rule_safe == p.safe}
+    for p in plans:
+        if p.rule_safe != p.safe and p.safe.lower() in from_rules:
+            p.warnings.append(f"Safe '{p.rule_safe}' renamed by you to '{p.safe}', which another Safe "
+                              "already has: their accounts are now in one Safe")
+
+    return Plan(plans, _safes(plans, cfg, safe_overrides),
+                _members(plans, cfg, member_edits, member_overrides),
+                list(member_edits or []), dict(member_overrides or {}), dict(safe_overrides))
 
 
 def _unique_account_names(plans):
@@ -614,8 +635,13 @@ def account_name_for(rec, p, cfg):
     return fill(an.get("template") or "{name}") or fill(an.get("fallback") or "{address}-{username}")
 
 
-def safe_settings(name, info, cfg):
-    """Body fields for one Safe: safe_defaults, then the first matching safe_rules entry."""
+SAFE_OVERRIDE_KEYS = ("description", "location", "managingCPM", "numberOfVersionsRetention",
+                      "numberOfDaysRetention", "olacEnabled", "autoPurgeEnabled")
+
+
+def safe_settings(name, info, cfg, with_override=True):
+    """Body fields for one Safe: safe_defaults, then the first matching safe_rules entry, then
+    your own changes to this Safe (info["override"]), which always win."""
     body = dict(cfg["safe_defaults"])
     for rule in cfg.get("safe_rules") or []:
         pat = rule.get("safe_pattern") or ""
@@ -628,6 +654,16 @@ def safe_settings(name, info, cfg):
             elif str(rule.get("numberOfDaysRetention", "")).strip():
                 body["numberOfVersionsRetention"] = ""
             break
+    ov = (info or {}).get("override") if with_override else None
+    for k in SAFE_OVERRIDE_KEYS:
+        v = (ov or {}).get(k)
+        if v is None or str(v).strip() == "":
+            continue
+        body[k] = v
+        if k == "numberOfVersionsRetention":
+            body["numberOfDaysRetention"] = ""
+        elif k == "numberOfDaysRetention":
+            body["numberOfVersionsRetention"] = ""
     folders = sorted((info or {}).get("folders") or [])
     if body.get("description") and "{" in str(body["description"]):
         body["description"] = str(body["description"]).replace("{folder}", folders[0] if folders else "") \
@@ -750,13 +786,19 @@ def sanitize_record(rec):
     return changed
 
 
-def _safes(plans, cfg=None):
+def _safes(plans, cfg=None, safe_overrides=None):
     safes = OrderedDict()
     limit = (cfg or {}).get("safe_max_accounts") or 0
+    safe_overrides = safe_overrides or {}
     for p in plans:
         s = safes.setdefault(p.safe, {"proposed": set(), "valid": True, "issues": set(),
-                                      "sources": set(), "accounts": 0, "migrating": 0, "folders": set()})
+                                      "sources": set(), "accounts": 0, "migrating": 0, "folders": set(),
+                                      "rule_names": set(), "override": None})
         s["folders"].add(p.rec.folder_path)
+        rule_name = p.rule_safe or p.safe
+        s["rule_names"].add(rule_name)
+        if s["override"] is None and safe_overrides.get(rule_name.lower()):
+            s["override"] = safe_overrides[rule_name.lower()]
         s["proposed"].add(p.proposed_safe)
         s["valid"] &= p.valid_safe
         s["issues"].update(p.safe_issues)

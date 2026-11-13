@@ -109,6 +109,25 @@ nav .sub { padding: 6px 10px 6px 42px; font-size: 13px; }
 a.pathlink { cursor: pointer; }
 .actionbar { position: sticky; bottom: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
   padding: 10px; margin-top: 10px; }
+/* Save & apply / Next float at the bottom of the window on the pages that have them. */
+.floatbar { position: fixed; left: 231px; right: 0; bottom: 0; z-index: 8; display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+  background: var(--panel); border-top: 1px solid var(--line-strong); box-shadow: 0 -6px 18px var(--shadow); padding: 10px 24px; }
+.floatbar .msg { margin: 0; padding: 6px 10px; }
+main:has(.floatbar) { padding-bottom: calc(var(--fb-h, 60px) + 24px); }
+main:has(.floatbar) .actionbar { bottom: var(--fb-h, 60px); }
+/* Down arrow: shown only while there is more of the page below. */
+#more-below { position: fixed; bottom: calc(var(--fb-off, 0px) + 14px); right: 28px;
+  z-index: 9; width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line-strong); background: var(--panel); color: var(--accent);
+  box-shadow: 0 4px 14px var(--shadow); cursor: pointer; display: grid; place-items: center; padding: 0;
+  opacity: .92; transition: opacity .15s, transform .15s; animation: nudge 2.4s ease-in-out infinite; }
+#more-below:hover { opacity: 1; border-color: var(--accent); }
+#more-below svg { width: 20px; height: 20px; }
+@keyframes nudge { 0%, 70%, 100% { transform: none; } 80% { transform: translateY(3px); } }
+@media (prefers-reduced-motion: reduce) { #more-below { animation: none; } }
+.form-grid label { display: block; font-size: 12px; color: var(--muted); margin: 6px 0; }
+.form-grid label input[type=text], .form-grid label select { width: 100%; color: var(--ink); }
+.form-grid label .row input[type=text] { width: 80px; }
+.form-grid label .row select { width: auto; flex: 1; }
 details.edit-block { margin: 6px 0; }
 details.edit-block > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 10px;
   padding: 6px 8px; border: 1px dashed var(--line); border-radius: 6px; user-select: none; }
@@ -218,6 +237,7 @@ input.chk-bad { border-color: var(--warn); background: var(--warn-bg); }
     <button data-page="review-safes" data-group="review"><span class="num">3</span>Review &amp; change</button>
     <button class="sub" data-page="review-safes">A. Safes &amp; Safe members</button>
     <button class="sub" data-page="review">B. Accounts &amp; platforms</button>
+    <button class="sub" data-page="review-finalize">C. Finalize</button>
     <button data-page="output"><span class="num">4</span>Create upload files</button>
     <hr>
     <button data-page="activity"><span class="num">≡</span>Activity log</button>
@@ -225,6 +245,7 @@ input.chk-bad { border-color: var(--warn); background: var(--warn-bg); }
   <main id="main"></main>
 </div>
 <div id="drawer" class="drawer hidden"></div>
+<button id="more-below" class="hidden" title="More below: scroll down" aria-label="Scroll down"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></button>
 <div id="busy" class="busy hidden">Working…</div>
 <div id="login" class="overlay hidden"><div class="signin" id="signin">
   <form class="signin-card" id="login-form" autocomplete="off">

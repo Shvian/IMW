@@ -32,7 +32,7 @@ async function refresh() {
 const DIRTY = { main: false, panel: false };
 const NOT_A_CHANGE = new Set(["f-search", "s-filter", "p-filter", "view", "f-safe", "f-platform", "f-source", "f-status", "allmatch",
   "p-nosafe", "s-selall", "m-selall", "selall", "reason", "m-reason", "ra-reason", "pe-reason", "o-safe", "o-platform", "o-source",
-  "o-name", "o-replace", "confirm", "pa-safe", "pa-role", "role-from", "new-layer"]);
+  "o-name", "o-replace", "confirm", "pa-safe", "pa-role", "role-from", "new-layer", "sv-reason"]);
 function trackDirty(e) {
   const el = e.target;
   if (!el.matches || !el.matches("input, select, textarea") || el.type === "search" || el.name === "sec" || el.name === "scope") return;
@@ -306,23 +306,10 @@ PAGES.overview = async () => {
         <button class="btn primary" data-go="load">Load exports</button></div>${SECURITY_NOTICE}`;
     return;
   }
-  const c = STATE.status_counts || {};
-  let next = "";
-  if (STATE.sanitized) next += `<div class="msg warn">${STATE.sanitized} accounts had forbidden characters: invisible or control characters were removed, or characters Privilege Cloud doesn't allow in Safe, platform or account names were replaced. <a href="#" id="ov-san">Show them</a>.</div>`;
-  if (STATE.stale) next += `<div class="msg warn">Some loaded records haven't been mapped yet. Open <b>2. Mapping rules</b> and click Save &amp; apply.</div>`;
-  else if (c.ERROR) next += `<div class="msg warn">${c.ERROR} accounts have errors and won't be uploaded. Open <b>3. Review &amp; change · B. Accounts &amp; platforms</b> and pick "Errors".</div>`;
-  m.innerHTML = `<h2>Overview</h2><p class="lead">Where the migration stands right now.</p>
-    <div class="stats">
-      <div class="stat link" data-view="all" title="Show all accounts"><b>${STATE.records}</b><span>records loaded</span></div>
-      <div class="stat link" data-view="upload" title="Show the accounts that will be uploaded"><b>${STATE.to_upload}</b><span>will be uploaded</span></div>
-      <div class="stat link" data-view="review" title="Show the accounts that need a look"><b style="color:var(--warn)">${c.REVIEW || 0}</b><span>need a look</span></div>
-      <div class="stat link" data-view="errors" title="Show the accounts with errors"><b style="color:var(--err)">${c.ERROR || 0}</b><span>errors (not uploaded)</span></div>
-      <div class="stat link" data-view="excluded" title="Show the accounts you excluded"><b>${STATE.excluded}</b><span>excluded by you</span></div>
-      <div class="stat link" data-goto="review-safes" title="Show the Safes and their members"><b>${STATE.safes}</b><span>Safes (${STATE.invalid_safes} renamed)</span></div>
-      <div class="stat link" data-view="edited" title="Show the accounts you changed"><b>${STATE.edits}</b><span>accounts you changed</span></div>
-      <div class="stat link" data-view="sanitized" title="Show the accounts where forbidden characters were removed or replaced"><b style="color:${STATE.sanitized ? "var(--warn)" : "inherit"}">${STATE.sanitized || 0}</b><span>forbidden characters changed</span></div>
-    </div>${next}
-    <div class="card" style="margin-top:16px"><h3>Loaded files</h3>
+  m.innerHTML = `<h2>Overview</h2><p class="lead">What is loaded and where it came from. The counts (accounts to upload, errors, Safes, your changes) are on
+      <a href="#" data-go="review-finalize">3. Review &amp; change · C. Finalize</a>.</p>
+    ${statusNotes()}
+    <div class="card"><h3>Loaded files</h3>
     ${STATE.inputs.some(i => i.repeat) ? `<div class="msg warn">Some files were loaded more than once. Loading a file with the same name again replaces its records (matched by record ID) and keeps your changes; records missing from the newer file stay from the earlier load. Loading the same content under a different file name loads every record a second time, which shows up as possible duplicates.</div>` : ""}
     <div class="tablewrap"><table><tr><th>#</th><th>Source</th><th>File</th><th>Records</th><th>SHA-256 checksum</th><th>Loaded more than once?</th><th>Permissions file(s)</th><th>Loaded (UTC)</th><th>By</th></tr>
     ${STATE.inputs.map(i => `<tr><td>${i.id}</td><td>${esc(i.source)}</td><td title="${esc(i.path)}">${esc(i.file)}</td><td>${i.records}</td>
@@ -331,10 +318,43 @@ PAGES.overview = async () => {
       <td class="small">${i.permissions_path ? i.permissions_path.split(" | ").map((pth, k) => `${esc(pth.split(/[\\/]/).pop())} <code title="${esc((i.permissions_sha256 || "").split(" | ")[k] || "")}">${esc(((i.permissions_sha256 || "").split(" | ")[k] || "").slice(0, 8))}…</code>`).join("<br>") : '<span class="muted">none</span>'}</td>
       <td class="small">${esc(i.loaded_utc)}</td><td>${esc(i.loaded_by)}</td></tr>`).join("")}</table></div></div>
     <p class="muted small">Workspace: <code>${esc(STATE.workspace)}</code> · last mapped ${esc(STATE.mapped || "never")}</p>${SECURITY_NOTICE}`;
+};
+
+// Warnings that say what to do next; shown on the Overview and on C. Finalize.
+function statusNotes() {
+  const c = STATE.status_counts || {};
+  let next = "";
+  if (STATE.sanitized) next += `<div class="msg warn">${STATE.sanitized} accounts had forbidden characters: invisible or control characters were removed, or characters Privilege Cloud doesn't allow in Safe, platform or account names were replaced. <a href="#" data-go="review" data-review-view="sanitized">Show them</a>.</div>`;
+  if (STATE.stale) next += `<div class="msg warn">Some loaded records haven't been mapped yet. Open <b>2. Mapping rules</b> and click Save &amp; apply.</div>`;
+  else if (c.ERROR) next += `<div class="msg warn">${c.ERROR} accounts have errors and won't be uploaded. <a href="#" data-go="review" data-review-view="errors">Show them</a> in <b>3. Review &amp; change · B. Accounts &amp; platforms</b>.</div>`;
+  return next;
+}
+
+/* ---------------- 3C. Finalize ---------------- */
+PAGES["review-finalize"] = async () => {
+  await refresh();
+  if (!STATE.has_db) return msg($("#main"), "warn", "Load some exports first (step 1).");
+  const c = STATE.status_counts || {};
+  const tile = (attr, tip, n, label, color) => `<div class="stat link" ${attr} title="${esc(tip)}"><b${color ? ` style="color:${color}"` : ""}>${n}</b><span>${label}</span></div>`;
+  $("#main").innerHTML = `<h2>3. Review &amp; change · C. Finalize</h2>
+    <p class="lead">The last check before you create the upload files. Each tile counts what the upload will hold; click one to open that list and change it.
+      When the numbers look right, go on to <b>4. Create upload files</b>.</p>
+    <div class="stats">
+      ${tile('data-view="all"', "Show all accounts", STATE.records, "records loaded")}
+      ${tile('data-view="upload"', "Show the accounts that will be uploaded", STATE.to_upload, "will be uploaded")}
+      ${tile('data-view="review"', "Show the accounts that need a look", c.REVIEW || 0, "need a look", "var(--warn)")}
+      ${tile('data-view="errors"', "Show the accounts with errors", c.ERROR || 0, "errors (not uploaded)", "var(--err)")}
+      ${tile('data-view="excluded"', "Show the accounts you excluded", STATE.excluded, "excluded by you")}
+      ${tile('data-goto="review-safes"', "Show the Safes and their members", STATE.safes, `Safes (${STATE.invalid_safes} renamed)`)}
+      ${tile('data-view="edited"', "Show the accounts you changed", STATE.edits, "accounts you changed")}
+      ${tile('data-view="sanitized"', "Show the accounts where forbidden characters were removed or replaced", STATE.sanitized || 0, "forbidden characters changed", STATE.sanitized ? "var(--warn)" : "")}
+    </div>
+    <div style="margin-top:12px">${statusNotes()}</div>
+    <div class="floatbar"><button class="btn primary" data-go="output">Next: 4. Create upload files ›</button>
+      <span class="muted small">Accounts with errors or excluded by you are left out of the upload files.</span></div>`;
   document.querySelectorAll(".stat[data-view]").forEach(el => el.onclick = () => {
     REVIEW.view = el.dataset.view; REVIEW.filters = {}; REVIEW.page = 0; REVIEW.selected.clear(); go("review"); });
   document.querySelectorAll(".stat[data-goto]").forEach(el => el.onclick = () => go(el.dataset.goto));
-  if ($("#ov-san")) $("#ov-san").onclick = (e) => { e.preventDefault(); REVIEW.view = "sanitized"; REVIEW.filters = {}; REVIEW.page = 0; go("review"); };
 };
 
 /* ---------------- Security notice (bottom of the Overview) ---------------- */
@@ -506,7 +526,7 @@ async function rulesPage(page, intro, render) {
     <datalist id="dl-folders">${(data.hints.folders || []).map(g => `<option value="${esc(g.name)}">${g.accounts} accounts</option>`).join("")}</datalist>
     <datalist id="dl-types">${(data.hints.types || []).map(g => `<option value="${esc(g.name)}">${g.accounts} accounts</option>`).join("")}</datalist>
     ${view.html}
-    <div class="actionbar row"><button class="btn primary" id="save">Save &amp; apply this page</button>
+    <div class="floatbar"><button class="btn primary" id="save">Save &amp; apply this page</button>
       <button class="btn" id="rules-next">${esc(nextTitle)} ›</button><span id="rules-msg"></span></div>`;
   $("#rules-next").onclick = () => go(nextPage);
   wireAddButtons();
@@ -1110,18 +1130,19 @@ PAGES["review-safes"] = async () => {
         <td>${esc(p.override.changed_utc)}<br>${esc(p.override.changed_by)}</td><td>${esc(p.override.reason || "")}</td>
         <td><button class="btn small" data-undo-person="${esc(p.key)}">Undo</button></td></tr>`).join("")}</table></div></div>` : "";
   $("#main").innerHTML = `<h2>3. Review &amp; change · A. Safes &amp; Safe members</h2>
-    <p class="lead">The Safes the upload will create and who gets access. Tick Safes to add a member to all of them at once, or to remove one. To change how Safes are named or who gets access everywhere, adjust the rules in step 2
+    <p class="lead">The Safes the upload will create and who gets access. Click a Safe's name to rename it, change its settings (description, CPM, how long it keeps versions) or its members. Tick Safes to add a member to all of them at once, or to remove one. To change how Safes are named or who gets access everywhere, adjust the rules in step 2
       (<a href="#" data-go="rules-safes">Safes</a>, <a href="#" data-go="rules-members">Safe members</a>, <a href="#" data-go="rules-dir">directory sources</a>).</p>
+    ${safeEditsHtml(d)}
     <div class="card"><h3>Safes (${d.safes.length})</h3>
       <div class="row" style="margin-bottom:8px"><input type="search" id="s-filter" placeholder="Show Safes containing…" size="28" value="${esc(SAFES.filter)}">
         <button class="btn small" id="s-tick-shown">Tick the Safes shown</button><button class="btn small" id="s-untick">Untick all</button>
         <span class="muted small" id="s-count"></span></div>
       <div class="tablewrap"><table id="safes-table"><tr><th></th><th>Safe</th><th>Length</th><th>Name OK?</th><th>Original name(s)</th><th>Why changed</th><th>Chosen by</th><th>CPM</th><th>Description</th><th>Keeps</th><th>Accounts</th><th>To upload</th></tr>
       ${d.safes.map(s => `<tr data-name="${esc(s.safe_name.toLowerCase())}"><td><input type="checkbox" class="s-sel" value="${esc(s.safe_name)}" ${SAFES.selected.has(s.safe_name) ? "checked" : ""}></td>
-        <td><a href="#" data-members-of="${esc(s.safe_name)}" title="Show this Safe's members">${esc(s.safe_name)}</a></td><td>${s.length}</td><td>${s.valid_safe_name === "TRUE" ? "✓" : '<span class="pill REVIEW">renamed</span>'}</td>
+        <td><a href="#" data-members-of="${esc(s.safe_name)}" title="Rename this Safe, change its settings or its members">${esc(s.safe_name)}</a>${s.override_json ? ' <span class="pill REVIEW" title="You changed this Safe\'s name or settings directly">changed by you</span>' : ""}</td><td>${s.length}</td><td>${s.valid_safe_name === "TRUE" ? "✓" : '<span class="pill REVIEW">renamed</span>'}</td>
         <td class="small">${esc(s.proposed_names)}</td><td class="small">${esc(s.issues)}</td><td class="small">${esc(s.mapping_sources)}</td>
         <td class="small">${esc(s.managing_cpm || "")}</td><td class="small">${esc(s.description || "")}</td><td class="small">${esc(s.retention || "")}</td><td><a href="#" data-safe="${esc(s.safe_name)}" title="Show this Safe's accounts in B. Accounts &amp; platforms">${s.accounts}</a></td><td>${s.accounts_to_upload}</td></tr>`).join("")}</table></div>
-      <p class="muted small">Click a Safe's name to see and change its members; click its Accounts number to see its accounts.</p>
+      <p class="muted small">Click a Safe's name to rename it, change its settings or its members; click its Accounts number to see its accounts.</p>
       <div class="actionbar"><div class="row"><b id="s-selinfo"></b><input type="text" id="m-reason" placeholder="Reason (optional, kept in the log)" size="30"></div>
         <div class="bulk" style="margin-top:8px">
           <div><h4>Add a member to the ticked Safes</h4>
@@ -1207,7 +1228,34 @@ PAGES["review-safes"] = async () => {
     send({ action: "undo", pairs: [[e.safe_name, e.member_name]] }, () => `Undone: ${e.member_name} on ${e.safe_name}.`);
   });
   document.querySelectorAll("[data-safe]").forEach(a => a.onclick = (e) => { e.preventDefault(); REVIEW.view = "all"; REVIEW.filters = { safe: a.dataset.safe }; REVIEW.page = 0; go("review"); });
+  document.querySelectorAll("[data-undo-safe]").forEach(b => b.onclick = async () => {
+    const o = d.safe_overrides[b.dataset.undoSafe];
+    const now = safeNowNamed(d, o);
+    try {
+      await api("/api/safes/change", { key: o.rule_name || o.key, current: now ? now.safe_name : "", undo: true });
+      await PAGES["review-safes"](); msg($("#s-msg"), "ok", "Safe change undone: back to what the rules give.");
+    } catch (e) { msg($("#s-msg"), "err", e.message); }
+  });
 };
+
+/* Your direct changes to whole Safes (name and settings), listed above the Safes table with Undo. */
+const SAFE_FIELD_LABELS = { new_name: "name", description: "description", location: "location", managingCPM: "CPM",
+  numberOfVersionsRetention: "keeps versions", numberOfDaysRetention: "keeps days", olacEnabled: "OLAC", autoPurgeEnabled: "auto purge" };
+function safeNowNamed(d, o) {
+  return d.safes.find(s => (s.rule_names || "").split(" | ").some(n => n.toLowerCase() === o.key));
+}
+function safeEditsHtml(d) {
+  const list = d.safe_overrides || [];
+  if (!list.length) return '<div id="s-msg"></div>';
+  return `<div class="card"><h3>Your Safe changes (${list.length})</h3>
+    <p class="muted small">Safes you renamed or whose settings you changed directly. They win over the rules and are kept when the rules or exports change. Undo puts back what the rules give.</p>
+    <div class="tablewrap" style="max-height:30vh"><table class="small"><tr><th>Safe from the rules</th><th>Now</th><th>Changes</th><th>When / who</th><th>Reason</th><th></th></tr>
+    ${list.map((o, i) => { const now = safeNowNamed(d, o); o.rule_name = now ? (now.rule_names.split(" | ").find(n => n.toLowerCase() === o.key) || o.key) : o.key;
+      return `<tr><td>${esc(o.rule_name)}</td><td>${now ? `<a href="#" data-members-of="${esc(now.safe_name)}">${esc(now.safe_name)}</a>` : '<span class="muted" title="The rules no longer give a Safe with this name, so this change does nothing now">(no longer in the plan)</span>'}</td>
+        <td>${Object.keys(SAFE_FIELD_LABELS).filter(k => o[k] !== undefined && o[k] !== "").map(k => `${SAFE_FIELD_LABELS[k]}: <b>${esc(k === "olacEnabled" || k === "autoPurgeEnabled" ? (o[k] ? "Yes" : "No") : o[k])}</b>`).join("<br>")}</td>
+        <td>${esc(o.changed_utc)}<br>${esc(o.changed_by)}</td><td>${esc(o.reason || "")}</td>
+        <td><button class="btn small" data-undo-safe="${i}">Undo</button></td></tr>`; }).join("")}</table></div><div id="s-msg"></div></div>`;
+}
 
 /* Side panels on the Safes & Safe members page: one Safe with its members, one member with its Safes. */
 const roleSelect = (d, value, attrs) => `<select ${attrs}>${d.roles.concat(d.roles.includes(value) || !value ? [] : [value])
@@ -1228,8 +1276,10 @@ function showSafe(d, safe) {
   const people = d.people.filter(p => p.safes.some(x => x.safe_name === safe));
   document.querySelectorAll("#safes-table tr[data-name]").forEach(tr => tr.classList.toggle("current", tr.dataset.name === safe.toLowerCase()));
   $("#drawer").innerHTML = `<div class="row"><h3 style="margin:0;flex:1">Safe ${esc(safe)}</h3><button class="btn" id="panel-close">Close</button></div>
-    <p class="muted small">${s.accounts_to_upload ?? 0} accounts to upload${s.description ? " · " + esc(s.description) : ""}. Change a member's role here, or click a member to see all its Safes.</p>
+    <p class="muted small">${s.accounts_to_upload ?? 0} accounts to upload${s.description ? " · " + esc(s.description) : ""}.</p>
+    ${safeSettingsForm(s)}
     <h4>Members (${people.length})</h4>
+    <p class="muted small">Change a member's role here, or click a member to see all its Safes.</p>
     ${people.length ? `<table class="small"><tr><th>Member</th><th>Type</th><th>Role</th><th></th></tr>
       ${people.map((p, i) => { const m = p.safes.find(x => x.safe_name === safe);
         return `<tr><td><a href="#" data-open-person="${esc(p.key)}">${esc(p.member_name)}</a><div class="muted">${esc(p.search_in || "searchIn: all")}</div></td><td>${esc(p.member_type)}</td>
@@ -1241,11 +1291,79 @@ function showSafe(d, safe) {
   $("#panel-close").onclick = () => { if (leaveOk("panel")) { SAFES.panel = null; closeDrawer(); } };
   $("#panel-accounts").onclick = (e) => { e.preventDefault(); REVIEW.view = "all"; REVIEW.filters = { safe }; REVIEW.page = 0; go("review"); };
   const again = () => showSafe(SAFES.data, safe);
+  wireSafeSettings(s);
   document.querySelectorAll("#drawer [data-open-person]").forEach(a => a.onclick = (e) => { e.preventDefault(); showPerson(d, d.people.find(p => p.key === a.dataset.openPerson)); });
   document.querySelectorAll("#drawer .pr-role").forEach(sel => sel.onchange = () =>
     memberEdit({ action: "add", pairs: [[safe, sel.dataset.key]], role: sel.value }, again));
   document.querySelectorAll("#drawer [data-remove]").forEach(b => b.onclick = () => {
     if (confirm(`Remove this member from ${safe}?`)) memberEdit({ action: "remove", pairs: [[safe, b.dataset.remove]] }, again); });
+}
+// One Safe's own name and settings. Empty = what the rules give (shown greyed as the placeholder).
+function safeRuleName(s) {
+  const names = (s.rule_names || s.safe_name).split(" | ");
+  const ov = s.override_json ? JSON.parse(s.override_json) : null;
+  return (ov && names.find(n => n.toLowerCase() === ov.key)) || names.find(n => n.toLowerCase() === s.safe_name.toLowerCase()) || names[0];
+}
+function safeSettingsForm(s) {
+  const ov = s.override_json ? JSON.parse(s.override_json) : {};
+  const rules = s.rules_json ? JSON.parse(s.rules_json) : {};
+  const ruleName = safeRuleName(s);
+  const yn = (v) => v === true || String(v).toLowerCase() === "true" ? "Yes" : "No";
+  const keepRule = String(rules.numberOfVersionsRetention ?? "").trim() ? `${rules.numberOfVersionsRetention} versions`
+    : String(rules.numberOfDaysRetention ?? "").trim() ? `${rules.numberOfDaysRetention} days` : "Privilege Cloud default";
+  const kind = ov.numberOfVersionsRetention ? "versions" : ov.numberOfDaysRetention ? "days" : "";
+  const tri = (id, key, tip) => `<select id="${id}" title="${esc(tip)}"><option value="">As the rules say (${yn(rules[key])})</option>
+    <option value="true" ${ov[key] === true ? "selected" : ""}>Yes</option><option value="false" ${ov[key] === false ? "selected" : ""}>No</option></select>`;
+  return `<details class="edit-block" ${s.override_json ? "open" : ""}><summary><span class="arrow">▸</span>
+      <span class="edit-sum"><b>Name and settings</b> ${s.override_json ? '<span class="pill REVIEW">changed by you</span>' : '<span class="muted small">as the rules give them</span>'}</span>
+      <span class="edit-btn"><span class="o">Edit</span><span class="c">Done</span></span></summary>
+    <div class="form-grid">
+      <p class="muted small">Change this one Safe directly. What you set here wins over the rules in step 2 and is kept when the rules or exports change.
+        Leave a field empty to keep what the rules give (shown in grey).</p>
+      <label>Safe name <input type="text" id="sv-name" value="${esc(s.safe_name)}" placeholder="${esc(ruleName)}" data-check="safe" maxlength="28"
+        title="The Safe's name in Privilege Cloud: at most 28 characters, none of \\ / : * ? &quot; < > | . Its accounts and members move with it. The rules named it ${esc(ruleName)}. Typing another existing Safe's name puts both into one Safe."></label>
+      <label>Description <input type="text" id="sv-desc" value="${esc(ov.description || "")}" placeholder="${esc(rules.description || "(none)")}" maxlength="100"
+        title="Free text shown in Privilege Cloud, at most 100 characters. {folder} is replaced with the Safe's first source folder."></label>
+      <label>Location <input type="text" id="sv-loc" value="${esc(ov.location || "")}" placeholder="${esc(rules.location || "(root)")}"
+        title="Vault location (folder) for the Safe, for example \\Windows. Empty puts it at the root."></label>
+      <label>Managing CPM <input type="text" id="sv-cpm" value="${esc(ov.managingCPM || "")}" placeholder="${esc(rules.managingCPM || "(no CPM: passwords are not managed)")}" maxlength="20"
+        title="Name of the CPM that manages this Safe's passwords, for example PasswordManager. Empty in the rules means no automatic password management."></label>
+      <label>Keeps <span class="row" style="gap:6px;flex-wrap:nowrap">
+        <select id="sv-keep-kind" title="How long the Safe keeps old passwords: a number of versions or a number of days. Privilege Cloud uses one or the other."><option value="">As the rules say (${esc(keepRule)})</option>
+          <option value="versions" ${kind === "versions" ? "selected" : ""}>versions</option><option value="days" ${kind === "days" ? "selected" : ""}>days</option></select>
+        <input type="text" id="sv-keep" size="5" value="${esc(ov.numberOfVersionsRetention || ov.numberOfDaysRetention || "")}" placeholder="7"
+          title="Whole number: versions 1-999 or days 1-3650." style="width:80px"></span></label>
+      <label>Object level access control (OLAC) ${tri("sv-olac", "olacEnabled", "OLAC lets you give access to single accounts inside the Safe. It can't be turned off again once on.")}</label>
+      <label>Auto purge ${tri("sv-purge", "autoPurgeEnabled", "Delete expired password versions automatically.")}</label>
+      <label>Reason (optional, kept in the log) <input type="text" id="sv-reason"></label>
+      <div class="row" style="margin-top:8px"><button class="btn primary" id="sv-save">Save this Safe</button>
+        ${s.override_json ? '<button class="btn" id="sv-undo" title="Forget your changes to this Safe and use what the rules give">Undo my changes</button>' : ""}</div>
+      <div id="sv-msg"></div>
+    </div></details>`;
+}
+function wireSafeSettings(s) {
+  const key = safeRuleName(s);
+  const done = async (r, text) => {
+    saved("panel");
+    await PAGES["review-safes"]();
+    const now = SAFES.data.safes.find(x => x.safe_name.toLowerCase() === String(r.safe_name).toLowerCase());
+    if (now) { showSafe(SAFES.data, now.safe_name); msg($("#sv-msg"), "ok", text); }
+  };
+  $("#sv-save").onclick = async () => {
+    const name = $("#sv-name").value.trim();
+    const settings = { new_name: name, description: $("#sv-desc").value, location: $("#sv-loc").value, managingCPM: $("#sv-cpm").value,
+      retention_kind: $("#sv-keep-kind").value, retention_value: $("#sv-keep").value, olacEnabled: $("#sv-olac").value, autoPurgeEnabled: $("#sv-purge").value };
+    if (settings.retention_kind && !settings.retention_value.trim()) return msg($("#sv-msg"), "err", "Type how many versions or days the Safe keeps.");
+    if ($("#sv-olac").value === "true" && !confirm("OLAC can't be turned off again in Privilege Cloud once the Safe is created with it. Turn it on for this Safe?")) return;
+    try {
+      const r = await api("/api/safes/change", { key, current: s.safe_name, settings, reason: $("#sv-reason").value });
+      await done(r, "Saved. Rules re-applied; your values win for this Safe.");
+    } catch (e) { msg($("#sv-msg"), "err", e.message); }
+  };
+  if ($("#sv-undo")) $("#sv-undo").onclick = async () => {
+    try { const r = await api("/api/safes/change", { key, current: s.safe_name, undo: true }); await done(r, "Back to what the rules give."); }
+    catch (e) { msg($("#sv-msg"), "err", e.message); }
+  };
 }
 function showPerson(d, p) {
   if (!p || !leaveOk("panel")) return;
@@ -1405,5 +1523,25 @@ document.addEventListener("click", (e) => {
   if (del) { const t = del.closest("table"); del.closest("tr").remove(); updateBlockCount(t.id); return; }
   if (e.target.closest("[data-close-drawer]") && leaveOk("panel")) closeDrawer();
 });
+
+/* ---------------- Floating bar height and the "more below" arrow ---------------- */
+function updateFloat() {
+  const fb = document.querySelector("#main .floatbar");
+  const h = fb ? fb.offsetHeight : 0;
+  document.documentElement.style.setProperty("--fb-h", h + "px");
+  document.documentElement.style.setProperty("--fb-off", h + "px");
+  // More below = some of the page's own content ends under the bottom edge (or under the floating bar).
+  let bottom = 0;
+  for (const el of $("#main").children) if (!el.classList.contains("floatbar")) bottom = Math.max(bottom, el.getBoundingClientRect().bottom);
+  $("#more-below").classList.toggle("hidden", LOCKED || bottom <= window.innerHeight - h + 4);
+}
+let FLOAT_T;
+const queueFloat = () => { clearTimeout(FLOAT_T); FLOAT_T = setTimeout(updateFloat, 30); };
+window.addEventListener("scroll", queueFloat, { passive: true });
+window.addEventListener("resize", queueFloat);
+new ResizeObserver(queueFloat).observe(document.body);
+new MutationObserver(queueFloat).observe($("#main"), { childList: true, subtree: true });
+document.addEventListener("toggle", queueFloat, true);   // folding blocks open or shut
+$("#more-below").onclick = () => window.scrollBy({ top: Math.round(window.innerHeight * 0.75), behavior: "smooth" });
 
 start();

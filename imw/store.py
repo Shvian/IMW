@@ -29,7 +29,7 @@ from . import csvsafe
 from .model import Grant, SourceRecord
 from .owner import OwnerError, current_identity, restrict
 from .protect import ProtectError, get_protector, new_salt
-from .transform import _changed, build_plan, rebuild_totals, safe_settings, sanitize_record
+from .transform import SAFE_OVERRIDE_KEYS, _changed, build_plan, rebuild_totals, safe_settings, sanitize_record
 from .writers import write_manifest, write_review, write_upload
 
 log = logging.getLogger("imw.store")
@@ -59,7 +59,8 @@ CREATE TABLE IF NOT EXISTS plan_accounts (
 CREATE TABLE IF NOT EXISTS plan_safes (
   safe_name TEXT PRIMARY KEY, length INTEGER, valid_safe_name TEXT, proposed_names TEXT,
   issues TEXT, mapping_sources TEXT, accounts INTEGER, accounts_to_upload INTEGER,
-  managing_cpm TEXT, description TEXT, retention TEXT);
+  managing_cpm TEXT, description TEXT, retention TEXT, location TEXT, olac_enabled TEXT,
+  auto_purge TEXT, rule_names TEXT, override_json TEXT, rules_json TEXT);
 CREATE TABLE IF NOT EXISTS plan_members (
   safe_name TEXT, source_member TEXT, member_name TEXT, search_in TEXT, member_type TEXT,
   source_permission TEXT, role TEXT, accounts INTEGER, notes TEXT, directory_source TEXT);
@@ -69,6 +70,8 @@ CREATE TABLE IF NOT EXISTS member_edits (
 CREATE TABLE IF NOT EXISTS member_overrides (
   member_key TEXT PRIMARY KEY, member_name TEXT, member_type TEXT, search_in TEXT,
   changed_utc TEXT, changed_by TEXT, reason TEXT);
+CREATE TABLE IF NOT EXISTS safe_overrides (
+  safe_key TEXT PRIMARY KEY, settings_json TEXT, changed_utc TEXT, changed_by TEXT, reason TEXT);
 CREATE TABLE IF NOT EXISTS audit (
   id INTEGER PRIMARY KEY, ts TEXT, user TEXT, host TEXT, action TEXT, detail TEXT);
 CREATE VIEW IF NOT EXISTS accounts AS SELECT * FROM plan_accounts;
@@ -141,7 +144,8 @@ class Store:
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA foreign_keys = ON")
         # Plan tables are rebuilt by every map, so an older layout is simply recreated.
-        for table, column in (("plan_safes", "managing_cpm"), ("plan_members", "directory_source")):
+        for table, column in (("plan_safes", "managing_cpm"), ("plan_safes", "rules_json"),
+                              ("plan_members", "directory_source")):
             cols = [r[1] for r in self.db.execute(f"PRAGMA table_info({table})")]
             if cols and column not in cols:
                 self.db.execute(f"DROP TABLE {table}")
@@ -332,9 +336,37 @@ class Store:
                    member_type=member_type, search_in=search_in, reason=reason)
         self.db.commit()
 
+    def safe_overrides(self):
+        """{lower Safe name as the rules give it: {"new_name": ..., "description": ..., ...,
+        "changed_utc", "changed_by", "reason"}}: your direct changes to whole Safes."""
+        out = {}
+        for r in self.db.execute("SELECT * FROM safe_overrides"):
+            d = json.loads(r["settings_json"] or "{}")
+            d.update(key=r["safe_key"], changed_utc=r["changed_utc"], changed_by=r["changed_by"], reason=r["reason"])
+            out[r["safe_key"]] = d
+        return out
+
+    def set_safe_override(self, safe_key, settings, reason="", undo=False, old_name=None, new_name=None):
+        """Rename one Safe or change its settings, kept across re-mapping. safe_key is the Safe's
+        name as the rules give it. Per-Safe member changes follow a rename (old_name -> new_name)."""
+        key = (safe_key or "").strip().lower()
+        if not key:
+            raise StoreError("name the Safe to change")
+        self.db.execute("DELETE FROM safe_overrides WHERE safe_key = ?", (key,))
+        settings = {k: v for k, v in (settings or {}).items() if v not in (None, "")}
+        if not undo and settings:
+            self.db.execute("INSERT INTO safe_overrides VALUES (?,?,?,?,?)",
+                            (key, json.dumps(settings), _now(), _user(), reason))
+        if old_name and new_name and old_name.lower() != new_name.lower():
+            self.db.execute("UPDATE OR REPLACE member_edits SET safe_name = ? WHERE lower(safe_name) = lower(?)",
+                            (new_name, old_name))
+        self.audit("safe_undo" if undo else "safe_change", safe=safe_key, settings=settings, reason=reason)
+        self.db.commit()
+
     def plan(self, cfg, with_secrets=False):
         return build_plan(self.load_records(with_secrets), cfg, None, self.overrides(), explicit=True,
-                          member_edits=self.member_edits(), member_overrides=self.member_overrides())
+                          member_edits=self.member_edits(), member_overrides=self.member_overrides(),
+                          safe_overrides=self.safe_overrides())
 
     def map(self, cfg, cfg_path=None):
         plan = self.plan(cfg)
@@ -359,11 +391,17 @@ class Store:
                 retention = f"{body['numberOfDaysRetention']} days"
             else:
                 retention = ""
-            self.db.execute("INSERT INTO plan_safes VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            rules = safe_settings(name, s, cfg, with_override=False)
+            yes_no = lambda v: "" if v in ("", None) else ("Yes" if str(v).lower() in ("true", "1", "yes") else "No")
+            self.db.execute("INSERT INTO plan_safes VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                             (name, len(name), "TRUE" if s["valid"] else "FALSE",
                              " | ".join(sorted(s["proposed"])), " | ".join(sorted(s["issues"])),
                              " | ".join(sorted(s["sources"])), s["accounts"], s["migrating"],
-                             body.get("managingCPM", ""), body.get("description", ""), retention))
+                             body.get("managingCPM", ""), body.get("description", ""), retention,
+                             body.get("location", ""), yes_no(body.get("olacEnabled")),
+                             yes_no(body.get("autoPurgeEnabled")), " | ".join(sorted(s["rule_names"])),
+                             json.dumps(s["override"]) if s["override"] else "",
+                             json.dumps({k: rules.get(k, "") for k in SAFE_OVERRIDE_KEYS})))
         for (safe, _), m in plan.members.items():
             self.db.execute("INSERT INTO plan_members VALUES (?,?,?,?,?,?,?,?,?,?)",
                             (safe, m["source_name"], m["member_name"], m["search_in"], m["member_type"],

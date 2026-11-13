@@ -345,19 +345,70 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   if (!extractMsg.includes('FileCategories.csv') || !extractMsg.includes('PlatformProperties.csv')) throw new Error('category lists missing');
   await shot(page, '06_output');
 
-  // Overview: boxes open their lists, repeated loads are marked
+  // Overview keeps the loaded files; the count tiles live on 3C. Finalize and open their lists
   await page.click('nav >> text=Overview');
-  await page.waitForSelector('text=records loaded');
+  await page.waitForSelector('text=Loaded files');
   if (!(await page.content()).includes('same content')) throw new Error('repeated load not marked');
+  if (await page.$('.stat')) throw new Error('count tiles still on the Overview');
+  if (!(await page.$('.security-notice'))) throw new Error('security notice missing from the Overview');
   await shot(page, '07_overview');
+  await page.click('nav >> text=C. Finalize');
+  await page.waitForSelector('text=records loaded');
+  if (!(await page.isVisible('.floatbar >> text=Next: 4. Create upload files'))) throw new Error('Finalize has no floating Next');
+  await page.waitForTimeout(200);
+  if (await page.isVisible('#more-below')) throw new Error('down arrow shown on a page with nothing below');
+  await shot(page, '07_finalize');
   await page.click('.stat[data-view=errors]');
   await page.waitForSelector('#list table');
   if (await page.inputValue('#view') !== 'errors') throw new Error('errors box did not open the errors list');
-  await page.click('nav >> text=Overview');
+  await page.click('nav >> text=C. Finalize');
   await page.waitForSelector('text=records loaded');
   await page.click('.stat[data-view=review]');
   await page.waitForSelector('#list');
   if (await page.inputValue('#view') !== 'review') throw new Error('review box did not open the review list');
+  await page.click('nav >> text=C. Finalize');
+  await page.click('.floatbar >> text=Next: 4. Create upload files');
+  await page.waitForSelector('#main h2 >> text=4. Create upload files');
+
+  // Save & apply / Next float at the bottom of the window; the down arrow shows only while there is more below
+  await page.click('nav >> text=B. Permissions: Safes');
+  await page.waitForSelector('.floatbar #save');
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(200);
+  const fb = await page.$eval('.floatbar', e => { const r = e.getBoundingClientRect(); return { bottom: r.bottom, pos: getComputedStyle(e).position }; });
+  if (fb.pos !== 'fixed' || Math.abs(fb.bottom - 900) > 1) throw new Error('Save & apply bar is not at the bottom of the window: ' + JSON.stringify(fb));
+  const more = await page.evaluate(() => Math.max(...[...document.querySelectorAll('#main > :not(.floatbar)')].map(e => e.getBoundingClientRect().bottom)) > innerHeight - document.querySelector('.floatbar').offsetHeight + 4);
+  if (more !== await page.isVisible('#more-below')) throw new Error('down arrow shown/hidden wrongly');
+  await shot(page, '08_floatbar');
+  if (more) {
+    await page.click('#more-below'); await page.waitForTimeout(600);
+    if (await page.evaluate(() => scrollY) === 0) throw new Error('down arrow did not scroll');
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight)); await page.waitForTimeout(200);
+    if (await page.isVisible('#more-below')) throw new Error('down arrow still shown at the bottom');
+  }
+
+  // Rename one Safe and change its settings directly; Undo puts back the rules' values
+  await page.click('nav >> text=A. Safes & Safe members');
+  await page.waitForSelector('#safes-table');
+  const firstSafe = await page.$eval('#safes-table [data-members-of]', a => a.dataset.membersOf);
+  await page.click(`#safes-table [data-members-of="${firstSafe}"]`);
+  await page.click('#drawer details.edit-block > summary');
+  await page.fill('#sv-name', 'X-RENAMED-BY-ME');
+  await page.fill('#sv-desc', 'Moved by the test');
+  await page.fill('#sv-cpm', 'PasswordManager');
+  await page.selectOption('#sv-keep-kind', 'versions'); await page.fill('#sv-keep', '12');
+  await page.selectOption('#sv-purge', 'true');
+  await page.click('#sv-save');
+  await page.waitForSelector('#sv-msg .msg.ok');
+  const row = await page.innerText('#safes-table tr[data-name="x-renamed-by-me"]');
+  if (!/Moved by the test/.test(row) || !/PasswordManager/.test(row) || !/12 versions/.test(row) || !/changed by you/.test(row))
+    throw new Error('Safe rename/settings not applied: ' + row);
+  if (await page.$(`#safes-table tr[data-name="${firstSafe.toLowerCase()}"]`)) throw new Error('old Safe name still listed');
+  await page.waitForSelector('text=Your Safe changes (1)');
+  await shot(page, '09_safe_settings');
+  await page.click('#sv-undo');
+  await page.waitForSelector(`#safes-table tr[data-name="${firstSafe.toLowerCase()}"]`);
+  if (await page.$('text=Your Safe changes')) throw new Error('Safe change not undone');
 
   // Activity log
   await page.click('nav >> text=Activity log');
