@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from pam2pc.ui import tls
 
@@ -56,6 +57,35 @@ class Certificate(unittest.TestCase):
                 with client.wrap_socket(raw, server_hostname=host) as s:    # checks name and signature
                     self.assertEqual(s.version() in ("TLSv1.2", "TLSv1.3"), True)
                     s.send(b"x")
+        srv.close()
+
+    def test_named_after_this_computer(self):
+        cert, _, _ = tls.ensure_certificate(self.ws)
+        names = tls.cert_dns_names(cert.read_text())
+        self.assertTrue(set(tls.machine_names()) <= set(names))
+        self.assertIn("localhost", names)
+        with mock.patch.object(tls, "machine_names", lambda: ["jumphost01.corp.example.com", "jumphost01"]):
+            cert, _, created = tls.ensure_certificate(self.ws)      # renamed computer: new certificate
+            self.assertTrue(created)
+            self.assertEqual(tls.cert_dns_names(cert.read_text())[:2], ["jumphost01.corp.example.com", "jumphost01"])
+            self.assertFalse(tls.ensure_certificate(self.ws)[2])
+            ctx, cert, _ = tls.server_context(self.ws)
+            self._handshake(ctx, cert, "jumphost01.corp.example.com")
+
+    def _handshake(self, ctx, cert, host):
+        import socket
+        import threading
+        client = ssl.create_default_context(cafile=str(cert))
+        srv = socket.create_server(("127.0.0.1", 0))
+
+        def accept():
+            conn, _ = srv.accept()
+            with ctx.wrap_socket(conn, server_side=True) as s:
+                s.recv(1)
+        threading.Thread(target=accept, daemon=True).start()
+        with socket.create_connection(("127.0.0.1", srv.getsockname()[1])) as raw:
+            with client.wrap_socket(raw, server_hostname=host) as s:     # checks the name and the signature
+                s.send(b"x")
         srv.close()
 
     def test_damaged_key_makes_a_new_pair(self):

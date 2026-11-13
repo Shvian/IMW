@@ -1,8 +1,10 @@
 """HTTPS for the Workbench with a self-signed certificate, standard library only.
 
-The certificate is made here in pure Python (RSA 2048, SHA-256) because Windows has no
-openssl and pam2pc installs nothing. It is valid for https://127.0.0.1 and https://localhost
-only, for 397 days, and is kept in <workspace>/tls/ so you can trust it once:
+The certificate is made on the computer the Workbench runs on, in pure Python (RSA 2048,
+SHA-256), because Windows has no openssl and pam2pc installs nothing. Its subject is this
+computer's name, and its alternative names (SAN) are this computer's host name and full DNS
+name, localhost, 127.0.0.1 and ::1. It is valid for 397 days, is remade when the computer's
+name no longer matches, and is kept in <workspace>/tls/ so you can trust it once:
 
   workbench.crt         the certificate (public). Double-click it, or run
                         "python -m pam2pc ui --trust-cert", to trust it for your Windows user.
@@ -17,7 +19,9 @@ import base64
 import datetime as dt
 import hashlib
 import os
+import re
 import secrets
+import socket
 import ssl
 import subprocess
 import sys
@@ -29,7 +33,7 @@ KEY_DPAPI = "workbench.key.dpapi"
 KEY_PEM = "workbench.key.pem"
 VALID_DAYS = 397          # browsers reject longer-lived server certificates
 RENEW_DAYS = 30           # make a new one when less than this is left
-COMMON_NAME = "Idira Migration Workbench (this computer only)"
+ORGANIZATION = "Idira Migration Workbench"
 
 
 class TlsError(Exception):
@@ -170,13 +174,29 @@ def _pem(label, der):
 
 # ---------------------------------------------------------------- certificate
 
-def make_certificate(key, now=None, days=VALID_DAYS):
+_DNS_NAME = re.compile(r"^(?=.{1,253}$)([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$")
+
+
+def machine_names():
+    """This computer's DNS names, most specific first: full DNS name, then host name."""
+    names = []
+    for n in (socket.getfqdn(), socket.gethostname()):
+        n = (n or "").strip().rstrip(".").lower()
+        if n and _DNS_NAME.match(n) and n not in names and n != "localhost" and not n.replace(".", "").isdigit():
+            names.append(n)
+    return names
+
+
+def make_certificate(key, now=None, days=VALID_DAYS, names=None):
     now = (now or dt.datetime.now(dt.timezone.utc)).replace(microsecond=0)
-    name = _seq(_set(_seq(_oid("2.5.4.3"), _utf8(COMMON_NAME))),
-                _set(_seq(_oid("2.5.4.10"), _utf8("pam2pc"))))
+    names = machine_names() if names is None else names
+    subject = names[0] if names else "localhost"
+    name = _seq(_set(_seq(_oid("2.5.4.3"), _utf8(subject))),
+                _set(_seq(_oid("2.5.4.10"), _utf8(ORGANIZATION))))
     spki = _seq(RSA_ENCRYPTION, _bits(_seq(_int(key["n"]), _int(key["e"]))))
     ski = hashlib.sha1(_seq(_int(key["n"]), _int(key["e"]))).digest()
-    san = _seq(_tlv(0x82, b"localhost"), _tlv(0x87, bytes([127, 0, 0, 1])))
+    san = _seq(*(_tlv(0x82, n.encode("ascii")) for n in names + ["localhost"]),
+               _tlv(0x87, bytes([127, 0, 0, 1])), _tlv(0x87, bytes(15) + b"\x01"))      # 127.0.0.1 and ::1
     critical = _tlv(0x01, b"\xff")
     extensions = _seq(
         _seq(_oid("2.5.29.17"), _octets(san)),                                   # subjectAltName
@@ -216,6 +236,20 @@ def _children(der, start, end):
         out.append((tag, s, e))
         i = e
     return out
+
+
+def cert_dns_names(cert_pem):
+    """DNS names in the certificate's subjectAltName."""
+    der = ssl.PEM_cert_to_DER_cert(cert_pem)
+    at = der.find(b"\x06\x03\x55\x1d\x11")          # OID 2.5.29.17
+    if at < 0:
+        return []
+    _, _, e = _read(der, at)
+    tag, s, e = _read(der, e)                          # the extension's value (an OCTET STRING)
+    if tag == 0x01:                                    # skip a critical flag if there is one
+        tag, s, e = _read(der, e)
+    _, s, e = _read(der, s)                            # GeneralNames SEQUENCE
+    return [der[cs:ce].decode("ascii").lower() for t, cs, ce in _children(der, s, e) if t == 0x82]
 
 
 def cert_expiry(cert_pem):
@@ -274,15 +308,18 @@ def _wipe(path):
 
 
 def ensure_certificate(workspace, renew=False):
-    """Returns (cert_path, key_pem, created). Makes a new pair when missing, unreadable or near expiry."""
+    """Returns (cert_path, key_pem, created). Makes a new pair when missing, unreadable, near expiry,
+    or made for another computer name (or before the name was put in)."""
     folder = Path(workspace) / "tls"
     folder.mkdir(parents=True, exist_ok=True)
     cert_path = folder / CERT_NAME
     if not renew and cert_path.exists():
         try:
             key_pem = _load_key(folder)
-            left = cert_expiry(cert_path.read_text()) - dt.datetime.now(dt.timezone.utc)
-            if key_pem and left > dt.timedelta(days=RENEW_DAYS):
+            pem = cert_path.read_text()
+            left = cert_expiry(pem) - dt.datetime.now(dt.timezone.utc)
+            named = set(machine_names()) <= set(cert_dns_names(pem))     # same computer name
+            if key_pem and named and left > dt.timedelta(days=RENEW_DAYS):
                 return cert_path, key_pem, False
         except Exception:   # noqa: BLE001 - unreadable (other Windows user, damaged): make a new one
             pass
