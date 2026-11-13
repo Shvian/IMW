@@ -889,8 +889,12 @@ class App:
         return {"locked": True}
 
     def api_end(self, body):
-        if body.get("confirm") != "END SESSION":
-            raise UiError("Type END SESSION to confirm.")
+        # Ending is one click (the page sends END SESSION); deleting the database needs DELETE DB typed.
+        if body.get("delete_db"):
+            if body.get("confirm") != "DELETE DB":
+                raise UiError("Type DELETE DB to confirm deleting the database.")
+        elif body.get("confirm") != "END SESSION":
+            raise UiError("Confirm with the End session button.")
         if not body.get("delete_db"):
             self._audit_if_db("end_session", database="kept")
         # End the session first: whatever happens to the files, nobody stays signed in and

@@ -186,7 +186,7 @@ class EndSessionAndDelete(Base):
     def test_locked_file_still_ends_session(self):
         self.app.db_path.write_bytes(b"x" * 10)
         with mock.patch.object(server, "secure_delete", side_effect=PermissionError("in use")):
-            r = self.app.api_end({"confirm": "END SESSION", "delete_db": True})
+            r = self.app.api_end({"confirm": "DELETE DB", "delete_db": True})
         self.assertFalse(self.app.unlocked)
         self.assertIsNone(self.app.sid)
         self.assertFalse(r["database_deleted"])

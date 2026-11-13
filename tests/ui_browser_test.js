@@ -466,10 +466,12 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   await page.click('#logout');
   await page.waitForSelector('#endbox:not(.hidden)');
   await shot(page, '09_end_session');
+  if (await page.isVisible('#end-confirm')) throw new Error('typing asked for without deleting the database');
+  await page.check('#end-del');                          // deleting the database needs DELETE DB typed
   await page.click('#end-go');
-  await page.waitForSelector('#end-msg >> text=END SESSION');
-  await page.fill('#end-confirm', 'END SESSION');
-  await page.click('#end-go');
+  await page.waitForSelector('#end-msg >> text=DELETE DB');
+  await page.uncheck('#end-del');
+  await page.click('#end-go');                           // ending alone is one click
   await page.waitForSelector('text=Session ended');
   if (!(await page.content()).includes('still on disk')) throw new Error('end session message wrong');
 

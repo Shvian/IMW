@@ -306,7 +306,7 @@ input.chk-bad { border-color: var(--warn); background: var(--warn-bg); }
     <li>leaves the database (<code id="end-db"></code>) on disk, encrypted for your Windows account. It can only be opened again by starting the Workbench again as you and signing in;</li>
     <li>keeps the inbox and the output folders as they are.</li></ul>
   <p><label class="inline"><input type="checkbox" id="end-del"> Also securely delete the database: every loaded record, encrypted secret, mapping and change you made is gone for good. Output files are kept.</label></p>
-  <label>Type <b>END SESSION</b> to confirm<input type="text" id="end-confirm" autocomplete="off"></label>
+  <label id="end-confirm-row" class="hidden">Type <b>DELETE DB</b> to confirm deleting the database<input type="text" id="end-confirm" autocomplete="off"></label>
   <div class="row"><button class="btn danger" id="end-go">End session</button><button class="btn" id="end-cancel">Cancel</button><span id="end-msg" class="small"></span></div></div></div>
 
 <script src="/app.js"></script>

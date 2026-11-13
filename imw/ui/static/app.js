@@ -133,14 +133,23 @@ $("#login-form").onsubmit = async (e) => {
 $("#lock").onclick = async () => { await api("/api/lock", {}).catch(() => {}); showLogin("Session locked."); };
 $("#logout").onclick = () => {
   $("#end-db").textContent = STATE.workspace ? STATE.workspace + (STATE.workspace.includes("\\") ? "\\" : "/") + "migration.db" : "migration.db";
-  $("#end-confirm").value = ""; $("#end-del").checked = false; $("#end-msg").textContent = "";
-  $("#endbox").classList.remove("hidden"); $("#end-confirm").focus();
+  $("#end-confirm").value = ""; $("#end-del").checked = false; $("#end-msg").textContent = ""; syncEndDel();
+  $("#endbox").classList.remove("hidden"); $("#end-go").focus();
 };
 $("#end-cancel").onclick = () => $("#endbox").classList.add("hidden");
+// Ending is one click; deleting the database as well needs DELETE DB typed.
+function syncEndDel() {
+  const del = $("#end-del").checked;
+  $("#end-confirm-row").classList.toggle("hidden", !del);
+  $("#end-go").textContent = del ? "End session and delete the database" : "End session";
+  if (del) $("#end-confirm").focus();
+}
+$("#end-del").onchange = syncEndDel;
 $("#end-go").onclick = async () => {
-  if ($("#end-confirm").value !== "END SESSION") return $("#end-msg").innerHTML = '<span style="color:var(--err)">Type END SESSION exactly.</span>';
+  if ($("#end-del").checked && $("#end-confirm").value !== "DELETE DB") return $("#end-msg").innerHTML = '<span style="color:var(--err)">Type DELETE DB exactly to delete the database.</span>';
   try {
-    const r = await api("/api/end", { confirm: "END SESSION", delete_db: $("#end-del").checked });
+    const del = $("#end-del").checked;
+    const r = await api("/api/end", { confirm: del ? "DELETE DB" : "END SESSION", delete_db: del });
     document.body.innerHTML = `<p style='padding:30px'>Session ended and the Workbench has stopped.
       ${(r.not_deleted || []).length ? "Some database files could not be deleted (" + esc(r.not_deleted.join(", ")) + "), probably because Windows still had them open. They stay encrypted for your Windows account; delete them from the workspace folder." : r.database_deleted ? "The database was securely deleted." : "The database is still on disk, encrypted for your Windows account. Start the Workbench again to open it."}
       You can close this tab.</p>`;
@@ -203,7 +212,7 @@ document.addEventListener("input", (e) => checkInput(e.target));
 /* ---------------- Tooltips on every input ---------------- */
 const TIP_ID = {
   "login-pw": "Your Windows password. Windows checks it; the Workbench never stores it.",
-  "end-confirm": "Type END SESSION in capitals to confirm.",
+  "end-confirm": "Type DELETE DB in capitals to confirm that the database is deleted.",
   "end-del": "Tick to overwrite and delete migration.db when the session ends. Output files are kept.",
   "dir-fallback": "searchIn for members no source above matches. Leave empty so Privilege Cloud searches every directory. Fill it only if names clash across directories: the directory's ID (GUID) from Identity, or Vault.",
   "dir-strip": "Remove the domain part (CORP\\ or @corp.example.com) from those members' names.",
