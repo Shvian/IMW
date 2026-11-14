@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS plan_accounts (
   proposed_safe TEXT, valid_safe_name TEXT, safe_name_issues TEXT, safe_mapping_source TEXT,
   platform_id TEXT, platform_source TEXT, account_name TEXT, address TEXT, username TEXT,
   secret_type TEXT, has_secret TEXT, source TEXT, source_ref TEXT, source_type TEXT, folder TEXT,
-  access_groups TEXT, access_source TEXT);
+  access_groups TEXT, access_source TEXT, approved TEXT);
 CREATE TABLE IF NOT EXISTS plan_safes (
   safe_name TEXT PRIMARY KEY, length INTEGER, valid_safe_name TEXT, proposed_names TEXT,
   issues TEXT, mapping_sources TEXT, accounts INTEGER, accounts_to_upload INTEGER,
@@ -72,6 +72,8 @@ CREATE TABLE IF NOT EXISTS member_overrides (
   changed_utc TEXT, changed_by TEXT, reason TEXT);
 CREATE TABLE IF NOT EXISTS safe_overrides (
   safe_key TEXT PRIMARY KEY, settings_json TEXT, changed_utc TEXT, changed_by TEXT, reason TEXT);
+CREATE TABLE IF NOT EXISTS approvals (
+  record_id TEXT PRIMARY KEY, fingerprint TEXT, approved_utc TEXT, approved_by TEXT, reason TEXT);
 CREATE TABLE IF NOT EXISTS audit (
   id INTEGER PRIMARY KEY, ts TEXT, user TEXT, host TEXT, action TEXT, detail TEXT);
 CREATE VIEW IF NOT EXISTS accounts AS SELECT * FROM plan_accounts;
@@ -150,6 +152,8 @@ class Store:
             if cols and column not in cols:
                 self.db.execute(f"DROP TABLE {table}")
         self.db.executescript(SCHEMA)
+        if "approved" not in [r[1] for r in self.db.execute("PRAGMA table_info(plan_accounts)")]:
+            self.db.execute("ALTER TABLE plan_accounts ADD COLUMN approved TEXT DEFAULT ''")
         if new:
             self._set_meta("schema_version", SCHEMA_VERSION)
             self._set_meta("created_utc", _now())
@@ -418,13 +422,13 @@ class Store:
         for p in plan.accounts:
             r = p.rec
             self.db.execute(
-                "INSERT INTO plan_accounts VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO plan_accounts VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (r.record_id, p.migrate, p.status, "; ".join(p.errors + p.warnings), p.safe,
                  p.proposed_safe, "TRUE" if p.valid_safe else "FALSE", "; ".join(p.safe_issues),
                  p.safe_source, p.platform, p.platform_source, p.account_name, r.address, r.username,
                  r.secret_type, "Y" if r.has_secret else "N", r.source, r.source_ref, r.type,
                  r.folder_path, "; ".join(f"{g.member}={g.permission}" for g in p.grants),
-                 p.access_source))
+                 p.access_source, ""))
         for name, s in plan.safes.items():
             body = safe_settings(name, s, cfg)
             if str(body.get("numberOfVersionsRetention", "")).strip():
@@ -449,12 +453,75 @@ class Store:
                             (safe, m["source_name"], m["member_name"], m["search_in"], m["member_type"],
                              m["permission"], m["role"] or "UNMAPPED", m["accounts"], "; ".join(m["notes"]),
                              m.get("directory_source", "")))
+        self._check_approvals()
         self._set_meta("config", json.dumps(cfg))
         self._set_meta("config_path", str(cfg_path or "(defaults)"))
         self._set_meta("mapped_utc", _now())
         self.audit("map", config=str(cfg_path or "(defaults)"), accounts=len(plan.accounts))
         self.db.commit()
         return plan
+
+    # -- approvals ----------------------------------------------------------
+    def _fingerprint_rows(self, ids=None):
+        sql = ("SELECT p.*, r.name AS source_name FROM plan_accounts p JOIN records r USING (record_id)")
+        if ids is None:
+            return list(self.db.execute(sql))
+        out = []
+        ids = list(ids)
+        for i in range(0, len(ids), 500):
+            chunk = ids[i:i + 500]
+            out += self.db.execute(sql + f" WHERE p.record_id IN ({','.join('?' * len(chunk))})", chunk).fetchall()
+        return out
+
+    def _check_approvals(self):
+        """Mark the accounts whose approval still holds. An approval holds only while
+        everything shown about the account is exactly as it was when you approved it; once
+        anything changes (its notes, Safe, platform, name, address, ...), the approval is
+        dropped and the account needs a look again."""
+        approvals = {r[0]: r[1] for r in self.db.execute("SELECT record_id, fingerprint FROM approvals")}
+        if not approvals:
+            return 0
+        keep, dropped = [], []
+        for row in self._fingerprint_rows():
+            fp = approvals.pop(row["record_id"], None)
+            if fp is None:
+                continue
+            if row["status"] == "REVIEW" and fp == account_fingerprint(row):
+                keep.append(row["record_id"])
+            else:
+                dropped.append(row["record_id"])
+        dropped += list(approvals)          # records that are gone
+        for i in range(0, len(keep), 500):
+            chunk = keep[i:i + 500]
+            self.db.execute(f"UPDATE plan_accounts SET approved = 'Y' WHERE record_id IN ({','.join('?' * len(chunk))})",
+                            chunk)
+        for i in range(0, len(dropped), 500):
+            chunk = dropped[i:i + 500]
+            self.db.execute(f"DELETE FROM approvals WHERE record_id IN ({','.join('?' * len(chunk))})", chunk)
+        if dropped:
+            self.audit("approval_cleared", records=len(dropped))
+        return len(dropped)
+
+    def approve(self, ids, approve=True, reason=""):
+        """Approve accounts that need a look (or take the approval back). Returns how many
+        changed. Only accounts with the status REVIEW can be approved."""
+        n = 0
+        for row in self._fingerprint_rows(ids):
+            rid = row["record_id"]
+            if approve:
+                if row["status"] != "REVIEW":
+                    continue
+                self.db.execute("INSERT OR REPLACE INTO approvals VALUES (?,?,?,?,?)",
+                                (rid, account_fingerprint(row), _now(), _user(), reason))
+                self.db.execute("UPDATE plan_accounts SET approved = 'Y' WHERE record_id = ?", (rid,))
+                n += 1
+            elif self.db.execute("DELETE FROM approvals WHERE record_id = ?", (rid,)).rowcount:
+                self.db.execute("UPDATE plan_accounts SET approved = '' WHERE record_id = ?", (rid,))
+                n += 1
+        if n:
+            self.audit("approve" if approve else "unapprove", records=n, reason=reason)
+        self.db.commit()
+        return n
 
     # -- edits ------------------------------------------------------------
     def select_ids(self, where, params=()):
@@ -543,6 +610,18 @@ class Store:
 
     def close(self):
         self.db.close()
+
+
+# What an approval covers: everything the review shows about one account. Any change to one
+# of these after approving makes the account need a look again.
+FINGERPRINT_FIELDS = ("migrate", "status", "notes", "target_safe", "platform_id", "account_name",
+                      "address", "username", "secret_type", "has_secret", "source_type", "folder",
+                      "source_ref", "source_name")
+
+
+def account_fingerprint(row):
+    data = json.dumps([str(row[k] if row[k] is not None else "") for k in FINGERPRINT_FIELDS])
+    return hashlib.sha256(data.encode("utf-8")).hexdigest()
 
 
 def extract_plan(store, where=None, include_secrets=False, params=()):

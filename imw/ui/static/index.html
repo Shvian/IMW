@@ -115,8 +115,12 @@ details.card.fold[open] > summary { margin-bottom: 10px; }
 .tabs button { font: inherit; border: 0; background: none; color: var(--muted); padding: 8px 14px; cursor: pointer; border-bottom: 2px solid transparent; }
 .tabs button.on { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
 td.nowrap, th.nowrap { white-space: nowrap; }
-/* Why an account needs a look: one line under its name, the whole text on hover. */
-.row-note { color: var(--muted); font-size: 12px; max-width: 520px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Why an account needs a look: its own column, the whole text. */
+td.why { font-size: 12px; min-width: 220px; max-width: 460px; white-space: normal; }
+td.why ul { margin: 0; padding-left: 16px; }
+/* Preview cells that your unsaved changes affect. */
+td.chg { background: var(--warn-bg); }
+.approved { color: var(--ok); font-weight: 700; margin-left: 4px; }
 input.need { border-color: var(--err); }
 input.need::placeholder { color: var(--err); }
 .steps { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }

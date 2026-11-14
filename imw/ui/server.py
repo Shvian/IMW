@@ -21,6 +21,7 @@ import io
 import json
 import logging
 import os
+import re
 import secrets
 import shutil
 import ssl
@@ -44,7 +45,7 @@ from ..naming import Namer
 from ..protect import ProtectError
 from ..store import Store, StoreError, run_extract, sha256_file
 from ..transform import (Permissions, apply_member_override, clean_line, member_target,
-                         normalize_member_type, sanitize_safe_name)
+                         normalize_member_type, safe_settings, sanitize_safe_name)
 from .auth import get_authenticator
 from .tls import fingerprint, server_context, trust_certificate
 from ..owner import claim_workspace, peer_is_owner
@@ -64,6 +65,8 @@ VIEWS = {
     "all": ("All accounts", "1=1"),
     "upload": ("Will be uploaded", "migrate = 'Y' AND status <> 'ERROR'"),
     "review": ("Needs a look", "status = 'REVIEW'"),
+    "review_open": ("Needs a look, not approved yet", "status = 'REVIEW' AND COALESCE(approved, '') <> 'Y'"),
+    "approved": ("Needs a look, approved by you", "status = 'REVIEW' AND approved = 'Y'"),
     "errors": ("Errors (not uploaded)", "status = 'ERROR'"),
     "excluded": ("Left out by you", "migrate = 'N'"),
     "renamed_safes": ("Safe name was changed", "valid_safe_name = 'FALSE'"),
@@ -316,6 +319,8 @@ class App:
                 counts = {r[0]: r[1] for r in st.db.execute(
                     "SELECT status, COUNT(*) FROM plan_accounts GROUP BY status")}
                 state["status_counts"] = counts
+                state["approved"] = st.db.execute(
+                    "SELECT COUNT(*) FROM plan_accounts WHERE status = 'REVIEW' AND approved = 'Y'").fetchone()[0]
                 state["excluded"] = st.db.execute(
                     "SELECT COUNT(*) FROM plan_accounts WHERE migrate = 'N'").fetchone()[0]
                 state["to_upload"] = st.db.execute(
@@ -470,6 +475,67 @@ class App:
             st.close()
         return {"samples": samples, "unknown": unknown, "folder_codes": folder_codes}
 
+    def api_safes_preview(self, body):
+        """What the Safes page's settings would give, before they are saved: every source
+        folder with the Safe its accounts go to and that Safe's CPM, retention and description.
+        Runs the full rules (exceptions, prefix, your own changes to Safes and accounts) on
+        the loaded records, without secrets, and writes nothing."""
+        user = body.get("config")
+        if not isinstance(user, dict):
+            raise UiError("config must be a JSON object")
+        try:
+            cfg = config_from_dict(user)
+        except Exception as exc:  # noqa: BLE001
+            raise UiError(f"config is not valid: {exc}")
+        check_settings(cfg)
+        if not self.db_path.exists():
+            return {"rows": [], "folder_codes": [], "safes": 0, "accounts": 0, "total_rows": 0}
+        limit = max(1, min(int(body.get("limit") or 500), 2000))
+        st = self.store()
+        try:
+            try:
+                plan = st.plan(cfg)
+            except re.error as exc:
+                raise UiError(f"A pattern on this page is not valid: {exc}")
+            saved_safe = {}
+            for folder, safe in st.db.execute("SELECT folder, target_safe FROM plan_accounts"):
+                saved_safe.setdefault(folder, set()).add(safe)
+            saved_cpm = {r[0]: r[1] or "" for r in st.db.execute("SELECT safe_name, managing_cpm FROM plan_safes")}
+            folder_codes = self._folder_codes(st, cfg)
+        finally:
+            st.close()
+        settings = {}
+        for name, info in plan.safes.items():
+            b = safe_settings(name, info, cfg)
+            if str(b.get("numberOfVersionsRetention", "")).strip():
+                keeps = f"{b['numberOfVersionsRetention']} versions"
+            elif str(b.get("numberOfDaysRetention", "")).strip():
+                keeps = f"{b['numberOfDaysRetention']} days"
+            else:
+                keeps = ""
+            settings[name] = {"cpm": b.get("managingCPM", "") or "", "keeps": keeps,
+                              "description": b.get("description", "") or "",
+                              "issues": "; ".join(sorted(info["issues"])), "valid": info["valid"],
+                              "accounts": info["accounts"]}
+        groups = {}
+        for p in plan.accounts:
+            key = (p.rec.folder_path, p.safe)
+            g = groups.setdefault(key, {"folder": p.rec.folder_path, "safe": p.safe, "accounts": 0, "how": set()})
+            g["accounts"] += 1
+            g["how"].add(p.safe_source)
+        rows = []
+        for (folder, safe), g in sorted(groups.items(), key=lambda kv: (kv[0][0].lower(), kv[0][1].lower())):
+            s = settings[safe]
+            before = saved_safe.get(folder)
+            rows.append({"folder": folder, "safe": safe, "length": len(safe), "accounts": g["accounts"],
+                         "safe_accounts": s["accounts"], "how": sorted(g["how"]), "cpm": s["cpm"],
+                         "keeps": s["keeps"], "description": s["description"], "issues": s["issues"],
+                         "valid": s["valid"],
+                         "safe_changed": before is not None and safe not in before,
+                         "cpm_changed": safe in saved_cpm and saved_cpm[safe] != s["cpm"]})
+        return {"rows": rows[:limit], "total_rows": len(rows), "safes": len(plan.safes),
+                "accounts": len(plan.accounts), "folder_codes": folder_codes}
+
     def api_config_save(self, body):
         user = body.get("config")
         if isinstance(body.get("patch"), dict):
@@ -519,7 +585,7 @@ class App:
             total = st.query(f"SELECT COUNT(*) FROM accounts WHERE {where}", params)[1][0][0]
             cols, rows = st.query(
                 f"SELECT record_id, migrate, status, target_safe, platform_id, account_name, address, "
-                f"username, secret_type, has_secret, source, folder, access_groups, notes FROM accounts "
+                f"username, secret_type, has_secret, source, folder, access_groups, notes, approved FROM accounts "
                 f"WHERE {where} ORDER BY {sort} {order}, record_id LIMIT ? OFFSET ?",
                 params + [PAGE_SIZE, page * PAGE_SIZE])
             facets = {}
@@ -547,6 +613,9 @@ class App:
                 "SELECT member, permission, member_type FROM grants WHERE record_id = ?", (rid,))]
             out["edits"] = [dict(e) for e in st.db.execute(
                 "SELECT field, value, changed_utc, changed_by, reason FROM edits WHERE record_id = ?", (rid,))]
+            appr = st.db.execute("SELECT approved_utc, approved_by, reason FROM approvals WHERE record_id = ?",
+                                 (rid,)).fetchone()
+            out["approval"] = dict(appr) if appr and out["plan"].get("approved") == "Y" else None
         finally:
             st.close()
         return out
@@ -579,6 +648,26 @@ class App:
         finally:
             st.close()
         return {"changed": len(ids), "cleaned": len(cleaned)}
+
+    def api_approve(self, body):
+        """Approve the ticked accounts that need a look, or take the approval back. The
+        approval lasts until anything about the account changes."""
+        approve = body.get("approve", True) is not False
+        st = self.store()
+        try:
+            if body.get("ids"):
+                ids = list(body["ids"])
+            else:
+                where, params = build_where(body)
+                ids = st.select_ids(where, params)
+            if not ids:
+                raise UiError("No accounts selected.")
+            n = st.approve(ids, approve, _line(str(body.get("reason") or ""), []))
+        except StoreError as exc:
+            raise UiError(str(exc))
+        finally:
+            st.close()
+        return {"changed": n, "selected": len(ids)}
 
     def api_safes(self, _body):
         st = self.store()
@@ -955,7 +1044,8 @@ class App:
         ("POST", "/api/record"): "api_record", ("POST", "/api/edit"): "api_edit",
         ("GET", "/api/safes"): "api_safes", ("POST", "/api/extract"): "api_extract",
         ("POST", "/api/output/delete"): "api_output_delete", ("GET", "/api/audit"): "api_audit",
-        ("POST", "/api/naming/preview"): "api_naming_preview", ("POST", "/api/open"): "api_open_folder",
+        ("POST", "/api/naming/preview"): "api_naming_preview", ("POST", "/api/safes/preview"): "api_safes_preview",
+        ("POST", "/api/approve"): "api_approve", ("POST", "/api/open"): "api_open_folder",
         ("POST", "/api/lock"): "api_lock", ("POST", "/api/end"): "api_end", ("POST", "/api/ping"): "api_ping",
         ("POST", "/api/members/preview"): "api_members_preview", ("POST", "/api/members/edit"): "api_members_edit",
         ("POST", "/api/members/change"): "api_members_change", ("POST", "/api/safes/change"): "api_safes_change",
