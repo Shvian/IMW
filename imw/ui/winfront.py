@@ -35,9 +35,11 @@ def _find_explorer(user32, names):
         n = user32.GetWindowTextLengthW(hwnd)
         title = ctypes.create_unicode_buffer(n + 1)
         user32.GetWindowTextW(hwnd, title, n + 1)
-        # Explorer titles a window with the folder name, or the full path when
-        # "Display the full path in the title bar" is on.
-        if title.value.strip().lower() in names:
+        # Explorer titles a window with the folder name, or the full path when "Display the
+        # full path in the title bar" is on. Windows 11 adds " - File Explorer" (in the user's
+        # language), and " and 2 more tabs" when the window has tabs.
+        t = title.value.strip().lower()
+        if any(t == n or t.startswith(n + " - ") or t.startswith(n + " and ") for n in names):
             found.append(hwnd)
             return False
         return True
@@ -61,6 +63,9 @@ def _raise(user32, kernel32, hwnd):
     finally:
         if attached:
             user32.AttachThreadInput(here, there, False)
+    if user32.GetForegroundWindow() != hwnd:
+        # Last resort: what Alt+Tab uses; not limited by the foreground lock.
+        user32.SwitchToThisWindow(hwnd, True)
 
 
 def bring_to_front(path, timeout=4.0):
@@ -84,7 +89,8 @@ def bring_to_front(path, timeout=4.0):
                                     ("GetForegroundWindow", [], H),
                                     ("GetWindowThreadProcessId", [H, ctypes.c_void_p], DWORD),
                                     ("AttachThreadInput", [DWORD, DWORD, BOOL], BOOL),
-                                    ("BringWindowToTop", [H], BOOL), ("SetForegroundWindow", [H], BOOL)):
+                                    ("BringWindowToTop", [H], BOOL), ("SetForegroundWindow", [H], BOOL),
+                                    ("SwitchToThisWindow", [H, BOOL], None)):
                 fn = getattr(user32, name)
                 fn.argtypes, fn.restype = args, res
             kernel32.GetCurrentThreadId.restype = DWORD

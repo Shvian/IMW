@@ -540,7 +540,8 @@ PAGES.load = async () => {
   $("#main").innerHTML = `<h2>1. Load exports</h2>
     <p class="lead">Copy export files into the inbox folder, tick the ones to load, then click Load.</p>
     <div class="card"><h3>Inbox: <a class="pathlink" id="open-inbox" title="Open this folder in Explorer"><code>${esc(STATE.inbox)}</code></a>
-      <button class="btn small" id="open-inbox2">Open folder</button></h3>
+      <button class="btn small" id="open-inbox2">Open folder</button>
+      <button class="btn small" data-copy="${esc(STATE.inbox)}" title="Copy the folder path, to paste into File Explorer's address bar or a file dialog">Copy path</button></h3>
     ${files.length ? `<table><tr><th title="Tick every file to use: exports and permissions files">Load</th><th>File</th><th>Status</th><th>Size</th><th title="Which kind of export this is. It is detected from the file; click change if the guess is wrong.">Type</th>
         <th class="has-tip" title="A permissions file lists groups per folder or record (columns: Folder Path, Secret Name, Secret ID, Group, Permission), or is a Delinea folder-permissions report saved as CSV. Use one when the export itself has no access data, as with a Delinea CSV export or KeePass. A Delinea XML export carries its own folder and secret permissions; a permissions file only fills in records that have none. Tick several to merge them; a group listed in more than one file for the same folder is counted once.">Permissions file <span class="q">?</span></th><th></th></tr>
       ${files.map((f, i) => `<tr><td><input type="checkbox" class="pick" data-i="${i}" ${(f.guess || f.permissions) && f.loaded !== "same" ? "checked" : ""}></td>
@@ -564,6 +565,7 @@ PAGES.load = async () => {
     catch (e) { msg($("#load-msg"), "err", e.message); }
   };
   $("#open-inbox").onclick = openInbox; $("#open-inbox2").onclick = openInbox;
+  wireCopy($("#main"));
   document.querySelectorAll(".src-change").forEach(b => b.onclick = () => {
     b.parentElement.classList.add("hidden"); const sel = document.querySelector(`.src[data-i="${b.dataset.i}"]`); sel.classList.remove("hidden"); sel.focus(); });
   // "Load" says which files to use; "Permissions file" says how to use one. Ticking it as a permissions file also ticks Load.
@@ -634,6 +636,17 @@ document.addEventListener("click", (e) => {
 });
 // "How this page works": folded, so the inputs come first; the tooltips cover each field.
 const explain = (inner, label = "How this page works") => `<details class="explain"><summary>${esc(label)}</summary>${inner}</details>`;
+/* "Copy path" buttons: the path goes to the clipboard, to paste into File Explorer's address bar
+   (Windows may open a folder behind the browser; a pasted path always comes to the front). */
+async function copyText(btn, text) {
+  try { await navigator.clipboard.writeText(text); }
+  catch (e) {
+    const t = document.createElement("textarea"); t.value = text; document.body.appendChild(t); t.select();
+    try { document.execCommand("copy"); } finally { t.remove(); }
+  }
+  const was = btn.textContent; btn.textContent = "Copied"; setTimeout(() => { btn.textContent = was; }, 1500);
+}
+function wireCopy(root) { root.querySelectorAll("[data-copy]").forEach(b => b.onclick = () => copyText(b, b.dataset.copy)); }
 function editorTable(id, cols, rows, addLabel = "+ Add row", open = false) {
   TABLES[id] = cols;
   return editBlock(rowCount(rows.length), `<table class="editor" id="${esc(id)}"><tr>${cols.map(c => `<th${c.tip ? ` class="has-tip" title="${esc(c.tip)}"` : ""}>${esc(c.label)}${c.tip ? ' <span class="q">?</span>' : ""}</th>`).join("")}<th></th></tr>
@@ -1970,11 +1983,13 @@ PAGES.output = async () => {
       <h3>Folder name</h3>
       <p class="row"><input type="text" id="o-name" size="28"> <label class="inline"><input type="checkbox" id="o-replace"> Replace if it exists</label></p>
       <p class="small">The files go into <a class="pathlink" id="open-output" title="Open the output folder in Explorer"><code id="o-path">${esc(STATE.output)}</code></a>
-        <button class="btn small" id="open-output2">Open folder</button></p>
+        <button class="btn small" id="open-output2">Open folder</button>
+        <button class="btn small" id="copy-output" title="Copy the folder path, to paste into File Explorer's address bar or a file dialog">Copy path</button></p>
       <button class="btn primary" id="extract">Create files</button><div id="out-msg"></div>
     </div>
     <div class="card"><h3>Earlier outputs in <a class="pathlink" id="open-output3" title="Open this folder in Explorer"><code>${esc(STATE.output)}</code></a>
-      <button class="btn small" id="open-output4">Open folder</button></h3>
+      <button class="btn small" id="open-output4">Open folder</button>
+      <button class="btn small" data-copy="${esc(STATE.output)}" title="Copy the folder path, to paste into File Explorer's address bar or a file dialog">Copy path</button></h3>
       ${STATE.outputs.length ? `<table><tr><th>Name</th><th>Created</th><th>Accounts</th><th>Secrets</th><th></th></tr>
         ${STATE.outputs.map(o => `<tr><td><a class="pathlink" data-open-out="${esc(o.name)}" title="Open this folder in Explorer">${esc(o.name)}</a></td><td>${esc(o.created)}</td><td>${o.counts.accounts ?? ""}</td>
           <td>${o.secrets && o.has_upload ? '<span class="pill ERROR">plaintext</span>' : o.secrets ? "deleted" : "none"}</td>
@@ -1992,6 +2007,8 @@ PAGES.output = async () => {
   document.querySelectorAll("[data-open-out]").forEach(a => a.onclick = () => openOutput(a.dataset.openOut));
   const sep = STATE.output.includes("\\") ? "\\" : "/";
   const showPath = () => { const n = $("#o-name").value.trim(); $("#o-path").textContent = n ? STATE.output + sep + n : STATE.output; };
+  $("#copy-output").onclick = () => copyText($("#copy-output"), $("#o-path").textContent);
+  wireCopy($("#main"));
   // A ready-made folder name (date, what is in it, dry run or not), until you type your own.
   let typed = false;
   const autoName = () => {
@@ -2022,7 +2039,8 @@ PAGES.output = async () => {
       const r = await api("/api/extract", { scope, view: "all", filters, include_secrets: include, confirm: $("#confirm").value,
                                             name: $("#o-name").value, replace: $("#o-replace").checked });
       LAST_OUT = `<div class="msg ok">Created <b>${esc(r.name)}</b>: ${r.counts.safes} Safes, ${r.counts.members} members, ${r.counts.accounts} accounts${include ? " (with secrets)" : " (dry run)"}.<br>
-        Folder: <a class="pathlink" data-open-out="${esc(r.name)}" title="Open this folder in Explorer"><code>${esc(r.path)}</code></a><br>${r.files.map(esc).join(" · ")}</div>`;
+        Folder: <a class="pathlink" data-open-out="${esc(r.name)}" title="Open this folder in Explorer"><code>${esc(r.path)}</code></a>
+        <button class="btn small" data-copy="${esc(r.path)}" title="Copy the folder path">Copy path</button><br>${r.files.map(esc).join(" · ")}</div>`;
       go("output");
     } catch (e) { msg($("#out-msg"), "err", e.message); }
   };
