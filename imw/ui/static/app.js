@@ -298,7 +298,7 @@ const DIR_TIP = {
   case: "keep = as in the export; lower = all lower case (DBA-Team → dba-team); UPPER = all capitals (DBA-Team → DBA-TEAM).",
   dm_from: "The domain(s) of members in the export this row converts. Separate several with commas to send them all to one output domain.\nA domain matches both forms: CORP matches CORP\\jdoe and jdoe@corp.example.com.\n* = every member, also names with no domain.\nExamples: CORP · CORP, EMEA, APAC · emea.corp.example.com",
   dm_to: "The output domain. The name becomes UPN format: name@domain.\nLeave empty to drop the domain (CORP\\jdoe → jdoe).\nExamples: corp.example.com turns CORP\\jdoe into jdoe@corp.example.com",
-  dm_members: "Which members this row converts: users only (the usual case for UPN names), groups and roles only, or both.",
+  dm_members: "Which members this row converts: users (the usual case for UPN names), groups, roles, or a combination: users and groups, groups and roles, or all three.",
 };
 const TIP_KEY = {
   name: DIR_TIP.name, match: DIR_TIP.match, search_in: DIR_TIP.search_in, strip_domain: DIR_TIP.strip_domain,
@@ -882,7 +882,8 @@ PAGES["rules-dir"] = () => rulesPage("rules-dir",
     const fallbackDir = (cfg.directory_map || {})["*"] || "";
     const DM_COLS = [{ key: "from", label: "Source domain(s)", ph: "CORP, EMEA", tip: DIR_TIP.dm_from },
       { key: "to", label: "Output domain (UPN)", ph: "corp.example.com, or empty to drop", tip: DIR_TIP.dm_to },
-      { key: "members", label: "Applies to", options: [["users", "users"], ["groups", "groups and roles"], ["both", "users, groups and roles"]], tip: DIR_TIP.dm_members }];
+      { key: "members", label: "Applies to", options: [["users", "users"], ["groups", "groups"], ["roles", "roles"], ["users+groups", "users and groups"],
+        ["groups+roles", "groups and roles"], ["all", "users, groups and roles"]], tip: DIR_TIP.dm_members }];
     return {
       html: `${explain(`<p><b>How it works.</b> For each member in the export (for example <code>CORP\\DBA-Team</code>), the Workbench goes down the list of sources
           for that member's type and uses the <b>first</b> one whose "Matches members from" fits. That source decides the member's name in SafeMembers.csv (memberName) and, if you fill it in, the directory to look in (searchIn).

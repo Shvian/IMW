@@ -368,14 +368,26 @@ def _domain_matches(spec, domain):
     return False
 
 
+DOMAIN_MAP_KINDS = ("users", "groups", "roles")
+
+
+def domain_map_kinds(value):
+    """'users', 'groups', 'roles' or a combination joined with + ('users+groups'); 'both' or
+    'all' = every kind. Empty = users."""
+    v = (value or "users").strip().lower()
+    if v in ("both", "all"):
+        return set(DOMAIN_MAP_KINDS)
+    return {k for k in re.split(r"[+,\s]+", v) if k in DOMAIN_MAP_KINDS} or {"users"}
+
+
 def convert_domain(cfg, domain, short, member_type):
     """The domain conversion rows (domain_map), checked top to bottom: the first whose
     "from" domains and member kind fit gives the name with the domain dropped (to empty) or
     in UPN form, short@to, and a label for the row. (None, "") when no row fits."""
-    mt = (member_type or "").lower()
+    mt = normalize_member_type(member_type, "Group").lower() + "s"
     for row in cfg.get("domain_map") or []:
-        kind = (row.get("members") or "users").lower()
-        if kind == "users" and mt != "user" or kind == "groups" and mt == "user":
+        kinds = domain_map_kinds(row.get("members"))
+        if mt not in kinds:
             continue
         if _domain_matches(row.get("from"), domain):
             to = str(row.get("to") or "").strip().lstrip("@")
