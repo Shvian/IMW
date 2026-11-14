@@ -15,7 +15,8 @@ from collections import OrderedDict
 from .. import safexml
 from ..csvsafe import reading
 from ..model import SourceRecord, split_folder
-from .base import Adapter, AdapterError, file_stem, is_secret_column, read_head
+from .base import (Adapter, AdapterError, file_stem, is_otp_value, is_secret_column, otp_fields,
+                   otp_note, read_head)
 from .rows import record_from_row
 
 STANDARD = {"Title", "UserName", "Password", "URL", "Notes"}
@@ -105,7 +106,14 @@ class KeePassAdapter(Adapter):
         rec.address = fields.get("URL", "").strip()   # build_plan turns it into a host when url_address_to_host is on
         rec.secret = fields.get("Password", "")
         rec.type = "\\".join(folder) if kcfg["type_from"] == "group" else kcfg["fixed_type"]
+        otp = otp_fields((k, v) for k, v in fields.items() if k not in STANDARD or k == "URL")
+        if otp:
+            rec.notes.append(otp_note(otp))
         for k, v in fields.items():
+            if k in otp and (k in protected or is_secret_column(k, cfg) or is_otp_value(v)):
+                if k == "URL":
+                    rec.address = ""             # an otpauth:// URI is not an address
+                continue                         # the seed: noted once above, never kept
             if k in STANDARD:
                 if k in ("URL", "Notes"):
                     rec.extra[k] = v
