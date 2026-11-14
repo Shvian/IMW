@@ -176,6 +176,12 @@ DEFAULT_CONFIG = {
     #   strip_domain (drop "CORP\" / "@corp..."), find + replace (regex), add_prefix,
     #   add_suffix, case ("keep" | "lower" | "upper").
     "directory_sources": [],
+    # Domain conversion for member names, checked top to bottom, first match wins. Each row:
+    #   from: one or more source domains, comma separated (CORP, EMEA or corp.example.com), or *
+    #   to: the domain for the UPN form (jdoe@corp.example.com), or empty to drop the domain
+    #   members: "users" (default), "groups" or "both" (groups rows also take roles)
+    # Several source domains can go to one, and each source domain to its own.
+    "domain_map": [],
     # Older, simpler form used when no directory source matches: domain -> searchIn.
     "directory_map": {"*": ""},
     "strip_domain_prefix": True,

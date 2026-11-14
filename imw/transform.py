@@ -354,8 +354,40 @@ def _source_matches(src, name, domain, member_type):
     return bool(d) and (d == m or d.split(".")[0] == m or m.split(".")[0] == d)
 
 
-def convert_member_name(src, name, domain, short):
-    out = short if (domain and src.get("strip_domain", True)) else name
+def _domain_matches(spec, domain):
+    """spec: one or more domains separated by , or ; (CORP, corp.example.com) or * for every member."""
+    d = (domain or "").lower()
+    for m in re.split(r"[,;]+", spec or ""):
+        m = m.strip().lower().lstrip("@")
+        if not m:
+            continue
+        if m == "*":
+            return True
+        if d and (d == m or d.split(".")[0] == m or m.split(".")[0] == d):
+            return True
+    return False
+
+
+def convert_domain(cfg, domain, short, member_type):
+    """The domain conversion rows (domain_map), checked top to bottom: the first whose
+    "from" domains and member kind fit gives the name with the domain dropped (to empty) or
+    in UPN form, short@to, and a label for the row. (None, "") when no row fits."""
+    mt = (member_type or "").lower()
+    for row in cfg.get("domain_map") or []:
+        kind = (row.get("members") or "users").lower()
+        if kind == "users" and mt != "user" or kind == "groups" and mt == "user":
+            continue
+        if _domain_matches(row.get("from"), domain):
+            to = str(row.get("to") or "").strip().lstrip("@")
+            return (f"{short}@{to}" if to else short), f"domain conversion {row.get('from', '').strip()}"
+    return None, ""
+
+
+def convert_member_name(src, name, domain, short, mapped=None):
+    if mapped is not None:
+        out = mapped
+    else:
+        out = short if (domain and src.get("strip_domain", True)) else name
     if src.get("find"):
         out = re.sub(src["find"], src.get("replace", ""), out, flags=re.IGNORECASE)
     out = f"{src.get('add_prefix', '')}{out}{src.get('add_suffix', '')}"
@@ -376,16 +408,22 @@ def normalize_member_type(value, default="Group"):
 
 
 def member_target(name, cfg, member_type=""):
-    """'CORP\\Group' -> (memberName, searchIn, source name) using directory_sources, then directory_map."""
+    """'CORP\\Group' -> (memberName, searchIn, source name) using domain_map, directory_sources,
+    then directory_map."""
     domain, short = _split_member(name)
     member_type = member_type or cfg.get("default_member_type", "Group")
+    # Domain conversion (drop the domain, or give the UPN form) comes first; a directory
+    # source's find/replace, added text and case then work on its result.
+    mapped, mapped_by = convert_domain(cfg, domain, short, member_type)
     for src in cfg.get("directory_sources") or []:
         if _source_matches(src, name, domain, member_type):
-            return convert_member_name(src, name, domain, short), src.get("search_in") or "", \
+            return convert_member_name(src, name, domain, short, mapped), src.get("search_in") or "", \
                 src.get("name") or src.get("match") or ""
     dmap = {k.lower(): v for k, v in cfg["directory_map"].items()}
     search_in = (dmap.get(domain.lower()) or dmap.get(domain.split(".")[0].lower())
                  or dmap.get("*", "")) if domain else dmap.get("*", "")
+    if mapped is not None:
+        return mapped, search_in, mapped_by
     member = short if (domain and cfg["strip_domain_prefix"]) else name
     return member, search_in, ""
 

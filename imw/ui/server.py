@@ -196,6 +196,12 @@ def check_settings(cfg):
             rx(src["match"][3:], "Directory source match")
         if src.get("find"):
             rx(src["find"], "Directory source find")
+    for row in cfg.get("domain_map") or []:
+        to = str(row.get("to") or "").strip().lstrip("@")
+        if not str(row.get("from") or "").strip():
+            raise UiError("Each domain conversion row needs the source domain(s) it converts, or *.")
+        if to and not _re.fullmatch(r"[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*", to):
+            raise UiError(f"'{to}' is not a domain name (for example corp.example.com).")
     for rule in cfg.get("safe_rules") or []:
         rx(rule.get("safe_pattern"), "Safe settings rule")
         if str(rule.get("numberOfVersionsRetention", "")).strip() and str(rule.get("numberOfDaysRetention", "")).strip():

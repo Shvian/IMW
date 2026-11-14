@@ -296,6 +296,9 @@ const DIR_TIP = {
   add_prefix: "Text put in front of every name from this source, after Find/Replace.\nExample: PAM- turns DBA-Team into PAM-DBA-Team",
   add_suffix: "Text put after every name from this source, after Find/Replace.\nExample: @corp.example.com turns jdoe into jdoe@corp.example.com",
   case: "keep = as in the export; lower = all lower case (DBA-Team → dba-team); UPPER = all capitals (DBA-Team → DBA-TEAM).",
+  dm_from: "The domain(s) of members in the export this row converts. Separate several with commas to send them all to one output domain.\nA domain matches both forms: CORP matches CORP\\jdoe and jdoe@corp.example.com.\n* = every member, also names with no domain.\nExamples: CORP · CORP, EMEA, APAC · emea.corp.example.com",
+  dm_to: "The output domain. The name becomes UPN format: name@domain.\nLeave empty to drop the domain (CORP\\jdoe → jdoe).\nExamples: corp.example.com turns CORP\\jdoe into jdoe@corp.example.com",
+  dm_members: "Which members this row converts: users only (the usual case for UPN names), groups and roles only, or both.",
 };
 const TIP_KEY = {
   name: DIR_TIP.name, match: DIR_TIP.match, search_in: DIR_TIP.search_in, strip_domain: DIR_TIP.strip_domain,
@@ -735,8 +738,8 @@ function updateBlockCount(id) {
 }
 let onTableCount = null;   // a page can listen for row counts changing (the Safes page's placeholder summaries)
 const normName = (t) => String(t).toLowerCase().split(/[\s\-_/\\:;,.()\[\]{}"'&+]+/).filter(Boolean).join(" ");
-const RULE_PAGES = [["rules-safes", "A. Safes"], ["rules-members", "B. Safe members"], ["rules-platforms", "C. Platforms"],
-  ["rules-accounts", "D. Accounts"], ["rules-dir", "E. Member names (optional)"], ["rules-json", "Advanced: settings file (JSON)"]];
+const RULE_PAGES = [["rules-safes", "A. Safes"], ["rules-members", "B. Safe permissions"], ["rules-platforms", "C. Platforms"],
+  ["rules-accounts", "D. Accounts"], ["rules-dir", "E. Member names"], ["rules-json", "Advanced: settings file (JSON)"]];
 
 // One settings page: its own cards and its own Save & apply, which saves only its keys.
 async function rulesPage(page, intro, render) {
@@ -877,6 +880,9 @@ PAGES["rules-dir"] = () => rulesPage("rules-dir",
     const rowsFor = (kind) => sources.filter(s => (s.members || "both") === "both" || s.members === kind)
       .map(s => ({ ...s, strip_domain: s.strip_domain === false || s.strip_domain === "no" ? "no" : "yes" }));
     const fallbackDir = (cfg.directory_map || {})["*"] || "";
+    const DM_COLS = [{ key: "from", label: "Source domain(s)", ph: "CORP, EMEA", tip: DIR_TIP.dm_from },
+      { key: "to", label: "Output domain (UPN)", ph: "corp.example.com, or empty to drop", tip: DIR_TIP.dm_to },
+      { key: "members", label: "Applies to", options: [["users", "users"], ["groups", "groups and roles"], ["both", "users, groups and roles"]], tip: DIR_TIP.dm_members }];
     return {
       html: `${explain(`<p><b>How it works.</b> For each member in the export (for example <code>CORP\\DBA-Team</code>), the Workbench goes down the list of sources
           for that member's type and uses the <b>first</b> one whose "Matches members from" fits. That source decides the member's name in SafeMembers.csv (memberName) and, if you fill it in, the directory to look in (searchIn).
@@ -888,13 +894,17 @@ PAGES["rules-dir"] = () => rulesPage("rules-dir",
           <label class="inline">searchIn <input type="text" id="dir-fallback" value="${esc(fallbackDir)}" size="20" placeholder="empty = all directories"></label>
           <label class="inline"><input type="checkbox" id="dir-strip" ${cfg.strip_domain_prefix ? "checked" : ""}> Drop the CORP\\ prefix from names</label>
           <label class="inline">A member the export doesn't give a type is a <select id="dir-type">${MEMBER_TYPES.map(t => `<option ${cfg.default_member_type === t ? "selected" : ""}>${t}</option>`).join("")}</select></label></div></div>
+        <div class="card"><h3>Domain conversion <span class="muted small">(checked before the default above, top to bottom; the first match wins)</span></h3>
+          <p class="small">Drop a domain, or change it and give the name in UPN format (<code>name@domain</code>). One row per output domain: list several source domains on one row to send them all to the same domain (<code>CORP, EMEA → corp.example.com</code>), or add a row per source domain to send each to its own. Example: <code>CORP\\jdoe</code> → <code>jdoe@corp.example.com</code>. A member no row matches keeps the default above. A source below still applies its find and replace, added text and case to the converted name.</p>
+          ${editorTable("t-dm", DM_COLS, cfg.domain_map || [], "+ Add domain conversion", true)}</div>
         <div class="card"><h3>Exceptions: sources for some members <span class="muted small">(checked before the default above, top to bottom; the first match wins)</span></h3>
           <h4 style="margin:6px 0">Groups and roles</h4>${editorTable("t-dg", COLS, rowsFor("groups"), "+ Add group source")}
           <h4 style="margin:12px 0 6px">Users</h4>${editorTable("t-du", COLS, rowsFor("users"), "+ Add user source")}</div>`,
       collect() {
         const fix = (r, members) => ({ ...r, members, strip_domain: r.strip_domain !== "no", name: r.name || r.match || "" });
         const list = readTable("t-dg").map(r => fix(r, "groups")).concat(readTable("t-du").map(r => fix(r, "users")));
-        return { directory_sources: list, directory_map: { "*": $("#dir-fallback").value.trim() },
+        const domainMap = readTable("t-dm").filter(r => r.from || r.to).map(r => ({ from: r.from || "", to: (r.to || "").replace(/^@/, ""), members: r.members || "users" }));
+        return { directory_sources: list, directory_map: { "*": $("#dir-fallback").value.trim() }, domain_map: domainMap,
                  strip_domain_prefix: $("#dir-strip").checked, default_member_type: $("#dir-type").value };
       },
       preview: {
@@ -1599,14 +1609,14 @@ PAGES["review-safes"] = async () => {
     : s.issues ? ` <span class="pill REVIEW" title="${esc(s.issues)}">⚠</span>` : "";
   $("#main").innerHTML = `<h2>3. Review &amp; change · A. Safes &amp; members</h2>
     <p class="lead">The Safes the upload will create and who gets access. Click a Safe or a member to see and change it. To change how Safes are named or who gets access everywhere, use the rules in step 2
-      (<a href="#" data-go="rules-safes">Safes</a>, <a href="#" data-go="rules-members">Safe members</a>, <a href="#" data-go="rules-dir">member names</a>).</p>
+      (<a href="#" data-go="rules-safes">Safes</a>, <a href="#" data-go="rules-members">Safe permissions</a>, <a href="#" data-go="rules-dir">member names</a>).</p>
     ${safeEditsHtml(d)}${editsHtml}
     <div class="tabs" role="tablist"><button data-tab="safes" class="${tab === "safes" ? "on" : ""}" role="tab">Safes (${d.safes.length})</button>
       <button data-tab="members" class="${tab === "members" ? "on" : ""}" role="tab">Members (${d.people.length})</button><label class="inline small" style="margin-left:auto;align-self:center" title="Review: the usual columns. Source → upload CSV: what the export had on the left, and the Safes.csv / SafeMembers.csv columns it becomes on the right.">Columns
       <select id="s-cols-mode"><option value="review">Review</option><option value="csv" ${csvMode ? "selected" : ""}>Source → upload CSV</option></select></label></div>
     <div id="tab-safes" class="${tab === "safes" ? "" : "hidden"}">
       ${noFullCount ? `<div class="msg warn">${noFullCount} ${noFullCount === 1 ? "Safe has" : "Safes have"} no member with full permissions, so nobody from your source could manage ${noFullCount === 1 ? "it" : "them"} or ${noFullCount === 1 ? "its" : "their"} members after the upload.
-        Give one user, group or role the <b>Full</b> role: tick the Safes, then <b>Add to ticked Safes</b> with role Full; or map a source permission to Full in <a href="#" data-go="rules-members">B. Safe members</a>.
+        Give one user, group or role the <b>Full</b> role: tick the Safes, then <b>Add to ticked Safes</b> with role Full; or map a source permission to Full in <a href="#" data-go="rules-members">B. Safe permissions</a>.
         <label class="inline" style="margin-left:8px"><input type="checkbox" id="s-nofull" ${SAFES.nofull ? "checked" : ""}> show only these Safes</label></div>` : ""}
       <div class="row" style="margin-bottom:8px"><input type="search" id="s-filter" placeholder="Show Safes containing…" size="28" value="${esc(SAFES.filter)}">
         <button class="btn small" id="s-tick-shown">Tick the Safes shown</button>

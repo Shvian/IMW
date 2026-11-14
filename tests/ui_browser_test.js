@@ -211,7 +211,7 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
 
   await page.click('#rules-next');                       // Next goes to the next sub-page
   await page.waitForSelector('#roles table', { state: 'attached' });
-  if (!(await page.innerText('h2')).includes('B. Safe members')) throw new Error('Next did not open B. Safe members');
+  if (!(await page.innerText('h2')).includes('B. Safe permissions')) throw new Error('Next did not open B. Safe permissions');
   await page.waitForSelector('#roles table', { state: 'attached' });
   await page.waitForSelector('#pv-out table');           // members preview: source member -> SafeMembers.csv
   await page.selectOption('#role-from', 'Read only');
