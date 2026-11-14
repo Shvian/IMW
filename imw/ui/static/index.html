@@ -119,7 +119,24 @@ td.nowrap, th.nowrap { white-space: nowrap; }
 td.why { font-size: 12px; min-width: 220px; max-width: 460px; white-space: normal; }
 td.why ul { margin: 0; padding-left: 16px; }
 /* Preview cells that your unsaved changes affect. */
-td.chg { background: var(--warn-bg); }
+td.chg, tr.chg-row td { background: var(--warn-bg); }
+/* The floating preview on the Mapping rules pages: stays at the bottom of the window, above Save & apply. */
+.pv-dock { position: sticky; bottom: calc(var(--fb-h, 60px) + 8px); z-index: 7; margin-top: 18px; background: var(--panel);
+  border: 1px solid var(--line-strong); border-radius: 10px; box-shadow: 0 -6px 20px var(--shadow); padding: 8px 12px; }
+.pv-head { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+.pv-head .pv-toggle { font-size: 14px; color: var(--ink); text-decoration: none; }
+.pv-dock.folded .pv-arrow { display: inline-block; transform: rotate(-90deg); }
+.pv-dock.folded .pv-body { display: none; }
+.pv-body { height: 30vh; min-height: 140px; overflow: auto; margin-top: 8px; border: 1px solid var(--line); border-radius: 6px; resize: vertical; }
+.pv-body > p { margin: 10px; }
+.pv-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+.pv-table thead th { position: sticky; background: var(--head-bg); z-index: 1; }
+.pv-table thead tr:first-child th { top: 0; height: 22px; }
+.pv-table thead tr:nth-child(2) th { top: 23px; }
+th.grp { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); text-align: left; }
+th.grp.csv { color: var(--accent); border-left: 2px solid var(--accent); }
+/* Source vs upload CSV tables: a line where the CSV columns start. */
+td.csv-first, th.csv-first { border-left: 2px solid var(--accent); }
 .approved { color: var(--ok); font-weight: 700; margin-left: 4px; }
 input.need { border-color: var(--err); }
 input.need::placeholder { color: var(--err); }

@@ -35,7 +35,8 @@ async function refresh() {
 const DIRTY = { main: false, panel: false };
 const NOT_A_CHANGE = new Set(["f-search", "s-filter", "p-filter", "view", "f-safe", "f-platform", "f-source", "f-status", "allmatch",
   "p-nosafe", "s-selall", "m-selall", "selall", "reason", "m-reason", "ra-reason", "pe-reason", "o-safe", "o-platform", "o-source",
-  "o-name", "o-replace", "confirm", "pa-safe", "pa-role", "role-from", "new-layer", "sv-reason"]);
+  "o-name", "o-replace", "confirm", "pa-safe", "pa-role", "role-from", "new-layer", "sv-reason",
+  "pv-filter", "pv-changed", "cols-mode", "s-cols-mode"]);
 function trackDirty(e) {
   const el = e.target;
   if (!el.matches || !el.matches("input, select, textarea") || el.type === "search" || el.name === "sec" || el.name === "scope") return;
@@ -266,6 +267,7 @@ const TIP_ID = {
 };
 const MEMBER_TYPES = ["Group", "User", "Role"];
 /* Plain words for the codes the rules record (shown instead of fallback:convention, platform_map and so on). */
+const SORTABLE_COLS = new Set(["target_safe", "account_name", "username", "address", "platform_id", "status", "folder", "source", "record_id"]);
 const STATUS_LABEL = { OK: "OK", REVIEW: "Needs a look", ERROR: "Error" };
 const pill = (st) => st ? `<span class="pill ${esc(st)}">${esc(STATUS_LABEL[st] || st)}</span>` : "";
 const APPROVED_TIP = "Approved by you: you looked at it and it is fine. It still shows as needing a look, and the approval goes away by itself if anything about the account changes.";
@@ -633,12 +635,14 @@ async function rulesPage(page, intro, render) {
     <datalist id="dl-folders">${(data.hints.folders || []).map(g => `<option value="${esc(g.name)}">${g.accounts} accounts</option>`).join("")}</datalist>
     <datalist id="dl-types">${(data.hints.types || []).map(g => `<option value="${esc(g.name)}">${g.accounts} accounts</option>`).join("")}</datalist>
     <div id="rules-body">${view.html}</div>
+    ${view.preview ? previewDockHtml(view.preview) : ""}
     <div class="floatbar"><button class="btn primary" id="save" title="Saves this page only and re-runs the rules on everything loaded. Your own changes in step 3 always win.">Save &amp; apply this page</button>
       <button class="btn" id="rules-next">${esc(nextTitle)} ›</button><span id="rules-msg"></span>
       ${json ? "" : '<a href="#" class="adv" data-go="rules-json" title="Every setting as JSON, for the few the pages don\'t cover">Advanced: settings file (JSON)</a>'}</div>`;
   $("#rules-next").onclick = () => go(nextPage);
   wireAddButtons();
   if (view.after) view.after();
+  if (view.preview) wirePreviewDock(view);
   applyTips(); syncSave();
   $("#save").onclick = async () => {
     let patch;
@@ -653,6 +657,84 @@ async function rulesPage(page, intro, render) {
   };
 }
 PAGES.rules = async () => go("rules-safes");
+
+/* The floating preview on every Mapping rules page: it stays at the bottom of the window above
+   Save & apply, scrolls inside, and shows what the settings on the page give as you change
+   them, before anything is saved. Source columns are on the left, the upload CSV columns they
+   become on the right; cells your unsaved changes affect are highlighted. */
+const CHG_TIP = "Different from what is saved and applied now";
+// A cell's class and tip: highlighted when the field is in the row's changed list.
+const chg = (x, key, cls = "") => {
+  const on = (x.changed || []).includes(key);
+  return ` class="${cls}${on ? " chg" : ""}"${on ? ` title="${CHG_TIP}"` : ""}`;
+};
+const SRC_HEAD = (n, label = "From the source") => `<th colspan="${n}" class="grp src">${label}</th>`;
+const CSV_HEAD = (n, file) => `<th colspan="${n}" class="grp csv" title="Columns of ${file} in the upload files">→ ${file}</th>`;
+// A line down the table where the upload CSV columns start (after the "From the source" group).
+function markCsvColumn(table) {
+  const grp = table && table.querySelector("thead tr:first-child");
+  if (!grp || !grp.querySelector("th.csv")) return;
+  let idx = 0;
+  for (const th of grp.children) { if (th.classList.contains("csv")) break; idx += th.colSpan || 1; }
+  table.querySelectorAll("thead tr:not(:first-child), tbody tr").forEach(tr => { const c = tr.children[idx]; if (c) c.classList.add("csv-first"); });
+}
+function previewDockHtml(pv) {
+  let folded = false; try { folded = localStorage.getItem("imw-pv-folded") === "1"; } catch (e) { /* no storage */ }
+  return `<section class="pv-dock${folded ? " folded" : ""}" id="pv-dock" aria-label="Preview">
+    <div class="pv-head">
+      <button class="linkbtn pv-toggle" id="pv-toggle" aria-expanded="${folded ? "false" : "true"}" title="Fold or unfold the preview"><span class="pv-arrow">▾</span> <b>Preview</b></button>
+      <span class="muted small pv-what">${esc(pv.title)}</span>
+      <input type="search" id="pv-filter" placeholder="Show rows containing…" size="22" title="Shows only the rows containing this text. Only filters the preview; not a setting.">
+      <label class="inline small" title="Shows only the rows that your unsaved changes on this page affect"><input type="checkbox" id="pv-changed"> only rows my changes affect</label>
+      <span class="muted small" id="pv-state"></span></div>
+    <div class="pv-body" id="pv-out"><p class="muted">${STATE.has_db ? "Loading…" : "Load some exports to see a preview."}</p></div></section>`;
+}
+function wirePreviewDock(view) {
+  const pv = view.preview, body = $("#rules-body"), dock = $("#pv-dock");
+  let rows = [], meta = null, seq = 0, timer = null;
+  const draw = () => {
+    if (!meta) return;
+    const q = $("#pv-filter").value.trim().toLowerCase(), onlyChg = $("#pv-changed").checked;
+    const shown = rows.filter(x => (!onlyChg || (x.changed || []).length) &&
+      (!q || JSON.stringify(x).toLowerCase().includes(q)));
+    const changed = rows.filter(x => (x.changed || []).length).length;
+    $("#pv-state").textContent = pv.summary(meta) + (changed ? ` · your changes affect ${changed} of ${rows.length} rows` : " · no unsaved changes") +
+      (meta.total_rows > rows.length ? ` · first ${rows.length} of ${meta.total_rows} rows` : "");
+    $("#pv-out").innerHTML = shown.length ? `<table class="small pv-table"><thead>${pv.head}</thead><tbody>${shown.map(pv.row).join("")}</tbody></table>`
+      : `<p class="muted">${rows.length ? "No rows match." : "Nothing to show yet: load some exports first."}</p>`;
+    markCsvColumn($("#pv-out table"));
+  };
+  const run = async () => {
+    if (!document.body.contains(dock)) return;            // the page was left
+    const mine = ++seq;
+    let patch; try { patch = view.collect(); } catch (e) { $("#pv-state").textContent = ""; return msg($("#pv-out"), "err", e.message); }
+    $("#pv-state").textContent = "Updating…";
+    let r;
+    try { r = await pv.load(patch); }
+    catch (e) { if (mine === seq && document.body.contains(dock)) { $("#pv-state").textContent = ""; msg($("#pv-out"), "err", e.message); } return; }
+    if (mine !== seq || !document.body.contains(dock)) return;   // a newer one is on its way, or the page was left
+    if (view.previewed) view.previewed(r);
+    rows = pv.rows ? pv.rows(r) : r.rows; meta = r;
+    draw();
+  };
+  const schedule = () => { if (!STATE.has_db) return; clearTimeout(timer); timer = setTimeout(() => run().catch(() => {}), 450); };
+  // Any change in the settings updates it: typing, picking, ticking, adding or removing rows.
+  // The listeners sit on this page's own body, so they go when you leave the page.
+  ["input", "change"].forEach(ev => body.addEventListener(ev, schedule));
+  body.addEventListener("click", (e) => { if (e.target.closest("button")) schedule(); });
+  $("#pv-filter").addEventListener("input", draw);
+  $("#pv-changed").addEventListener("change", draw);
+  $("#pv-toggle").onclick = () => {
+    const folded = dock.classList.toggle("folded");
+    $("#pv-toggle").setAttribute("aria-expanded", String(!folded));
+    try { localStorage.setItem("imw-pv-folded", folded ? "1" : "0"); } catch (e) { /* no storage */ }
+    queueFloat();
+  };
+  view.refresh = () => run().catch(() => {});
+  if (STATE.has_db) run().catch(() => {});
+}
+const previewApi = (kind) => (patch) => api("/api/rules/preview", patch.__full ? { kind, config: patch.__full } : { kind, patch });
+const countsSummary = (m) => `${m.accounts} accounts in ${m.safes} Safes`;
 
 /* A. Directory sources */
 PAGES["rules-dir"] = () => rulesPage("rules-dir",
@@ -684,9 +766,7 @@ PAGES["rules-dir"] = () => rulesPage("rules-dir",
         <div class="card"><h3>Every member (the default)</h3><div class="row">
           <label class="inline">searchIn <input type="text" id="dir-fallback" value="${esc(fallbackDir)}" size="20" placeholder="empty = all directories"></label>
           <label class="inline"><input type="checkbox" id="dir-strip" ${cfg.strip_domain_prefix ? "checked" : ""}> Drop the CORP\\ prefix from names</label>
-          <label class="inline">A member the export doesn't give a type is a <select id="dir-type">${MEMBER_TYPES.map(t => `<option ${cfg.default_member_type === t ? "selected" : ""}>${t}</option>`).join("")}</select></label></div>
-          <h4 style="margin:14px 0 6px">Preview</h4>
-          <div class="row"><button class="btn small" id="dir-preview">Preview member names</button><span class="muted small">uses the settings on this page, nothing is saved</span></div><div id="dir-out"></div></div>
+          <label class="inline">A member the export doesn't give a type is a <select id="dir-type">${MEMBER_TYPES.map(t => `<option ${cfg.default_member_type === t ? "selected" : ""}>${t}</option>`).join("")}</select></label></div></div>
         <div class="card"><h3>Exceptions: sources for some members <span class="muted small">(checked before the default above, top to bottom; the first match wins)</span></h3>
           <h4 style="margin:6px 0">Groups and roles</h4>${editorTable("t-dg", COLS, rowsFor("groups"), "+ Add group source")}
           <h4 style="margin:12px 0 6px">Users</h4>${editorTable("t-du", COLS, rowsFor("users"), "+ Add user source")}</div>`,
@@ -696,18 +776,15 @@ PAGES["rules-dir"] = () => rulesPage("rules-dir",
         return { directory_sources: list, directory_map: { "*": $("#dir-fallback").value.trim() },
                  strip_domain_prefix: $("#dir-strip").checked, default_member_type: $("#dir-type").value };
       },
-      after() {
-        const preview = async () => {
-          let patch; try { patch = this.collect(); } catch (e) { return msg($("#dir-out"), "err", e.message); }
-          const r = await api("/api/members/preview", { patch });
-          $("#dir-out").innerHTML = r.members.length ? firstRows(`<table class="small">
-            <tr><th>In the export</th><th>Type</th><th>Accounts</th><th>memberName</th><th>searchIn</th><th>Source used</th></tr>`,
-            r.members.map(m => `<tr><td>${esc(m.source)}</td><td>${esc(m.type)}</td><td>${m.accounts}</td><td><b>${esc(m.member_name)}</b></td><td>${m.search_in ? esc(m.search_in) : '<span class="muted">(all directories)</span>'}</td><td class="muted">${esc(/not matched/.test(m.directory_source || "") ? "the default" : m.directory_source)}</td></tr>`))
-            : '<p class="muted">Load some exports to see a preview.</p>';
-        };
-        $("#dir-preview").onclick = () => preview().catch(e => msg($("#dir-out"), "err", e.message));
-        this.refresh = () => preview().catch(() => {});
-        if (STATE.has_db) preview().catch(() => {});
+      preview: {
+        title: "each member in the export → its name in Privilege Cloud",
+        load: (patch) => api("/api/members/preview", { patch }),
+        rows: (r) => r.members, summary: (r) => `${r.members.length} members`,
+        head: `<tr>${SRC_HEAD(2)}${CSV_HEAD(3, "SafeMembers.csv")}<th class="grp"></th></tr>
+          <tr><th>Member in the export</th><th>Accounts</th><th>memberName</th><th>memberType</th><th>searchIn</th><th>Source used</th></tr>`,
+        row: (m) => `<tr><td>${esc(m.source)}</td><td>${m.accounts}</td><td${chg(m, "member_name")}><b>${esc(m.member_name)}</b></td>
+          <td${chg(m, "type")}>${esc(m.type)}</td><td${chg(m, "search_in")}>${m.search_in ? esc(m.search_in) : '<span class="muted">(all directories)</span>'}</td>
+          <td class="muted">${esc(/not matched/.test(m.directory_source || "") ? "the default" : m.directory_source)}</td></tr>`,
       },
     };
   });
@@ -764,7 +841,7 @@ PAGES["rules-safes"] = () => rulesPage("rules-safes",
           <label class="inline">with no folders <input type="text" id="conv-flat" size="30" value="${esc(conv.template_no_folders || "")}"></label></div>
         <div class="row"><label class="inline">Leave out folder levels <input type="text" id="conv-skip" size="24" value="${esc((conv.skip_folder_levels || []).join(", "))}" placeholder="e.g. Root"></label>
           <label class="inline">Flag Safes with more than <input type="text" id="max-acc" size="6" value="${esc(cfg.safe_max_accounts)}"> accounts</label></div></div>
-        <p class="muted small">⚠ Safe names are always cut to ${cfg.safe_name.max_length} characters, and the characters <code>${esc(cfg.safe_name.invalid_chars)}</code> become "${esc(cfg.safe_name.replacement)}". See the result in the <a href="#preview-card" id="to-preview">preview at the bottom</a>.</p></div>
+        <p class="muted small">⚠ Safe names are always cut to ${cfg.safe_name.max_length} characters, and the characters <code>${esc(cfg.safe_name.invalid_chars)}</code> become "${esc(cfg.safe_name.replacement)}". The preview at the bottom of the window shows the result as you type.</p></div>
       <details class="card fold" data-block="codes"><summary>Codes used in names <span class="muted small" style="font-weight:400">· folder abbreviations, other words and placeholders such as {env}: most migrations leave these as they are</span></summary>
         <h4 style="margin:4px 0 6px">Folder abbreviations <span class="muted small">(taken from the folders you loaded; type a code to change one)</span></h4>
         <div id="conv-folders"><p class="muted small">${STATE.has_db ? "Loading…" : "Load some exports to see your folder names here."}</p></div>
@@ -792,13 +869,7 @@ PAGES["rules-safes"] = () => rulesPage("rules-safes",
         ${editorTable("t-gr", GR, (cfg.group_rules || []).map(r => ({ ...r, min_role: fixRole(r.min_role) })))}
         <p><label class="inline"><input type="checkbox" id="gr-first" ${cfg.group_rules_first ? "checked" : ""}> Check access groups before the folder exceptions</label></p>
         <h4 style="margin:14px 0 6px">Different settings for some Safes <span class="muted small">(first match wins; empty cells keep the Safe settings above)</span></h4>
-        ${editorTable("t-sr", SR, cfg.safe_rules || [])}</div>
-      <div class="card" id="preview-card"><h3>Preview <span class="muted small">(what the settings on this page give; it updates as you change them, nothing is saved until Save &amp; apply)</span></h3>
-        <div class="row"><input type="search" id="pv-filter" placeholder="Show rows containing…" size="28"
-            title="Shows only the rows whose folder, Safe, CPM or notes contain this text. Not a setting: only filters the preview.">
-          <label class="inline" title="Shows only the rows where the Safe or its CPM differs from what is saved and applied now."><input type="checkbox" id="pv-changed"> only rows my changes affect</label>
-          <span class="muted small" id="pv-state"></span></div>
-        <div id="conv-out"><p class="muted">${STATE.has_db ? "Loading…" : "Load some exports to see a preview."}</p></div></div>`;
+        ${editorTable("t-sr", SR, cfg.safe_rules || [])}</div>`;
 
     const renderLayers = () => {
       const order = ["env", "tech", "flavor", "acct"].concat(Object.keys(layers).filter(n => !BUILTIN[n]));
@@ -863,6 +934,21 @@ PAGES["rules-safes"] = () => rulesPage("rules-safes",
     };
     return {
       html, collect,
+      preview: {
+        title: "each source folder → its Safe and that Safe's settings",
+        load: previewApi("safes"), summary: countsSummary,
+        head: `<tr>${SRC_HEAD(2)}${CSV_HEAD(5, "Safes.csv")}<th class="grp"></th></tr>
+          <tr><th title="The folder the accounts are in, in the source export">Folder</th><th title="Accounts from this folder that go to this Safe">Accounts</th>
+          <th title="The Safe the accounts go to, with every rule, exception and your own changes applied">safeName</th>
+          <th title="Characters in the Safe name (at most ${cfg.safe_name.max_length})">Length</th>
+          <th title="The CPM that manages this Safe's accounts: the Safe settings, then the 'Different settings' exceptions, then your own Safe changes. Empty = no CPM">managingCPM</th>
+          <th title="numberOfVersionsRetention or numberOfDaysRetention">Keeps</th><th>description</th>
+          <th title="Things to check about this Safe">Notes</th></tr>`,
+        row: (x) => `<tr><td>${esc(x.folder || "(no folder)")}</td><td>${x.accounts}</td>
+          <td${chg(x, "safe", "nowrap")}><b>${esc(x.safe)}</b>${x.valid ? "" : ' <span class="pill REVIEW" title="Forbidden characters replaced or the name shortened">name changed</span>'}</td>
+          <td>${x.length}</td><td${chg(x, "cpm", "nowrap")}>${x.cpm ? esc(x.cpm) : '<span class="muted">(no CPM)</span>'}</td>
+          <td${chg(x, "keeps", "nowrap")}>${esc(x.keeps)}</td><td${chg(x, "description")}>${esc(x.description)}</td><td class="notes">${esc(x.issues)}</td></tr>`,
+      },
       after() {
         // An older default environment becomes the {env} default so it shows here.
         if (conv.default_environment && layers.env && !layers.env.default) layers.env.default = conv.default_environment;
@@ -888,63 +974,12 @@ PAGES["rules-safes"] = () => rulesPage("rules-safes",
           if (!confirm("Put the built-in values back for {env}, {tech}, {flavor} and {acct}? Your own placeholders stay.")) return;
           readLayers(); const d = await api("/api/config"); Object.assign(layers, d.defaults.safe_convention.layers); renderLayers();
         };
-        // The preview: every source folder, the Safe its accounts go to and that Safe's CPM and
-        // settings, from the full rules with what is on this page now (not saved yet).
-        let pvRows = [], pvMeta = null, pvSeq = 0, pvTimer = null;
-        const CHG = "Different from what is saved and applied now";
-        const renderPreview = () => {
-          if (!pvMeta) return;
-          const q = $("#pv-filter").value.trim().toLowerCase(), onlyChg = $("#pv-changed").checked;
-          const rows = pvRows.filter(x => (!onlyChg || x.safe_changed || x.cpm_changed) &&
-            (!q || [x.folder, x.safe, x.cpm, x.description, x.issues].some(v => String(v || "").toLowerCase().includes(q))));
-          const changed = pvRows.filter(x => x.safe_changed || x.cpm_changed).length;
-          $("#pv-state").textContent = `${pvMeta.accounts} accounts in ${pvMeta.safes} Safes` +
-            (changed ? ` · your changes affect ${changed} of ${pvRows.length} rows (highlighted)` : "") +
-            (pvMeta.total_rows > pvRows.length ? ` · showing the first ${pvRows.length} of ${pvMeta.total_rows} folder rows` : "");
-          $("#conv-out").innerHTML = rows.length ? firstRows(`<table class="small"><tr>
-            <th title="The folder the accounts are in, in the source export">Source folder</th>
-            <th title="Accounts from this folder that go to this Safe">Accounts</th>
-            <th title="The Safe the accounts go to, with every rule, exception and your own changes applied">Safe</th>
-            <th title="Characters in the Safe name (at most ${cfg.safe_name.max_length})">Length</th>
-            <th title="The CPM that manages this Safe's accounts: the Safe settings, the 'Different settings' exceptions and your own Safe changes, in that order. Empty = no CPM">CPM</th>
-            <th title="How many old passwords the Safe keeps">Keeps</th><th>Description</th>
-            <th title="Things to check about this Safe">Notes</th></tr>`,
-            rows.map(x => `<tr><td>${esc(x.folder || "(no folder)")}</td><td>${x.accounts}</td>
-              <td class="nowrap${x.safe_changed ? " chg" : ""}"${x.safe_changed ? ` title="${CHG}"` : ""}><b>${esc(x.safe)}</b>${x.valid ? "" : ' <span class="pill REVIEW" title="Forbidden characters replaced or the name shortened">name changed</span>'}</td>
-              <td>${x.length}</td>
-              <td class="nowrap${x.cpm_changed ? " chg" : ""}"${x.cpm_changed ? ` title="${CHG}"` : ""}>${x.cpm ? esc(x.cpm) : '<span class="muted">(no CPM)</span>'}</td>
-              <td class="nowrap">${esc(x.keeps)}</td><td>${esc(x.description)}</td><td class="notes">${esc(x.issues)}</td></tr>`), 25)
-            : `<p class="muted">${pvRows.length ? "No rows match." : "Load some exports to see a preview."}</p>`;
-        };
-        const preview = async () => {
-          if (!$("#preview-card")) return;               // the page was left
-          const seq = ++pvSeq;
-          let patch; try { patch = collect(); } catch (e) { $("#pv-state").textContent = ""; return msg($("#conv-out"), "err", e.message); }
-          $("#pv-state").textContent = "Updating…";
-          let r;
-          try { r = await api("/api/safes/preview", { config: { ...cfg, ...patch } }); }
-          catch (e) { if (seq === pvSeq && $("#conv-out")) { $("#pv-state").textContent = ""; msg($("#conv-out"), "err", e.message); } return; }
-          if (seq !== pvSeq || !$("#conv-out")) return;     // a newer preview is on its way, or the page was left
-          // Don't redraw the folder codes while you type in one of them.
-          if (!$("#conv-folders").contains(document.activeElement)) renderFolderCodes(r.folder_codes || []);
-          pvRows = r.rows; pvMeta = r;
-          renderPreview();
-        };
-        const schedule = () => { if (!STATE.has_db) return; clearTimeout(pvTimer); pvTimer = setTimeout(() => preview().catch(() => {}), 450); };
-        // Any change to a setting above updates the preview: typing, picking, ticking, adding or removing rows.
-        // (on this page's own body, so the listeners go when you leave the page)
-        const body = $("#rules-body"), settingsArea = (e) => !$("#preview-card", body).contains(e.target);
-        ["input", "change"].forEach(ev => body.addEventListener(ev, (e) => { if (settingsArea(e)) schedule(); }));
-        body.addEventListener("click", (e) => { if (settingsArea(e) && e.target.closest("button")) schedule(); });
-        $("#pv-filter").addEventListener("input", renderPreview);
-        $("#pv-changed").addEventListener("change", renderPreview);
-        $("#to-preview").onclick = (e) => { e.preventDefault(); $("#preview-card").scrollIntoView({ behavior: "smooth" }); };
-        this.refresh = () => preview().catch(() => {});
+        // Don't redraw the folder codes while you type in one of them.
+        this.previewed = (r) => { if (!$("#conv-folders").contains(document.activeElement)) renderFolderCodes(r.folder_codes || []); };
         // The pattern fields matter only when Safes are named by the convention.
         const convOn = () => { const on = $("#fallback").value === "convention"; $("#conv-fields").style.opacity = on ? 1 : .5;
           $("#conv-fields").title = on ? "" : "Used only when Safes are named after the folder structure, abbreviated"; };
         $("#fallback").addEventListener("change", convOn); convOn();
-        if (STATE.has_db) preview().catch(() => {});
       },
     };
   });
@@ -986,6 +1021,16 @@ PAGES["rules-members"] = () => rulesPage("rules-members",
     };
     return {
       html,
+      preview: {
+        title: "each source member and permission → its Safe member and role",
+        load: previewApi("members"), summary: (m) => `${m.total_rows} Safe members on ${m.safes} Safes`,
+        head: `<tr>${SRC_HEAD(2)}${CSV_HEAD(4, "SafeMembers.csv")}<th class="grp"></th></tr>
+          <tr><th>Member in the export</th><th title="The permission the source gives (the strongest, when it has several)">Permission</th>
+          <th>safeName</th><th>memberName</th><th>memberType</th><th title="The Privilege Cloud role: a preset or your custom role, from the table on this page">role</th><th>Notes</th></tr>`,
+        row: (x) => `<tr${(x.changed || []).includes("new") ? ` class="chg-row" title="New compared with what is saved"` : ""}><td>${esc(x.source)}</td><td>${esc(x.permission)}</td>
+          <td class="nowrap">${esc(x.safe)}</td><td${chg(x, "member_name")}>${esc(x.member_name)}</td><td${chg(x, "member_type")}>${esc(x.member_type)}</td>
+          <td${chg(x, "role", "nowrap")}>${x.role === "UNMAPPED" ? '<span class="pill ERROR">no role</span>' : esc(x.role)}</td><td class="notes">${esc(x.notes)}</td></tr>`,
+      },
       collect: () => ({
         permission_map: Object.fromEntries(readTable("t-pr").filter(r => r.role && r.to).map(r => [r.role, r.to])),
         custom_roles: Object.fromEntries(customRoles.map(r => [r.name.trim(), PERM_GROUPS.flatMap(g => g[1].map(p => p[0])).filter(p => r.perms.has(p))])),
@@ -1032,6 +1077,16 @@ PAGES["rules-platforms"] = () => rulesPage("rules-platforms",
         <div class="card"><h3>Platform by record type <span class="muted small">(the default)</span></h3>${editorTable("t-pm", PM, platRows)}
         <p><label class="inline">Default platform for any other type <input type="text" id="defplat" value="${esc(cfg.default_platform || "")}" placeholder="empty = flag as error" data-check="platform"></label></p></div>
         <div class="card"><h3>Exceptions: platform rules <span class="muted small">(checked before the record type list, top to bottom; the first match wins)</span></h3>${editorTable("t-pru", PRU, cfg.platform_rules || [])}</div>`,
+      preview: {
+        title: "each record type → the platform its accounts get",
+        load: previewApi("platforms"), summary: countsSummary,
+        head: `<tr>${SRC_HEAD(3)}${CSV_HEAD(1, "Accounts.csv")}<th class="grp" colspan="2"></th></tr>
+          <tr><th>Record type</th><th>Folders</th><th>Accounts</th><th title="The platform ID the accounts get">platformId</th>
+          <th title="Which setting chose the platform">Chosen by</th><th>Errors</th></tr>`,
+        row: (x) => `<tr><td>${esc(x.type)}</td><td class="small">${esc(x.folders)}</td><td>${x.accounts}</td>
+          <td${chg(x, "platform", "nowrap")}>${x.platform ? esc(x.platform) : '<span class="pill ERROR">no platform</span>'}${x.moved ? ` <span class="muted">(${x.moved} changed)</span>` : ""}</td>
+          <td class="small">${esc(howChosen(x.how))}</td><td>${x.errors ? `<span class="pill ERROR">${x.errors}</span>` : ""}</td></tr>`,
+      },
       after() {
         if (hints.types_without_platform.length) $('[data-block="t-pm"]').open = true;   // needs filling in
         // An empty platform is not an example value: mark it as needed.
@@ -1073,6 +1128,18 @@ PAGES["rules-accounts"] = () => rulesPage("rules-accounts",
           <p class="muted small">Source columns copied into platformAccountProperties. The property must exist on the target platform, or Privilege Cloud rejects the account.</p>
           ${editorTable("t-ap", AP, Object.entries(cfg.account_property_map || {}).map(([column, property]) => ({ column, property })))}</div>
         <p class="muted small">CPM management and Safe settings are on <a href="#" data-go="rules-safes">B. Permissions: Safes</a>.</p>`,
+      preview: {
+        title: "each source record → its account name, address and properties",
+        load: previewApi("accounts"), summary: countsSummary,
+        head: `<tr>${SRC_HEAD(3)}${CSV_HEAD(5, "Accounts.csv")}<th class="grp"></th></tr>
+          <tr><th>Name</th><th>Address</th><th>Username</th><th>safeName</th><th>platformId</th>
+          <th title="The account's name in its Safe; empty = Privilege Cloud names it">name</th><th>address</th>
+          <th title="platformAccountProperties from the extra properties table">properties</th><th>Notes</th></tr>`,
+        row: (x) => `<tr><td>${esc(x.source_name)}</td><td>${esc(x.source_address)}</td><td>${esc(x.username)}</td>
+          <td class="nowrap">${esc(x.safe)}</td><td class="nowrap">${esc(x.platform)}</td>
+          <td${chg(x, "account_name")}>${x.account_name ? esc(x.account_name) : PC_NAMES}</td><td${chg(x, "address")}>${esc(x.address)}</td>
+          <td class="small">${esc(x.properties)}</td><td class="notes">${esc(x.notes)}</td></tr>`,
+      },
       after() {
         const sync = () => { const off = document.querySelector('input[name="an-mode"]:checked').value === "none";
           ["#an-t", "#an-f"].forEach(k => { $(k).disabled = off; }); $("#an-pattern").style.opacity = off ? .5 : 1; };
@@ -1092,6 +1159,13 @@ PAGES["rules-json"] = () => rulesPage("rules-json",
   "Every setting as JSON, for anything the other pages don't cover. Only change these if you know what you need.",
   ({ config: cfg }) => ({
     html: `<div class="card"><textarea id="json" rows="30">${esc(JSON.stringify(cfg, null, 2))}</textarea></div>`,
+    preview: {
+      title: "folders → Safes with the settings as typed (any valid JSON)",
+      load: previewApi("safes"), summary: countsSummary,
+      head: `<tr>${SRC_HEAD(2)}${CSV_HEAD(3, "Safes.csv")}</tr><tr><th>Folder</th><th>Accounts</th><th>safeName</th><th>managingCPM</th><th>Keeps</th></tr>`,
+      row: (x) => `<tr><td>${esc(x.folder || "(no folder)")}</td><td>${x.accounts}</td><td${chg(x, "safe", "nowrap")}><b>${esc(x.safe)}</b></td>
+        <td${chg(x, "cpm")}>${esc(x.cpm)}</td><td${chg(x, "keeps")}>${esc(x.keeps)}</td></tr>`,
+    },
     collect() {
       try { return { __full: JSON.parse($("#json").value) }; } catch (e) { throw new Error("The JSON is not valid: " + e.message); }
     },
@@ -1108,7 +1182,9 @@ PAGES.review = async () => {
       <div class="row"><label class="inline"><b>Show</b> <select id="view">${Object.entries(STATE.views).map(([k, v]) => `<option value="${esc(k)}" ${k === REVIEW.view ? "selected" : ""}>${esc(v)}</option>`).join("")}</select></label>
         <input type="search" id="f-search" placeholder="Search name, user, address, folder…" size="28" value="${esc(REVIEW.filters.search || "")}">
         <button class="btn" id="more-filters" aria-expanded="${active ? "true" : "false"}">Filters${active ? ` (${active})` : ""}</button>
-        <button class="btn${active || REVIEW.filters.search ? "" : " hidden"}" id="clear">Clear filters</button></div>
+        <button class="btn${active || REVIEW.filters.search ? "" : " hidden"}" id="clear">Clear filters</button>
+        <label class="inline" style="margin-left:auto" title="Review: the usual columns. Source → upload CSV: what the export had on the left, and the Accounts.csv columns it becomes on the right.">Columns
+          <select id="cols-mode"><option value="review">Review</option><option value="csv" ${REVIEW.mode === "csv" ? "selected" : ""}>Source → upload CSV</option></select></label></div>
       <div class="row${active ? "" : " hidden"}" id="filter-row" style="margin-top:8px"><select id="f-safe"></select><select id="f-platform"></select><select id="f-source"></select><select id="f-status"></select></div>
     </div>
     <div id="list"></div>
@@ -1134,6 +1210,7 @@ PAGES.review = async () => {
       <datalist id="dl-a-safes"></datalist><datalist id="dl-a-plats"></datalist></div>
     <div class="floatbar"><button class="btn" data-go="review-safes">‹ A. Safes &amp; members</button><button class="btn primary" data-go="output">Next: 4. Create upload files ›</button></div>`;
   $("#view").onchange = () => { REVIEW.view = $("#view").value; REVIEW.page = 0; loadList(); };
+  $("#cols-mode").onchange = () => { REVIEW.mode = $("#cols-mode").value; loadList(); };
   ["safe", "platform", "source", "status"].forEach(k => $(`#f-${k}`).onchange = () => { REVIEW.filters[k] = $(`#f-${k}`).value; REVIEW.page = 0; syncFilters(); loadList(); });
   let t; $("#f-search").oninput = () => { clearTimeout(t); t = setTimeout(() => { if (!$("#f-search")) return;   // the page was left meanwhile
     REVIEW.filters.search = $("#f-search").value; REVIEW.page = 0; syncFilters(); loadList(); }, 300); };
@@ -1161,22 +1238,44 @@ async function loadList() {
   $("#dl-a-plats").innerHTML = `<option value="(none)">no platform: the account is not uploaded</option>` + d.facets.platform.filter(Boolean).map(v => `<option value="${esc(v)}">`).join("");
   // The status column only says something when the list mixes statuses.
   const showStatus = REVIEW.view !== "errors";
-  const cols = [["account_name", "Account"], ["target_safe", "Safe"], ["platform_id", "Platform"], ["address", "Address"], ["username", "Username"]]
-    .concat(showStatus ? [["status", "Status"]] : []);
+  const csv = REVIEW.mode === "csv";
+  const cols = csv
+    ? [["folder", "Folder"], ["source_type", "Type"]].concat([["account_name", "name"], ["target_safe", "safeName"], ["platform_id", "platformId"], ["address", "address"], ["username", "userName"]])
+    : [["account_name", "Account"], ["target_safe", "Safe"], ["platform_id", "Platform"], ["address", "Address"], ["username", "Username"]];
   const whyLabel = REVIEW.view === "errors" ? "Why it isn't uploaded" : ["review", "review_open", "approved"].includes(REVIEW.view) ? "Why it needs a look" : "Notes";
   const pages = Math.ceil(d.total / d.page_size);
-  $("#list").innerHTML = `<p class="muted small">${d.total} accounts${pages > 1 ? ` · page ${d.page + 1} of ${pages}
-      <button class="btn small" ${d.page ? "" : "disabled"} id="prev">‹ Prev</button> <button class="btn small" ${d.page + 1 < pages ? "" : "disabled"} id="next">Next ›</button>` : ""}
-      ${d.total ? ` · <button class="linkbtn" id="allmatch-link" title="Tick every account in this list, on every page">Select all ${d.total} in this list</button>` : ""}</p>
-    <div class="tablewrap"><table><thead><tr><th><input type="checkbox" id="selall" title="Tick every account on this page"></th>
-      ${cols.map(([k, l]) => `<th class="sort" data-k="${k}">${l}${REVIEW.sort === k ? (REVIEW.desc ? " ▼" : " ▲") : ""}</th>`).join("")}
-      <th title="What is wrong with this account itself. Notes about its Safe (for example no access groups or a shortened Safe name) are on 3A. Safes &amp; members.">${whyLabel}</th></tr></thead>
-    <tbody>${d.rows.map((r, i) => `<tr class="clickable" data-i="${i}">
+  const sortTh = ([k, l], extra = "") => SORTABLE_COLS.has(k)
+    ? `<th class="sort${extra}" data-k="${k}">${l}${REVIEW.sort === k ? (REVIEW.desc ? " ▼" : " ▲") : ""}</th>` : `<th${extra ? ` class="${extra.trim()}"` : ""}>${l}</th>`;
+  const left = (r) => !showStatus && r.migrate === "N" ? ' <span class="pill N">left out</span>' : "";
+  const head = csv
+    ? `<tr><th></th>${SRC_HEAD(4)}${CSV_HEAD(6, "Accounts.csv")}<th class="grp" colspan="${showStatus ? 2 : 1}"></th></tr>
+       <tr><th><input type="checkbox" id="selall" title="Tick every account on this page"></th><th>Name</th><th>Address</th>${sortTh(["folder", "Folder"])}<th>Type</th>
+       ${sortTh(["target_safe", "safeName"])}${sortTh(["platform_id", "platformId"])}${sortTh(["account_name", "name"])}${sortTh(["address", "address"])}${sortTh(["username", "userName"])}<th>secretType</th>
+       ${showStatus ? sortTh(["status", "Status"]) : ""}<th>${whyLabel}</th></tr>`
+    : `<tr><th><input type="checkbox" id="selall" title="Tick every account on this page"></th>
+      ${cols.concat(showStatus ? [["status", "Status"]] : []).map(c => sortTh(c)).join("")}
+      <th title="What is wrong with this account itself. Notes about its Safe (for example no access groups or a shortened Safe name) are on 3A. Safes &amp; members.">${whyLabel}</th></tr>`;
+  const ncols = csv ? 12 + (showStatus ? 1 : 0) : cols.length + 2 + (showStatus ? 1 : 0);
+  const row = (r, i) => csv
+    ? `<tr class="clickable" data-i="${i}"><td><input type="checkbox" class="sel" data-id="${esc(r.record_id)}"></td>
+      <td>${esc(r.source_name)}</td><td>${esc(r.source_address)}</td><td class="small">${esc(r.folder)}</td><td class="small">${esc(r.source_type)}</td>
+      <td class="nowrap">${esc(r.target_safe)}</td><td class="nowrap">${esc(r.platform_id) || '<span class="pill ERROR">no platform</span>'}</td>
+      <td>${r.account_name ? esc(r.account_name) : PC_NAMES}${left(r)}</td><td>${esc(r.address)}</td><td>${esc(r.username)}</td><td class="small">${esc(r.secret_type)}</td>
+      ${showStatus ? `<td class="nowrap">${statusPill(r.status, r.approved)}${r.migrate === "N" ? ' <span class="pill N">left out</span>' : ""}</td>` : ""}
+      <td class="why">${esc(r.notes || "")}</td></tr>`
+    : `<tr class="clickable" data-i="${i}">
       <td><input type="checkbox" class="sel" data-id="${esc(r.record_id)}"></td>
-      <td>${r.account_name ? esc(r.account_name) : PC_NAMES}${!showStatus && r.migrate === "N" ? ' <span class="pill N">left out</span>' : ""}</td><td class="nowrap">${esc(r.target_safe)}</td>
+      <td>${r.account_name ? esc(r.account_name) : PC_NAMES}${left(r)}</td><td class="nowrap">${esc(r.target_safe)}</td>
       <td class="nowrap">${esc(r.platform_id) || '<span class="pill ERROR">no platform</span>'}</td><td>${esc(r.address)}</td><td>${esc(r.username)}</td>
       ${showStatus ? `<td class="nowrap">${statusPill(r.status, r.approved)}${r.migrate === "N" ? ' <span class="pill N">left out</span>' : ""}</td>` : ""}
-      <td class="why">${esc(r.notes || "")}</td></tr>`).join("") || `<tr><td colspan="${cols.length + 2}" class="muted">Nothing in this list.</td></tr>`}</tbody></table></div>`;
+      <td class="why">${esc(r.notes || "")}</td></tr>`;
+  $("#list").innerHTML = `<p class="muted small">${d.total} accounts${pages > 1 ? ` · page ${d.page + 1} of ${pages}
+      <button class="btn small" ${d.page ? "" : "disabled"} id="prev">‹ Prev</button> <button class="btn small" ${d.page + 1 < pages ? "" : "disabled"} id="next">Next ›</button>` : ""}
+      ${d.total ? ` · <button class="linkbtn" id="allmatch-link" title="Tick every account in this list, on every page">Select all ${d.total} in this list</button>` : ""}
+      ${csv ? " · secrets are never shown; secretType says what kind each one is" : ""}</p>
+    <div class="tablewrap"><table id="acc-table"><thead>${head}</thead>
+    <tbody>${d.rows.map(row).join("") || `<tr><td colspan="${ncols}" class="muted">Nothing in this list.</td></tr>`}</tbody></table></div>`;
+  if (csv) markCsvColumn($("#acc-table"));
   if ($("#prev")) { $("#prev").onclick = () => { REVIEW.page--; loadList(); }; $("#next").onclick = () => { REVIEW.page++; loadList(); }; }
   document.querySelectorAll("th.sort").forEach(th => th.onclick = () => { REVIEW.desc = REVIEW.sort === th.dataset.k ? !REVIEW.desc : false; REVIEW.sort = th.dataset.k; loadList(); });
   $("#selall").onchange = () => document.querySelectorAll(".sel").forEach(cb => { cb.checked = $("#selall").checked; toggle(cb); });
@@ -1335,6 +1434,8 @@ PAGES["review-safes"] = async () => {
   const memberCount = {};
   d.people.forEach(p => p.safes.forEach(x => { memberCount[x.safe_name] = (memberCount[x.safe_name] || 0) + 1; }));
   const tab = SAFES.tab || "safes";
+  const csvMode = SAFES.mode === "csv";
+  const safeLink = (s) => `<a href="#" data-members-of="${esc(s.safe_name)}" title="Rename this Safe, change its settings or its members">${esc(s.safe_name)}</a>${s.override_json ? ' <span class="pill REVIEW" title="You changed this Safe\'s name or settings directly">changed by you</span>' : ""}${nameNote(s)}`;
   const nameNote = (s) => s.valid_safe_name !== "TRUE"
     ? ` <span class="pill REVIEW" title="${esc(`The rules proposed ${s.proposed_names}: ${s.issues}`)}">name changed</span>`
     : s.issues ? ` <span class="pill REVIEW" title="${esc(s.issues)}">⚠</span>` : "";
@@ -1343,17 +1444,27 @@ PAGES["review-safes"] = async () => {
       (<a href="#" data-go="rules-safes">Safes</a>, <a href="#" data-go="rules-members">Safe members</a>, <a href="#" data-go="rules-dir">member names</a>).</p>
     ${safeEditsHtml(d)}${editsHtml}
     <div class="tabs" role="tablist"><button data-tab="safes" class="${tab === "safes" ? "on" : ""}" role="tab">Safes (${d.safes.length})</button>
-      <button data-tab="members" class="${tab === "members" ? "on" : ""}" role="tab">Members (${d.people.length})</button></div>
+      <button data-tab="members" class="${tab === "members" ? "on" : ""}" role="tab">Members (${d.people.length})</button><label class="inline small" style="margin-left:auto;align-self:center" title="Review: the usual columns. Source → upload CSV: what the export had on the left, and the Safes.csv / SafeMembers.csv columns it becomes on the right.">Columns
+      <select id="s-cols-mode"><option value="review">Review</option><option value="csv" ${csvMode ? "selected" : ""}>Source → upload CSV</option></select></label></div>
     <div id="tab-safes" class="${tab === "safes" ? "" : "hidden"}">
       <div class="row" style="margin-bottom:8px"><input type="search" id="s-filter" placeholder="Show Safes containing…" size="28" value="${esc(SAFES.filter)}">
         <button class="btn small" id="s-tick-shown">Tick the Safes shown</button>
         <span class="muted small" id="s-count"></span></div>
-      <div class="tablewrap"><table id="safes-table"><tr><th></th><th>Safe</th><th>Accounts</th><th>To upload</th><th>Members</th><th>CPM</th><th>Keeps</th><th>Description</th></tr>
-      ${d.safes.map(s => `<tr data-name="${esc(s.safe_name.toLowerCase())}"><td><input type="checkbox" class="s-sel" value="${esc(s.safe_name)}" ${SAFES.selected.has(s.safe_name) ? "checked" : ""}></td>
-        <td class="nowrap"><a href="#" data-members-of="${esc(s.safe_name)}" title="Rename this Safe, change its settings or its members">${esc(s.safe_name)}</a>${s.override_json ? ' <span class="pill REVIEW" title="You changed this Safe\'s name or settings directly">changed by you</span>' : ""}${nameNote(s)}</td>
+      <div class="tablewrap"><table id="safes-table">${csvMode ? `<thead><tr><th></th>${SRC_HEAD(2)}${CSV_HEAD(7, "Safes.csv")}<th class="grp" colspan="2"></th></tr>
+        <tr><th></th><th title="The source folders whose accounts go to this Safe">Folders</th><th title="The name the rules gave, before cleanup or your rename">Rules proposed</th>
+        <th>safeName</th><th>managingCPM</th><th title="numberOfVersionsRetention or numberOfDaysRetention">Keeps</th><th>description</th><th>location</th><th>olacEnabled</th><th>autoPurgeEnabled</th>
+        <th>Accounts</th><th>Members</th></tr></thead><tbody>` : `<tr><th></th><th>Safe</th><th>Accounts</th><th>To upload</th><th>Members</th><th>CPM</th><th>Keeps</th><th>Description</th></tr>`}
+      ${d.safes.map(s => csvMode ? `<tr data-name="${esc((s.safe_name + " " + (s.source_folders || "")).toLowerCase())}"><td><input type="checkbox" class="s-sel" value="${esc(s.safe_name)}" ${SAFES.selected.has(s.safe_name) ? "checked" : ""}></td>
+        <td class="small">${esc(s.source_folders || "").split(" | ").join("<br>")}</td><td class="small">${esc(s.proposed_names || "")}</td>
+        <td class="nowrap">${safeLink(s)}</td><td class="small">${esc(s.managing_cpm || "")}</td><td class="small nowrap">${esc(s.retention || "")}</td><td class="small">${esc(s.description || "")}</td>
+        <td class="small">${esc(s.location || "")}</td><td class="small">${esc(s.olac_enabled || "")}</td><td class="small">${esc(s.auto_purge || "")}</td>
+        <td><a href="#" data-safe="${esc(s.safe_name)}" title="Show this Safe's accounts in B. Accounts &amp; platforms">${s.accounts}</a></td>
+        <td>${memberCount[s.safe_name] || '<span class="pill REVIEW" title="Nobody gets access to this Safe">none</span>'}</td></tr>`
+        : `<tr data-name="${esc(s.safe_name.toLowerCase())}"><td><input type="checkbox" class="s-sel" value="${esc(s.safe_name)}" ${SAFES.selected.has(s.safe_name) ? "checked" : ""}></td>
+        <td class="nowrap">${safeLink(s)}</td>
         <td><a href="#" data-safe="${esc(s.safe_name)}" title="Show this Safe's accounts in B. Accounts &amp; platforms">${s.accounts}</a></td><td>${s.accounts_to_upload}</td>
         <td>${memberCount[s.safe_name] || '<span class="pill REVIEW" title="Nobody gets access to this Safe">none</span>'}</td>
-        <td class="small">${esc(s.managing_cpm || "")}</td><td class="small nowrap">${esc(s.retention || "")}</td><td class="small">${esc(s.description || "")}</td></tr>`).join("")}</table></div>
+        <td class="small">${esc(s.managing_cpm || "")}</td><td class="small nowrap">${esc(s.retention || "")}</td><td class="small">${esc(s.description || "")}</td></tr>`).join("")}${csvMode ? "</tbody>" : ""}</table></div>
       <div class="actionbar hidden" id="s-acts"><div class="row"><b id="s-selinfo"></b><input type="text" id="m-reason" placeholder="Reason (optional, kept in the log)" size="30">
           <button class="linkbtn" id="s-untick">Untick all</button></div>
         <div class="bulk" style="margin-top:8px">
@@ -1374,8 +1485,14 @@ PAGES["review-safes"] = async () => {
     <div id="tab-members" class="${tab === "members" ? "" : "hidden"}">
       <p class="muted small">Every user, group and role: those on a Safe, and those in your export whose accounts are not being uploaded.</p>
       <div class="row" style="margin-bottom:8px"><input type="search" id="p-filter" placeholder="Show members containing…" size="28" value="${esc(SAFES.pfilter || "")}">
-        <label class="inline"><input type="checkbox" id="p-nosafe" ${SAFES.nosafe ? "checked" : ""}> only members on no Safe</label><span class="muted small" id="p-count"></span></div>
-      <div class="tablewrap"><table id="people-table"><tr><th>Member</th><th>Type</th><th>searchIn</th><th>Safes</th><th>In the export as</th><th>Export accounts</th></tr>
+        <label class="inline${csvMode ? " hidden" : ""}"><input type="checkbox" id="p-nosafe" ${SAFES.nosafe ? "checked" : ""}> only members on no Safe</label><span class="muted small" id="p-count"></span></div>
+      ${csvMode ? `<div class="tablewrap"><table id="sm-table"><thead><tr>${SRC_HEAD(2)}${CSV_HEAD(5, "SafeMembers.csv")}<th class="grp" colspan="2"></th></tr>
+        <tr><th>Member in the export</th><th title="The permission the source gives (the strongest, when it has several)">Permission</th><th>safeName</th><th>memberName</th><th>memberType</th><th>searchIn</th><th>role</th><th>Accounts</th><th>Notes</th></tr></thead>
+        <tbody>${d.members.map(m => `<tr class="clickable" data-sm-safe="${esc(m.safe_name)}" data-name="${esc([m.source_member, m.member_name, m.safe_name].join(" ").toLowerCase())}">
+          <td>${esc(m.source_member || "")}</td><td>${esc(m.source_permission || "")}</td><td class="nowrap">${esc(m.safe_name)}</td><td>${esc(m.member_name)}</td><td>${esc(m.member_type)}</td>
+          <td>${m.search_in ? esc(m.search_in) : '<span class="muted">(all)</span>'}</td><td class="nowrap">${m.role === "UNMAPPED" ? '<span class="pill ERROR">no role</span>' : esc(m.role)}</td>
+          <td>${m.accounts}</td><td class="notes">${esc(m.notes || "")}</td></tr>`).join("") || '<tr><td colspan="9" class="muted">No members.</td></tr>'}</tbody></table></div>` : ""}
+      <div class="tablewrap${csvMode ? " hidden" : ""}"><table id="people-table"><tr><th>Member</th><th>Type</th><th>searchIn</th><th>Safes</th><th>In the export as</th><th>Export accounts</th></tr>
       ${d.people.map((m, i) => `<tr class="clickable" data-person="${i}" data-name="${esc((m.member_name + " " + m.source_member).toLowerCase())}" data-nosafe="${m.safes.length ? "" : 1}">
         <td><a href="#" data-person-link="${i}">${esc(m.member_name)}</a>${m.edited ? ' <span class="pill REVIEW">edited</span>' : ""}</td><td>${esc(m.member_type)}</td>
         <td>${m.search_in ? esc(m.search_in) : '<span class="muted">(all)</span>'}</td>
@@ -1426,14 +1543,17 @@ PAGES["review-safes"] = async () => {
   // Members list: filter, and click a member or a Safe to open its panel on the right
   const pFilter = () => {
     const f = (SAFES.pfilter || "").toLowerCase(); let n = 0;
-    document.querySelectorAll("#people-table tr[data-person]").forEach(tr => {
-      const hit = (!f || tr.dataset.name.includes(f)) && (!SAFES.nosafe || tr.dataset.nosafe); tr.classList.toggle("hidden", !hit); n += hit; });
-    $("#p-count").textContent = f || SAFES.nosafe ? `${n} shown` : "";
+    document.querySelectorAll(csvMode ? "#sm-table tr[data-sm-safe]" : "#people-table tr[data-person]").forEach(tr => {
+      const hit = (!f || tr.dataset.name.includes(f)) && (csvMode || !SAFES.nosafe || tr.dataset.nosafe); tr.classList.toggle("hidden", !hit); n += hit; });
+    $("#p-count").textContent = f || (SAFES.nosafe && !csvMode) ? `${n} shown` : "";
   };
   $("#p-filter").oninput = () => { SAFES.pfilter = $("#p-filter").value; pFilter(); };
   $("#p-nosafe").onchange = () => { SAFES.nosafe = $("#p-nosafe").checked; pFilter(); };
   pFilter();
   document.querySelectorAll("#people-table tr[data-person]").forEach(tr => tr.onclick = (e) => { e.preventDefault(); showPerson(d, d.people[tr.dataset.person]); });
+  document.querySelectorAll("#sm-table tr[data-sm-safe]").forEach(tr => tr.onclick = () => showSafe(d, tr.dataset.smSafe));
+  $("#s-cols-mode").onchange = () => { SAFES.mode = $("#s-cols-mode").value; PAGES["review-safes"](); };
+  if (csvMode) { markCsvColumn($("#safes-table")); markCsvColumn($("#sm-table")); }
   document.querySelectorAll("[data-members-of]").forEach(a => a.onclick = (e) => { e.preventDefault(); showSafe(d, a.dataset.membersOf); });
   document.querySelectorAll("[data-undo-person]").forEach(b => b.onclick = async () => {
     try { await api("/api/members/change", { key: b.dataset.undoPerson, undo: true }); await PAGES["review-safes"](); msg($("#m-msg"), "ok", "Member change undone."); }
@@ -1812,10 +1932,11 @@ function updateFloat() {
   const fb = document.querySelector("#main .floatbar");
   const h = fb ? fb.offsetHeight : 0;
   document.documentElement.style.setProperty("--fb-h", h + "px");
-  document.documentElement.style.setProperty("--fb-off", h + "px");
+  const dock = document.querySelector("#main .pv-dock");
+  document.documentElement.style.setProperty("--fb-off", h + (dock ? dock.offsetHeight + 8 : 0) + "px");
   // More below = some of the page's own content ends under the bottom edge (or under the floating bar).
   let bottom = 0;
-  for (const el of $("#main").children) if (!el.classList.contains("floatbar")) bottom = Math.max(bottom, el.getBoundingClientRect().bottom);
+  for (const el of $("#main").children) if (!el.classList.contains("floatbar") && !el.classList.contains("pv-dock")) bottom = Math.max(bottom, el.getBoundingClientRect().bottom);
   $("#more-below").classList.toggle("hidden", LOCKED || bottom <= window.innerHeight - h + 4);
 }
 let FLOAT_T;

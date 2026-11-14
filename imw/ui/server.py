@@ -475,12 +475,25 @@ class App:
             st.close()
         return {"samples": samples, "unknown": unknown, "folder_codes": folder_codes}
 
+    PREVIEW_KINDS = ("safes", "members", "platforms", "accounts")
+
     def api_safes_preview(self, body):
-        """What the Safes page's settings would give, before they are saved: every source
-        folder with the Safe its accounts go to and that Safe's CPM, retention and description.
-        Runs the full rules (exceptions, prefix, your own changes to Safes and accounts) on
-        the loaded records, without secrets, and writes nothing."""
+        return self.api_rules_preview(dict(body, kind="safes"))
+
+    def api_rules_preview(self, body):
+        """What a mapping rules page's settings would give, before they are saved. Runs the
+        full rules (exceptions, prefix, your own changes to Safes, members and accounts) on
+        the loaded records, without secrets, and writes nothing. kind picks the view:
+        safes (folder -> Safe and its CPM/settings), members (Safe members and roles),
+        platforms (record type -> platform), accounts (account names and properties).
+        Each row lists in "changed" the fields that differ from what is saved and applied now."""
+        kind = body.get("kind") or "safes"
+        if kind not in self.PREVIEW_KINDS:
+            raise UiError(f"unknown preview {kind}")
         user = body.get("config")
+        if isinstance(body.get("patch"), dict):
+            user = self.config()
+            user.update(body["patch"])
         if not isinstance(user, dict):
             raise UiError("config must be a JSON object")
         try:
@@ -488,8 +501,10 @@ class App:
         except Exception as exc:  # noqa: BLE001
             raise UiError(f"config is not valid: {exc}")
         check_settings(cfg)
+        check_roles(cfg)
+        empty = {"kind": kind, "rows": [], "folder_codes": [], "safes": 0, "accounts": 0, "total_rows": 0}
         if not self.db_path.exists():
-            return {"rows": [], "folder_codes": [], "safes": 0, "accounts": 0, "total_rows": 0}
+            return empty
         limit = max(1, min(int(body.get("limit") or 500), 2000))
         st = self.store()
         try:
@@ -497,13 +512,21 @@ class App:
                 plan = st.plan(cfg)
             except re.error as exc:
                 raise UiError(f"A pattern on this page is not valid: {exc}")
-            saved_safe = {}
-            for folder, safe in st.db.execute("SELECT folder, target_safe FROM plan_accounts"):
-                saved_safe.setdefault(folder, set()).add(safe)
-            saved_cpm = {r[0]: r[1] or "" for r in st.db.execute("SELECT safe_name, managing_cpm FROM plan_safes")}
-            folder_codes = self._folder_codes(st, cfg)
+            saved = {"accounts": {r["record_id"]: dict(r) for r in st.db.execute("SELECT * FROM plan_accounts")},
+                     "safes": {r["safe_name"]: dict(r) for r in st.db.execute("SELECT * FROM plan_safes")},
+                     "members": {(r["safe_name"].lower(), (r["source_member"] or "").lower()): dict(r)
+                                 for r in st.db.execute("SELECT * FROM plan_members")}}
+            if kind == "accounts":
+                saved["source_address"] = dict(st.db.execute("SELECT record_id, address FROM records"))
+            folder_codes = self._folder_codes(st, cfg) if kind == "safes" else []
         finally:
             st.close()
+        rows = getattr(self, f"_preview_{kind}")(plan, cfg, saved)
+        return {"kind": kind, "rows": rows[:limit], "total_rows": len(rows), "safes": len(plan.safes),
+                "accounts": len(plan.accounts), "folder_codes": folder_codes}
+
+    @staticmethod
+    def _preview_safes(plan, cfg, saved):
         settings = {}
         for name, info in plan.safes.items():
             b = safe_settings(name, info, cfg)
@@ -517,24 +540,91 @@ class App:
                               "description": b.get("description", "") or "",
                               "issues": "; ".join(sorted(info["issues"])), "valid": info["valid"],
                               "accounts": info["accounts"]}
+        saved_safe = {}
+        for a in saved["accounts"].values():
+            saved_safe.setdefault(a["folder"], set()).add(a["target_safe"])
         groups = {}
         for p in plan.accounts:
-            key = (p.rec.folder_path, p.safe)
-            g = groups.setdefault(key, {"folder": p.rec.folder_path, "safe": p.safe, "accounts": 0, "how": set()})
+            g = groups.setdefault((p.rec.folder_path, p.safe), {"accounts": 0, "how": set()})
             g["accounts"] += 1
             g["how"].add(p.safe_source)
         rows = []
         for (folder, safe), g in sorted(groups.items(), key=lambda kv: (kv[0][0].lower(), kv[0][1].lower())):
             s = settings[safe]
-            before = saved_safe.get(folder)
+            before, old = saved_safe.get(folder), saved["safes"].get(safe)
+            changed = []
+            if before is not None and safe not in before:
+                changed.append("safe")
+            if old:
+                for key, col in (("cpm", "managing_cpm"), ("keeps", "retention"), ("description", "description")):
+                    if (old.get(col) or "") != s[key]:
+                        changed.append(key)
             rows.append({"folder": folder, "safe": safe, "length": len(safe), "accounts": g["accounts"],
-                         "safe_accounts": s["accounts"], "how": sorted(g["how"]), "cpm": s["cpm"],
-                         "keeps": s["keeps"], "description": s["description"], "issues": s["issues"],
-                         "valid": s["valid"],
-                         "safe_changed": before is not None and safe not in before,
-                         "cpm_changed": safe in saved_cpm and saved_cpm[safe] != s["cpm"]})
-        return {"rows": rows[:limit], "total_rows": len(rows), "safes": len(plan.safes),
-                "accounts": len(plan.accounts), "folder_codes": folder_codes}
+                         "how": sorted(g["how"]), "cpm": s["cpm"], "keeps": s["keeps"],
+                         "description": s["description"], "issues": s["issues"], "valid": s["valid"],
+                         "changed": changed})
+        return rows
+
+    @staticmethod
+    def _preview_members(plan, cfg, saved):
+        rows = []
+        for (safe, _), m in plan.members.items():
+            sources = m.get("sources") or [m["source_name"]]
+            old = None
+            for src in sources:
+                old = old or saved["members"].get((safe.lower(), (src or "").lower()))
+            row = {"safe": safe, "source": " | ".join(sources), "member_name": m["member_name"],
+                   "member_type": m["member_type"], "search_in": m["search_in"],
+                   "permission": m["permission"], "role": m["role"] or "UNMAPPED", "accounts": m["accounts"],
+                   "directory_source": m.get("directory_source", ""), "notes": "; ".join(m["notes"])}
+            row["changed"] = ["new"] if old is None and saved["members"] else [
+                k for k, col in (("member_name", "member_name"), ("role", "role"), ("search_in", "search_in"),
+                                 ("member_type", "member_type")) if old and (old.get(col) or "") != (row[k] or "")]
+            rows.append(row)
+        rows.sort(key=lambda r: (r["safe"].lower(), r["member_name"].lower()))
+        return rows
+
+    @staticmethod
+    def _preview_platforms(plan, cfg, saved):
+        groups = {}
+        for p in plan.accounts:
+            key = (p.rec.type, p.platform, p.platform_source)
+            g = groups.setdefault(key, {"accounts": 0, "changed": 0, "folders": set(), "errors": 0})
+            g["accounts"] += 1
+            g["folders"].add(p.rec.folder_path)
+            g["errors"] += 1 if p.errors else 0
+            old = saved["accounts"].get(p.rec.record_id)
+            if old and (old.get("platform_id") or "") != p.platform:
+                g["changed"] += 1
+        rows = []
+        for (rtype, platform, how), g in sorted(groups.items(), key=lambda kv: (kv[0][0].lower(), kv[0][1].lower())):
+            folders = sorted(g["folders"])
+            rows.append({"type": rtype, "platform": platform, "how": how, "accounts": g["accounts"],
+                         "errors": g["errors"], "moved": g["changed"],
+                         "folders": "; ".join(folders[:3]) + (f" and {len(folders) - 3} more" if len(folders) > 3 else ""),
+                         "changed": ["platform"] if g["changed"] else []})
+        return rows
+
+    @staticmethod
+    def _preview_accounts(plan, cfg, saved):
+        props = cfg.get("account_property_map") or {}
+        rows = []
+        for p in plan.accounts:
+            old = saved["accounts"].get(p.rec.record_id)
+            extra = {k.lower(): v for k, v in (p.rec.extra or {}).items()}
+            row = {"record_id": p.rec.record_id, "source_name": p.rec.name, "address": p.rec.address,
+                   "source_address": saved.get("source_address", {}).get(p.rec.record_id, p.rec.address),
+                   "username": p.rec.username, "safe": p.safe, "platform": p.platform,
+                   "account_name": p.account_name,
+                   "properties": "; ".join(f"{prop}={extra[col.lower()]}" for col, prop in props.items()
+                                           if str(extra.get(col.lower(), "")).strip()),
+                   "notes": "; ".join(p.errors + p.warnings)}
+            row["changed"] = [k for k, col in (("account_name", "account_name"), ("address", "address"))
+                              if old and (old.get(col) or "") != (row[k] or "")]
+            rows.append(row)
+        rows.sort(key=lambda r: (bool(not r["changed"]), r["safe"].lower(), (r["account_name"] or "").lower()))
+        return rows
+
 
     def api_config_save(self, body):
         user = body.get("config")
@@ -585,7 +675,9 @@ class App:
             total = st.query(f"SELECT COUNT(*) FROM accounts WHERE {where}", params)[1][0][0]
             cols, rows = st.query(
                 f"SELECT record_id, migrate, status, target_safe, platform_id, account_name, address, "
-                f"username, secret_type, has_secret, source, folder, access_groups, notes, approved FROM accounts "
+                f"username, secret_type, has_secret, source, folder, access_groups, notes, approved, source_type, "
+                f"(SELECT r.name FROM records r WHERE r.record_id = accounts.record_id) AS source_name, "
+                f"(SELECT r.address FROM records r WHERE r.record_id = accounts.record_id) AS source_address FROM accounts "
                 f"WHERE {where} ORDER BY {sort} {order}, record_id LIMIT ? OFFSET ?",
                 params + [PAGE_SIZE, page * PAGE_SIZE])
             facets = {}
@@ -672,7 +764,9 @@ class App:
     def api_safes(self, _body):
         st = self.store()
         try:
-            cols, rows = st.query("SELECT * FROM plan_safes ORDER BY safe_name")
+            cols, rows = st.query(
+                "SELECT s.*, (SELECT group_concat(folder, ' | ') FROM (SELECT DISTINCT folder FROM plan_accounts a "
+                "WHERE a.target_safe = s.safe_name ORDER BY folder)) AS source_folders FROM plan_safes s ORDER BY safe_name")
             mcols, mrows = st.query("SELECT * FROM plan_members ORDER BY safe_name, member_name")
             edits = st.member_edits()
             overrides = st.member_overrides()
@@ -961,12 +1055,23 @@ class App:
                                  "GROUP BY lower(member), member_type ORDER BY 3 DESC LIMIT 300").fetchall()
         finally:
             st.close()
+        try:
+            before = config_from_dict(self.config())
+        except Exception:  # noqa: BLE001
+            before = None
         out = []
         for r in rows:
             mtype = normalize_member_type(r["member_type"], normalize_member_type(cfg["default_member_type"]))
             name, search_in, src = member_target(r["member"], cfg, mtype)
+            changed = []
+            if before is not None:
+                old_type = normalize_member_type(r["member_type"], normalize_member_type(before["default_member_type"]))
+                old_name, old_in, _ = member_target(r["member"], before, old_type)
+                changed = [k for k, a, b in (("member_name", old_name, name), ("search_in", old_in, search_in),
+                                             ("type", old_type, mtype)) if (a or "") != (b or "")]
             out.append({"source": r["member"], "type": mtype, "accounts": r["n"], "member_name": name,
-                        "search_in": search_in, "directory_source": src or "(not matched; default)"})
+                        "search_in": search_in, "directory_source": src or "(not matched; default)",
+                        "changed": changed})
         return {"members": out}
 
     def api_ping(self, _body):
@@ -1044,7 +1149,7 @@ class App:
         ("POST", "/api/record"): "api_record", ("POST", "/api/edit"): "api_edit",
         ("GET", "/api/safes"): "api_safes", ("POST", "/api/extract"): "api_extract",
         ("POST", "/api/output/delete"): "api_output_delete", ("GET", "/api/audit"): "api_audit",
-        ("POST", "/api/naming/preview"): "api_naming_preview", ("POST", "/api/safes/preview"): "api_safes_preview",
+        ("POST", "/api/naming/preview"): "api_naming_preview", ("POST", "/api/safes/preview"): "api_safes_preview", ("POST", "/api/rules/preview"): "api_rules_preview",
         ("POST", "/api/approve"): "api_approve", ("POST", "/api/open"): "api_open_folder",
         ("POST", "/api/lock"): "api_lock", ("POST", "/api/end"): "api_end", ("POST", "/api/ping"): "api_ping",
         ("POST", "/api/members/preview"): "api_members_preview", ("POST", "/api/members/edit"): "api_members_edit",

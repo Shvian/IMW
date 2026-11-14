@@ -289,7 +289,7 @@ class UiServer(Base):
         self.assertTrue(r["rows"])
         for row in r["rows"]:
             self.assertEqual(row["cpm"], "CPM-DB" if "db" in row["safe"].lower() else "CPM-Preview", row)
-            self.assertTrue(row["cpm_changed"])                              # differs from what is saved
+            self.assertIn("cpm", row["changed"])                             # differs from what is saved
         self.assertIn("P@ssw0rd", open(SAMPLES / "delinea_export.csv", encoding="utf-8").read())
         self.assertNotIn("P@ssw0rd", json.dumps(r))
         # Nothing was saved.
@@ -297,6 +297,21 @@ class UiServer(Base):
         self.assertNotIn("CPM-Preview", json.dumps(d))
         bad = dict(user, safe_rules=[{"safe_pattern": "(", "managingCPM": "x"}])
         self.assertEqual(self.req("POST", "/api/safes/preview", {"config": bad})[0], 400)
+        # The other rules pages: a patch on top of the saved settings.
+        st, r = self.req("POST", "/api/rules/preview", {"kind": "members", "patch": {"permission_map": {"View": "Full", "Edit": "Full", "Owner": "Full", "List": "Full"}}})
+        self.assertEqual(st, 200, r)
+        self.assertTrue(r["rows"])
+        self.assertTrue(all(m["role"] == "Full" for m in r["rows"]), r["rows"])
+        self.assertTrue(any("role" in m["changed"] for m in r["rows"]))
+        st, r = self.req("POST", "/api/rules/preview", {"kind": "platforms", "patch": {"platform_rules": [
+            {"field": "type", "pattern": ".", "platform": "OnePlatform"}]}})
+        self.assertEqual({x["platform"] for x in r["rows"]}, {"OnePlatform"})
+        self.assertTrue(all(x["changed"] == ["platform"] for x in r["rows"]))
+        st, r = self.req("POST", "/api/rules/preview", {"kind": "accounts", "patch": {"account_name": {
+            "mode": "pattern", "template": "X-{username}", "fallback": "{address}"}}})
+        self.assertTrue(all(x["account_name"].startswith("X-") for x in r["rows"]), r["rows"])
+        self.assertNotIn("P@ssw0rd", json.dumps(r))
+        self.assertEqual(self.req("POST", "/api/rules/preview", {"kind": "nope", "patch": {}})[0], 400)
 
     def test_members_platforms_and_sanitizing(self):
         dirty = (SAMPLES / "delinea_export.csv").read_text(encoding="utf-8-sig").replace("svc_sql", "svc\u200b_sql", 1)
