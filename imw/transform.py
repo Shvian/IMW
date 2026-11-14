@@ -13,7 +13,7 @@ from typing import List
 from . import csvsafe
 from .adapters.base import address_from_url
 from .config import all_roles, resolve_role
-from .model import Grant, split_folder
+from .model import ERROR_NOTE, Grant, split_folder
 from .naming import Namer
 
 log = logging.getLogger("imw.transform")
@@ -23,6 +23,8 @@ NO_NAME = "(none)"              # an edit that leaves the account name empty: Pr
 PLATFORM_INVALID = re.compile(r"[^A-Za-z0-9_.\-]")
 # Characters removed from every stored text value: control characters, zero-width and BOM.
 UNSAFE_TEXT = re.compile("[\x00-\x08\x0b-\x1f\x7f\u200b-\u200f\u2028\u2029\u2060\ufeff]")
+# One-line values you type (Safe settings, member names, searchIn): also no tab or line break.
+UNSAFE_LINE = re.compile("[\x00-\x1f\x7f\u200b-\u200f\u2028\u2029\u2060\ufeff]")
 ACCOUNT_NAME_INVALID = re.compile(r'[\\/:*?"<>|\t\r\n]')
 ACCOUNT_NAME_MAX = 128
 
@@ -59,7 +61,7 @@ class Permissions:
             lst.append(g)
 
     def _read(self, path, encoding):
-        with open(path, newline="", encoding=encoding) as fh:
+        with open(path, newline="", encoding=encoding) as fh, csvsafe.reading(path):
             reader = csv.DictReader(fh)
             cols = {c.lower().strip(): c for c in reader.fieldnames or []}
 
@@ -116,7 +118,7 @@ def sanitize_safe_name(name, cfg):
     if bad:
         issues.append("invalid chars " + " ".join(bad))
     s = "".join(sc["replacement"] if c in sc["invalid_chars"] else c for c in raw)
-    s = re.sub(r"[\x00-\x1f]", "", s)
+    s = UNSAFE_LINE.sub("", s.replace("\u00a0", " "))
     if sc["replacement"]:
         s = re.sub(re.escape(sc["replacement"]) + "{2,}", sc["replacement"], s)
     s = re.sub(r"\s+", " ", s).strip()
@@ -376,7 +378,7 @@ class Plan:
 def load_overrides(path, encoding="utf-8-sig"):
     """Read an edited Accounts_Review.csv. Returns {Record_ID: {column: value}}."""
     out = {}
-    with open(path, newline="", encoding=encoding) as fh:
+    with open(path, newline="", encoding=encoding) as fh, csvsafe.reading(path):
         for row in csv.DictReader(fh):
             rid = csvsafe.unescape((row.get("Record_ID") or "").strip()).strip()
             if rid:
@@ -432,7 +434,8 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
 
     for rec in records:
         p = AccountPlan(rec=rec)
-        p.warnings.extend(rec.notes)
+        p.warnings.extend(n for n in rec.notes if not n.startswith(ERROR_NOTE))
+        p.errors.extend(n[len(ERROR_NOTE):] for n in rec.notes if n.startswith(ERROR_NOTE))
         # Access (looked up by the source's own id, before a duplicate id is suffixed)
         if rec.grants is not None:
             p.grants, p.access_source = list(rec.grants), rec.access_source or "source"
@@ -470,6 +473,7 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
             p.errors.append("no platform: removed by you")
         elif changed(ov.get("Platform_ID"), p.platform):
             p.platform, p.platform_source = ov["Platform_ID"], "override"
+        p.platform = UNSAFE_LINE.sub("", p.platform or "")
         if p.platform and PLATFORM_INVALID.search(p.platform):
             bad = " ".join(sorted({repr(c)[1:-1] if c != " " else "space" for c in PLATFORM_INVALID.findall(p.platform)}))
             clean = PLATFORM_INVALID.sub("_", p.platform)
@@ -515,6 +519,10 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
             name = ov["Account_Name"]
         if name.strip().lower() == NO_NAME:
             name = ""                   # left empty on purpose: Privilege Cloud generates one
+        unsafe = UNSAFE_TEXT.sub("", name)
+        if unsafe != name:
+            p.warnings.append("invisible or control characters removed from the account name")
+            name = unsafe
         clean = ACCOUNT_NAME_INVALID.sub("_", name).strip()
         if len(clean) > ACCOUNT_NAME_MAX:
             clean = clean[:ACCOUNT_NAME_MAX]
@@ -545,6 +553,9 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
             cleaned[p.proposed_safe] = sanitize_safe_name(p.proposed_safe, cfg)
     final = resolve_collisions({k: v[0] for k, v in cleaned.items()}, cfg)
 
+    # Safe names compare without case in Privilege Cloud: a rename onto an existing Safe (or two
+    # renames onto one new name) in another case joins it, spelled as that Safe is.
+    spelling = {name.lower(): name for name, _ in final.values()}
     dupes = defaultdict(list)
     for p in plans:
         _, valid, issues = cleaned[p.proposed_safe]
@@ -559,6 +570,7 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
         if new_name:
             # You renamed this whole Safe: its accounts follow, whatever the rules gave.
             p.safe, p.valid_safe, p.safe_issues = sanitize_safe_name(new_name, cfg)
+            p.safe = spelling.setdefault(p.safe.lower(), p.safe)
             p.safe_source = "Safe renamed by you"
             if not p.valid_safe:
                 p.warnings.insert(0, "Safe name changed: " + "; ".join(p.safe_issues))
@@ -668,6 +680,9 @@ def safe_settings(name, info, cfg, with_override=True):
     if body.get("description") and "{" in str(body["description"]):
         body["description"] = str(body["description"]).replace("{folder}", folders[0] if folders else "") \
             .replace("{safe}", name)[:100]
+    for k in ("description", "location", "managingCPM"):
+        if isinstance(body.get(k), str):
+            body[k] = clean_line(body[k])     # also covers config.json edited by hand
     body["safeName"] = name
     return body
 
@@ -693,6 +708,7 @@ def apply_member_edits(members, plans, edits):
             uploading[p.safe.lower()] += 1
             names[p.safe.lower()] = p.safe
     for e in edits:
+        e = dict(e, member_name=clean_line(e["member_name"]), search_in=clean_line(e.get("search_in") or ""))
         safe_l, name_l = e["safe_name"].lower(), e["member_name"].lower()
         found = [k for k, m in members.items() if k[0].lower() == safe_l and name_l in _member_names(m)]
         why = f": {e['reason']}" if e.get("reason") else ""
@@ -727,14 +743,14 @@ def apply_member_override(m, ov):
     if not ov:
         return m
     changed = []
-    if ov.get("member_name"):
-        m["member_name"] = ov["member_name"]
+    if clean_line(ov.get("member_name")):
+        m["member_name"] = clean_line(ov["member_name"])
         changed.append("name")
     if ov.get("member_type"):
         m["member_type"] = m["type"] = normalize_member_type(ov["member_type"], m.get("member_type") or "Group")
         changed.append("type")
     if ov.get("search_in") is not None:
-        m["search_in"] = ov["search_in"]
+        m["search_in"] = clean_line(ov["search_in"])
         changed.append("searchIn")
     if changed:
         m["directory_source"] = "edited by you"
@@ -749,6 +765,14 @@ def apply_member_overrides(members, overrides):
         for m in members.values():
             apply_member_override(m, overrides.get(m["source_name"].lower()))
     return members
+
+
+def clean_line(v):
+    """A one-line text value without control or invisible characters, trimmed.
+    Non-text values come back unchanged."""
+    if not isinstance(v, str):
+        return v
+    return UNSAFE_LINE.sub("", v.replace("\u00a0", " ")).strip()
 
 
 def sanitize_record(rec):
@@ -805,6 +829,11 @@ def _safes(plans, cfg=None, safe_overrides=None):
         s["sources"].add(p.safe_source)
         s["accounts"] += 1
         s["migrating"] += 1 if p.uploadable else 0
+    for name, s in safes.items():
+        # A Safe that other Safes were renamed into keeps its own settings: only your change to
+        # this Safe itself applies (the renamed Safes' other settings don't follow them).
+        if name.lower() in {n.lower() for n in s["rule_names"]}:
+            s["override"] = safe_overrides.get(name.lower())
     if limit:
         for s in safes.values():
             if s["accounts"] > limit:

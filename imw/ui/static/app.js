@@ -18,6 +18,9 @@ async function api(path, body) {
   } finally { $("#busy").classList.add("hidden"); }
 }
 function msg(el, kind, text) { el.innerHTML = `<div class="msg ${kind}">${esc(text)}</div>`; }
+// After a save: warn when the server removed invisible or control characters from what was typed.
+const CLEANED = "Invisible or control characters (for example zero-width spaces or line breaks) were removed from what you typed.";
+const okOrCleaned = (el, r, text) => msg(el, r && r.cleaned ? "warn" : "ok", r && r.cleaned ? `${text} ${CLEANED}` : text);
 
 async function refresh() {
   STATE = await api("/api/state");
@@ -41,7 +44,8 @@ function trackDirty(e) {
   else if (el.closest("#main") && PAGE !== "output") DIRTY.main = true;
 }
 document.addEventListener("input", trackDirty);
-// Adding or removing rows, placeholders or roles on a settings page is a change too.
+// Adding or removing rows, placeholders or roles on a settings page is a change too. Buttons that
+// re-draw their own block (Remove placeholder, Delete role) are gone before this runs, so they mark it themselves.
 document.addEventListener("click", (e) => {
   const b = e.target.closest && e.target.closest("#main button");
   if (b && PAGE.startsWith("rules") && (b.matches("[data-add], .l-del, #add-layer, #reset-layers, #role-add, #conv-keep") || b.closest("td.x"))) DIRTY.main = true;
@@ -179,24 +183,28 @@ async function start() {
 const PAGES = {};
 
 /* ---------------- Forbidden characters, checked as you type ---------------- */
+// The same characters the server removes from typed names (UNSAFE_LINE in imw/transform.py).
+const INVISIBLE = /[\u0000-\u001f\u007f\u200b-\u200f\u2028\u2029\u2060\ufeff]/g;
+const INVISIBLE_MSG = "invisible or control characters will be removed";
+const hasInvisible = (v) => { INVISIBLE.lastIndex = 0; return INVISIBLE.test(v); };
 const CHECKS = {
   safe: (v) => {
     const bad = [...new Set(v.match(/[\\/:*?"<>|]/g) || [])];
-    const out = [];
+    const out = hasInvisible(v) ? [INVISIBLE_MSG] : [];
     if (bad.length) out.push(`${bad.join(" ")} not allowed in Safe names: will become "-"`);
     if (v.replace(/\{[^}]*\}/g, "").length > 28 && !/\{/.test(v)) out.push(`${v.length} characters: Safe names are cut to 28`);
     return out.join("; ");
   },
   platform: (v) => {
     if (v === "(none)") return "";
-    const bad = [...new Set(v.match(/[^A-Za-z0-9_.\-]/g) || [])].map(c => c === " " ? "space" : c);
-    return bad.length ? `${bad.join(" ")} not allowed in a platform ID: will become "_"` : "";
+    const bad = [...new Set(v.replace(INVISIBLE, "").match(/[^A-Za-z0-9_.\-]/g) || [])].map(c => c === " " ? "space" : c);
+    return [hasInvisible(v) ? INVISIBLE_MSG : "", bad.length ? `${bad.join(" ")} not allowed in a platform ID: will become "_"` : ""].filter(Boolean).join("; ");
   },
   account: (v) => {
     const bad = [...new Set(v.match(/[\\/:*?"<>|]/g) || [])];
-    return bad.length ? `${bad.join(" ")} not allowed in account names: will become "_"` : "";
+    return [hasInvisible(v) ? INVISIBLE_MSG : "", bad.length ? `${bad.join(" ")} not allowed in account names: will become "_"` : ""].filter(Boolean).join("; ");
   },
-  member: (v) => /[\u0000-\u001f​-‏﻿]/.test(v) ? "invisible or control characters will be removed" : "",
+  member: (v) => hasInvisible(v) ? INVISIBLE_MSG : "",
 };
 function checkInput(el) {
   if (!el || !el.dataset || !CHECKS[el.dataset.check]) return;
@@ -633,7 +641,7 @@ async function rulesPage(page, intro, render) {
       const r = await api("/api/config", patch.__full ? { config: patch.__full } : { patch });
       saved("main");
       await refresh();
-      $("#rules-msg").innerHTML = `<span class="msg ok">Saved${r.mapped ? ` and applied: ${STATE.to_upload} accounts will be uploaded, ${(STATE.status_counts || {}).ERROR || 0} errors` : ""}.</span>`;
+      $("#rules-msg").innerHTML = `<span class="msg ${r.cleaned ? "warn" : "ok"}">Saved${r.mapped ? ` and applied: ${STATE.to_upload} accounts will be uploaded, ${(STATE.status_counts || {}).ERROR || 0} errors` : ""}.${r.cleaned ? " " + esc(CLEANED) : ""}</span>`;
       if (view.refresh) view.refresh();   // the page's preview shows the saved result
     } catch (e) { msg($("#rules-msg"), "err", e.message); }
   };
@@ -788,7 +796,8 @@ PAGES["rules-safes"] = () => rulesPage("rules-safes",
       $("#layers").innerHTML = order.filter(n => layers[n]).map(n => layerBlock(n, layers[n])).join("");
       $("#layers-sum").textContent = layersTotal();
       wireAddButtons($("#layers"));
-      document.querySelectorAll(".l-del").forEach(b => b.onclick = () => { readLayers(); delete layers[b.closest(".layer").dataset.layer]; renderLayers(); });
+      document.querySelectorAll(".l-del").forEach(b => b.onclick = () => {
+        readLayers(); delete layers[b.closest(".layer").dataset.layer]; renderLayers(); DIRTY.main = true; syncSave(); });
     };
     const readLayers = () => {
       document.querySelectorAll("#layers details.layer").forEach(div => {
@@ -922,7 +931,8 @@ PAGES["rules-members"] = () => rulesPage("rules-members",
       document.querySelectorAll(".role-name").forEach(inp => inp.oninput = () => { customRoles[+inp.dataset.i].name = inp.value; refreshRoleSelects(); });
       document.querySelectorAll(".role-perm").forEach(cb => cb.onchange = () => {
         const s = customRoles[+cb.dataset.i].perms; cb.checked ? s.add(cb.dataset.p) : s.delete(cb.dataset.p); });
-      document.querySelectorAll("[data-del]").forEach(b => b.onclick = () => { customRoles.splice(+b.dataset.del, 1); renderRoles(); refreshRoleSelects(); });
+      document.querySelectorAll("#roles [data-del]").forEach(b => b.onclick = () => {
+        customRoles.splice(+b.dataset.del, 1); renderRoles(); refreshRoleSelects(); DIRTY.main = true; syncSave(); });
     };
     return {
       html,
@@ -1152,7 +1162,7 @@ async function act(kind) {
     saved("main");
     await loadList(); await refresh();
     ["#a-safe", "#a-plat", "#a-name"].forEach(k => { $(k).value = ""; checkInput($(k)); });
-    msg($("#act-msg"), "ok", `Changed ${r.changed} accounts. Rules re-applied.`);
+    okOrCleaned($("#act-msg"), r, `Changed ${r.changed} accounts. Rules re-applied.`);
   } catch (e) { msg($("#act-msg"), "err", e.message); }
 }
 function closeDrawer() { $("#drawer").classList.add("hidden"); }
@@ -1196,11 +1206,11 @@ async function showRecord(id) {
   $("#ra-noname").onchange = syncName; syncName();
   const save = async (values, done) => {
     try {
-      await api("/api/edit", { ids: [id], values, reason: $("#ra-reason").value });
+      const r = await api("/api/edit", { ids: [id], values, reason: $("#ra-reason").value });
       saved("panel");
       if (PAGE === "review") await loadList();
       await refresh(); await showRecord(id);
-      msg($("#ra-msg"), "ok", done || "Saved. Rules re-applied.");
+      okOrCleaned($("#ra-msg"), r, done || "Saved. Rules re-applied.");
     } catch (e) { msg($("#ra-msg"), "err", e.message); }
   };
   $("#ra-save").onclick = () => {
@@ -1217,7 +1227,7 @@ async function showRecord(id) {
     save(values);
   };
   document.querySelectorAll("#drawer [data-undo-field]").forEach(b => b.onclick = () => save({ [b.dataset.undoField]: "" }, "Undone. The rules decide this value again."));
-  $("#ra-open-safe").onclick = (e) => { e.preventDefault(); const safe = p.target_safe; go("review-safes"); if (safe) SAFES.panel = { kind: "safe", id: safe }; };
+  $("#ra-open-safe").onclick = (e) => { e.preventDefault(); const safe = p.target_safe; go("review-safes"); if (PAGE === "review-safes" && safe) SAFES.panel = { kind: "safe", id: safe }; };
 }
 
 /* ---------------- 3A. Safes & Safe members ---------------- */
@@ -1316,7 +1326,7 @@ PAGES["review-safes"] = async () => {
       const r = await api("/api/members/edit", { ...body, reason: $("#m-reason").value });
       saved("main");
       await PAGES["review-safes"]();
-      msg($("#m-msg"), "ok", done(r.changed));
+      okOrCleaned($("#m-msg"), r, done(r.changed));
     } catch (e) { msg($("#m-msg"), "err", e.message); }
   };
   $("#m-add").onclick = () => {
@@ -1391,11 +1401,11 @@ const roleSelect = (d, value, attrs) => `<select ${attrs}>${d.roles.concat(d.rol
   .map(r => `<option ${r === value ? "selected" : ""}>${esc(r)}</option>`).join("")}</select>`;
 async function memberEdit(body, again) {
   try {
-    await api("/api/members/edit", body);
+    const r = await api("/api/members/edit", body);
     saved("panel");
     await PAGES["review-safes"]();
     again();
-    msg($("#panel-msg"), "ok", "Saved. Rules re-applied.");
+    okOrCleaned($("#panel-msg"), r, "Saved. Rules re-applied.");
   } catch (e) { msg($("#panel-msg") || $("#m-msg"), "err", e.message); }
 }
 function showSafe(d, safe) {
@@ -1429,11 +1439,14 @@ function showSafe(d, safe) {
     if (confirm(`Remove this member from ${safe}?`)) memberEdit({ action: "remove", pairs: [[safe, b.dataset.remove]] }, again); });
 }
 // One Safe's own name and settings. Empty = what the rules give (shown greyed as the placeholder).
+// When other Safes were renamed into this one, the panel edits this Safe's own change, not theirs.
 function safeRuleName(s) {
   const names = (s.rule_names || s.safe_name).split(" | ");
   const ov = s.override_json ? JSON.parse(s.override_json) : null;
-  return (ov && names.find(n => n.toLowerCase() === ov.key)) || names.find(n => n.toLowerCase() === s.safe_name.toLowerCase()) || names[0];
+  return names.find(n => n.toLowerCase() === s.safe_name.toLowerCase()) || (ov && names.find(n => n.toLowerCase() === ov.key)) || names[0];
 }
+// The other Safes (as the rules name them) that you renamed into this one.
+const mergedInto = (s) => (s.rule_names || s.safe_name).split(" | ").filter(n => n && n !== safeRuleName(s));
 function safeSettingsForm(s) {
   const ov = s.override_json ? JSON.parse(s.override_json) : {};
   const rules = s.rules_json ? JSON.parse(s.rules_json) : {};
@@ -1444,14 +1457,16 @@ function safeSettingsForm(s) {
   const kind = ov.numberOfVersionsRetention ? "versions" : ov.numberOfDaysRetention ? "days" : "";
   const tri = (id, key, tip) => `<select id="${id}" title="${esc(tip)}"><option value="">As the rules say (${yn(rules[key])})</option>
     <option value="true" ${ov[key] === true ? "selected" : ""}>Yes</option><option value="false" ${ov[key] === false ? "selected" : ""}>No</option></select>`;
-  return `<details class="edit-block" ${s.override_json ? "open" : ""}><summary><span class="arrow">▸</span>
-      <span class="edit-sum"><b>Name and settings</b> ${s.override_json ? '<span class="pill REVIEW">changed by you</span>' : '<span class="muted small">as the rules give them</span>'}</span>
+  const merged = mergedInto(s);
+  return `<details class="edit-block" ${s.override_json || merged.length ? "open" : ""}><summary><span class="arrow">▸</span>
+      <span class="edit-sum"><b>Name and settings</b> ${s.override_json ? '<span class="pill REVIEW">changed by you</span>' : '<span class="muted small">as the rules give them</span>'}
+        ${merged.length ? `<span class="pill REVIEW">holds ${merged.length} renamed ${merged.length === 1 ? "Safe" : "Safes"}</span>` : ""}</span>
       <span class="edit-btn"><span class="o">Edit</span><span class="c">Done</span></span></summary>
     <div class="form-grid">
       <p class="muted small">Change this one Safe directly. What you set here wins over the rules in step 2 and is kept when the rules or exports change.
         Leave a field empty to keep what the rules give (shown in grey).</p>
       <label>Safe name <input type="text" id="sv-name" value="${esc(s.safe_name)}" placeholder="${esc(ruleName)}" data-check="safe" maxlength="28"
-        title="The Safe's name in Privilege Cloud: at most 28 characters, none of \\ / : * ? &quot; < > | . Its accounts and members move with it. The rules named it ${esc(ruleName)}. Typing another existing Safe's name puts both into one Safe."></label>
+        title="The Safe's name in Privilege Cloud: at most 28 characters, none of \\ / : * ? &quot; < > | . Its accounts and members move with it. The rules named it ${esc(ruleName)}. Typing another existing Safe's name puts both into one Safe, with that Safe's settings."></label>
       <label>Description <input type="text" id="sv-desc" value="${esc(ov.description || "")}" placeholder="${esc(rules.description || "(none)")}" maxlength="100"
         title="Free text shown in Privilege Cloud, at most 100 characters. {folder} is replaced with the Safe's first source folder."></label>
       <label>Location <input type="text" id="sv-loc" value="${esc(ov.location || "")}" placeholder="${esc(rules.location || "(root)")}"
@@ -1466,6 +1481,9 @@ function safeSettingsForm(s) {
       <label>Object level access control (OLAC) ${tri("sv-olac", "olacEnabled", "OLAC lets you give access to single accounts inside the Safe. It can't be turned off again once on.")}</label>
       <label>Auto purge ${tri("sv-purge", "autoPurgeEnabled", "Delete expired password versions automatically.")}</label>
       <label>Reason (optional, kept in the log) <input type="text" id="sv-reason"></label>
+      ${merged.length ? `<div class="msg warn small">This Safe also holds ${merged.map(n => `<b>${esc(n)}</b>
+        <button class="btn small" data-split="${esc(n)}" title="Undo the rename of ${esc(n)}: its accounts and the member changes that came with it go back to a Safe of their own">Split back out</button>`).join(", ")}
+        (renamed into it by you). This Safe's own settings apply to all of them.</div>` : ""}
       <div class="row" style="margin-top:8px"><button class="btn primary" id="sv-save">Save this Safe</button>
         ${s.override_json ? '<button class="btn" id="sv-undo" title="Forget your changes to this Safe and use what the rules give">Undo my changes</button>' : ""}</div>
       <div id="sv-msg"></div>
@@ -1477,7 +1495,7 @@ function wireSafeSettings(s) {
     saved("panel");
     await PAGES["review-safes"]();
     const now = SAFES.data.safes.find(x => x.safe_name.toLowerCase() === String(r.safe_name).toLowerCase());
-    if (now) { showSafe(SAFES.data, now.safe_name); msg($("#sv-msg"), "ok", text); }
+    if (now) { showSafe(SAFES.data, now.safe_name); okOrCleaned($("#sv-msg"), r, text); }
   };
   $("#sv-save").onclick = async () => {
     const name = $("#sv-name").value.trim();
@@ -1490,6 +1508,13 @@ function wireSafeSettings(s) {
       await done(r, "Saved. Rules re-applied; your values win for this Safe.");
     } catch (e) { msg($("#sv-msg"), "err", e.message); }
   };
+  document.querySelectorAll("#drawer [data-split]").forEach(b => b.onclick = async () => {
+    if (!confirm(`Split ${b.dataset.split} back out of ${s.safe_name}? Your rename of ${b.dataset.split} and its other changes are undone.`)) return;
+    try {
+      await api("/api/safes/change", { key: b.dataset.split, current: s.safe_name, undo: true });
+      await done({ safe_name: s.safe_name }, `${b.dataset.split} is a Safe of its own again.`);
+    } catch (e) { msg($("#sv-msg"), "err", e.message); }
+  });
   if ($("#sv-undo")) $("#sv-undo").onclick = async () => {
     try { const r = await api("/api/safes/change", { key, current: s.safe_name, undo: true }); await done(r, "Back to what the rules give."); }
     catch (e) { msg($("#sv-msg"), "err", e.message); }
@@ -1529,9 +1554,9 @@ function showPerson(d, p) {
     const name = $("#pe-name").value.trim();
     if (!name) return msg($("#panel-msg"), "err", "The member name can't be empty.");
     try {
-      await api("/api/members/change", { key: p.key, member_name: name, member_type: $("#pe-type").value, search_in: $("#pe-dir").value.trim(), reason: $("#pe-reason").value });
+      const r = await api("/api/members/change", { key: p.key, member_name: name, member_type: $("#pe-type").value, search_in: $("#pe-dir").value.trim(), reason: $("#pe-reason").value });
       saved("panel");
-      await PAGES["review-safes"](); again(); msg($("#panel-msg"), "ok", "Saved for every Safe. Rules re-applied.");
+      await PAGES["review-safes"](); again(); okOrCleaned($("#panel-msg"), r, "Saved for every Safe. Rules re-applied.");
     } catch (e) { msg($("#panel-msg"), "err", e.message); }
   };
   if ($("#pe-undo")) $("#pe-undo").onclick = async () => {

@@ -44,7 +44,7 @@ def read_inputs(args, cfg):
             adapter = get_adapter(name or args.source) if (name or args.source) else detect_adapter(path)
             got = list(adapter.read(path, cfg, args.encoding))
         except (AdapterError, ValueError, OSError) as exc:
-            log.error("%s: %s", path, exc)
+            log.error("%s", exc if str(exc).startswith(str(path)) else f"{path}: {exc}")
             return None
         log.info("%s: %d records read with the '%s' adapter", path, len(got), adapter.name)
         out.append((adapter.name, path, got))
@@ -108,7 +108,11 @@ def cmd_ingest(args):
     loaded = read_inputs(args, cfg)
     if loaded is None:
         return 2
-    perms = Permissions(args.permissions, args.encoding) if args.permissions else None
+    try:
+        perms = Permissions(args.permissions, args.encoding) if args.permissions else None
+    except (ValueError, OSError) as exc:
+        log.error("permissions: %s", exc)
+        return 2
     try:
         for name, path, records in loaded:
             n, replaced = store.ingest(name, path, records, perms, args.permissions)
@@ -167,7 +171,7 @@ def cmd_set(args):
             store.set_edits(ids, values, args.reason or "")
             print(f"Updated {len(ids)} records")
         plan = store.map(store.stored_config(), store.meta("config_path"))
-    except StoreError as exc:
+    except (StoreError, ValueError, OSError) as exc:
         log.error("%s", exc)
         return 2
     print_summary(plan)
@@ -277,8 +281,12 @@ def cmd_convert(args):
         log.error("No records found. Check --source and the column names (field_aliases).")
         return 1
 
-    perms = Permissions(args.permissions, args.encoding) if args.permissions else None
-    overrides = load_overrides(args.overrides, args.encoding) if args.overrides else None
+    try:
+        perms = Permissions(args.permissions, args.encoding) if args.permissions else None
+        overrides = load_overrides(args.overrides, args.encoding) if args.overrides else None
+    except (ValueError, OSError) as exc:
+        log.error("%s", exc)
+        return 2
     plan = build_plan(records, cfg, perms, overrides)
 
     files = write_review(plan, out_dir)

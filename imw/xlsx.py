@@ -6,6 +6,7 @@ Excel serial numbers, because the reader does not interpret number formats.
 
 import re
 import zipfile
+import zlib
 
 from . import safexml
 
@@ -28,7 +29,11 @@ def _read_xml(z, name, path):
                          f"the {MAX_PART_BYTES // (1024 * 1024)} MB this reader accepts. Save the sheet "
                          "as CSV and load that instead.")
     try:
-        return safexml.fromstring(z.read(name))
+        raw = z.read(name)
+    except (zipfile.BadZipFile, zlib.error, EOFError, NotImplementedError) as exc:
+        raise ValueError(f"{path}: {name} can't be unpacked, the workbook is damaged ({exc})") from None
+    try:
+        return safexml.fromstring(raw)
     except (safexml.UnsafeXmlError, safexml.ET.ParseError) as exc:
         raise ValueError(f"{path}: {name}: {exc}") from None
 
@@ -54,15 +59,23 @@ def _number(v):
     return v
 
 
+def _open(path):
+    try:
+        return zipfile.ZipFile(path)
+    except zipfile.BadZipFile:
+        raise ValueError(f"{path}: not a readable Excel workbook (the file is damaged, or not an .xlsx). "
+                         "Open it in Excel and save it again, or save the sheet as CSV.") from None
+
+
 def sheet_names(path):
-    with zipfile.ZipFile(path) as z:
+    with _open(path) as z:
         wb = _read_xml(z, "xl/workbook.xml", path)
     return [s.get("name") for s in wb.iterfind("m:sheets/m:sheet", NS)]
 
 
 def read_rows(path, sheet=""):
     """Return (sheet_name, list of rows); each row is a list of strings."""
-    with zipfile.ZipFile(path) as z:
+    with _open(path) as z:
         wb = _read_xml(z, "xl/workbook.xml", path)
         rels = _read_xml(z, "xl/_rels/workbook.xml.rels", path)
         targets = {r.get("Id"): r.get("Target") for r in rels.iterfind("pr:Relationship", NS)}
@@ -76,6 +89,9 @@ def read_rows(path, sheet=""):
             name, rid = match[0]
         else:
             name, rid = sheets[0]
+        if not targets.get(rid):
+            raise ValueError(f"{path}: sheet '{name}' points at a part the workbook does not list; "
+                             "the file is damaged")
         target = targets[rid].lstrip("/")
         target = target if target.startswith("xl/") else "xl/" + target
         shared = []

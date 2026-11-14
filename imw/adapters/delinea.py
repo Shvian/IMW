@@ -9,6 +9,7 @@ import csv
 import logging
 from collections import OrderedDict, defaultdict
 
+from ..csvsafe import reading
 from .base import Adapter, file_stem, read_head
 from .rows import record_from_row
 
@@ -32,7 +33,7 @@ def _dedupe(headers):
 def parse_sections(path, markers, encoding="utf-8-sig"):
     """Yield (template_name, line_no, OrderedDict row) for every data row."""
     markers = {m.lower() for m in markers}
-    with open(path, newline="", encoding=encoding) as fh:
+    with open(path, newline="", encoding=encoding) as fh, reading(path):
         reader = csv.reader(fh)
         lines = [(reader.line_num, row) for row in reader]
     lines = [(n, r) for n, r in lines if not _is_blank(r)]
@@ -58,7 +59,7 @@ def parse_sections(path, markers, encoding="utf-8-sig"):
         if len(row) > len(headers):
             extra = row[len(headers):]
             if any(c.strip() for c in extra):
-                log.warning("line %d: %d more values than headers; kept as Extra_N", line_no, len(extra))
+                log.warning("line %d: %d more values than headers; values may have moved, record marked as an error", line_no, len(extra))
             cols = headers + [f"Extra_{i + 1}" for i in range(len(extra))]
         else:
             row = row + [""] * (len(headers) - len(row))
@@ -87,4 +88,4 @@ class DelineaAdapter(Adapter):
             n += 1
             yield record_from_row(row, cfg, source=self.name, source_file=stem,
                                   row_ref=f"line {line_no}", row_number=n,
-                                  type_hint=template or "", folder_separator="\\")
+                                  type_hint=template or "", folder_separator="\\", from_csv=True)

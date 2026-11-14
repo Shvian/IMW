@@ -6,8 +6,8 @@ Shared by the Delinea adapter and the generic CSV/Excel adapter.
 import re
 from collections import OrderedDict
 
-from ..model import Grant, SourceRecord, split_folder
-from .base import column_lookup, first_value, matches_any
+from ..model import ERROR_NOTE, Grant, SourceRecord, split_folder
+from .base import column_lookup, first_value, is_secret_column, matches_any
 
 ACCESS_SPLIT = re.compile(r"[;\n]+")
 
@@ -30,15 +30,37 @@ def parse_access(text):
     return grants
 
 
+SHIFTED = (ERROR_NOTE + "this row has more values than the header has columns, so its values have "
+           "probably moved (for example an unquoted comma in a password). Values from the secret column "
+           "on are not kept. Fix the export and load it again.")
+
+
+def _guard_shifted(row, aliases, cfg):
+    """A CSV row with values past the last header: everything from the first secret column on may
+    hold a piece of the secret, so it is blanked (the record becomes an error)."""
+    if not any(EXTRA_COL.match(c) and str(v or "").strip() for c, v in row.items()):
+        return row, False
+    secret_cols = {a.strip().lower() for k in ("password", "private_key") for a in aliases.get(k, [])}
+    cols = list(row)
+    first = next((i for i, c in enumerate(cols) if c.strip().lower() in secret_cols or is_secret_column(c, cfg)),
+                 None)
+    start = first if first is not None else next(i for i, c in enumerate(cols) if EXTRA_COL.match(c))
+    return OrderedDict((c, v if i < start else "") for i, (c, v) in enumerate(row.items())), True
+
+
 def record_from_row(row, cfg, *, source, source_file, row_ref, row_number,
                     type_hint="", columns=None, folder_separator="\\",
-                    group_column="", permission_column=""):
+                    group_column="", permission_column="", from_csv=False):
+    """from_csv: values past the header can only mean a shifted row (see SHIFTED)."""
     aliases = {k: list(v) for k, v in cfg["field_aliases"].items()}
     columns = columns or {}
     # An explicit mapping wins over the aliases.
     for logical, col in columns.items():
         if col:
             aliases[logical] = [col]
+    shifted = False
+    if from_csv:
+        row, shifted = _guard_shifted(row, aliases, cfg)
     skip_cols = {c.strip().lower() for c in (group_column, permission_column) if c}
     full_lookup = column_lookup([c for c in row if not c.startswith("_")])
     lookup = {k: v for k, v in full_lookup.items() if k not in skip_cols}
@@ -57,6 +79,8 @@ def record_from_row(row, cfg, *, source, source_file, row_ref, row_number,
     rec = SourceRecord(source=source, source_file=source_file,
                        source_id=used["id"][1].strip() or f"row{row_number}",
                        source_ref=row_ref)
+    if shifted:
+        rec.notes.append(SHIFTED)
     rec.name = used["name"][1].strip()
     rec.folder = split_folder(used["folder"][1], folder_separator)
     rec.type = (used["type"][1] or type_hint or "").strip()
@@ -77,7 +101,7 @@ def record_from_row(row, cfg, *, source, source_file, row_ref, row_number,
                                  "accounts do not take it, confirm the platform handles it")
     else:
         rec.secret = pwd
-    if not rec.secret.strip():
+    if not rec.secret.strip() and not shifted:
         rec.notes.append("secret is empty in the source")
 
     if used["access"][0]:
@@ -91,7 +115,11 @@ def record_from_row(row, cfg, *, source, source_file, row_ref, row_number,
     for col, val in row.items():
         if col.startswith("_"):
             continue
-        if matches_any(col, cfg["secret_column_patterns"]):
+        if is_secret_column(col, cfg):
+            if str(val or "").strip() and col not in (used["password"][0], used["private_key"][0]) \
+                    and "passphrase" not in col.lower():
+                rec.notes.append(f"secret field '{col}' is not migrated (an account takes one secret) "
+                                 "and is left out of the review files")
             continue
         if matches_any(col, cfg["exclude_field_patterns"]):
             if str(val).strip():
