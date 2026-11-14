@@ -319,7 +319,7 @@ const TIP_KEY = {
 };
 const TIP_CLASS = {
   pick: "Tick to load this file. Tick Permissions file too if it lists access instead of accounts.",
-  perm: "This file lists access groups per folder or record. Ticking it also ticks Load.",
+  perm: "This file lists access groups per folder or record (the Workbench layout or a Delinea folder-permissions report). Ticking it also ticks Load.",
   src: "Which kind of export this is. Auto-detect usually works.",
   "l-label": "A name for this placeholder, for your reference.",
   "l-default": "Code used when no row below matches. Empty = the placeholder is left out of the name.",
@@ -539,7 +539,7 @@ PAGES.load = async () => {
     <div class="card"><h3>Inbox: <a class="pathlink" id="open-inbox" title="Open this folder in Explorer"><code>${esc(STATE.inbox)}</code></a>
       <button class="btn small" id="open-inbox2">Open folder</button></h3>
     ${files.length ? `<table><tr><th title="Tick every file to use: exports and permissions files">Load</th><th>File</th><th>Status</th><th>Size</th><th title="Which kind of export this is. It is detected from the file; click change if the guess is wrong.">Type</th>
-        <th class="has-tip" title="A permissions file lists groups per folder or record (columns: Folder Path, Secret Name, Secret ID, Group, Permission). Use one when the export itself has no access data, as with Delinea and KeePass. Tick several to merge them; a group listed in more than one file for the same folder is counted once.">Permissions file <span class="q">?</span></th><th></th></tr>
+        <th class="has-tip" title="A permissions file lists groups per folder or record (columns: Folder Path, Secret Name, Secret ID, Group, Permission), or is a Delinea folder-permissions report saved as CSV. Use one when the export itself has no access data, as with a Delinea CSV export or KeePass. A Delinea XML export carries its own folder and secret permissions; a permissions file only fills in records that have none. Tick several to merge them; a group listed in more than one file for the same folder is counted once.">Permissions file <span class="q">?</span></th><th></th></tr>
       ${files.map((f, i) => `<tr><td><input type="checkbox" class="pick" data-i="${i}" ${(f.guess || f.permissions) && f.loaded !== "same" ? "checked" : ""}></td>
         <td>${esc(f.name)}</td><td>${status(f)}</td><td class="nowrap">${(f.size / 1024).toFixed(1)} KB</td>
         <td>${f.guess ? `<span class="src-show">${esc(SOURCE_NAMES[f.guess] || f.guess)} <button class="linkbtn src-change" data-i="${i}">change</button></span>` : ""}

@@ -44,7 +44,8 @@ from ..model import SourceRecord
 from ..naming import DEFAULT_PLATFORM_CODES, Namer
 from ..protect import ProtectError
 from ..store import Store, StoreError, run_extract, sha256_file
-from ..transform import (Permissions, apply_member_override, clean_line, member_target,
+from ..transform import (PERM_GROUP_COLUMNS, PERM_ROLE_COLUMNS, PERM_USER_COLUMNS, Permissions,
+                         apply_member_override, clean_line, member_target,
                          normalize_member_type, safe_settings, sanitize_safe_name)
 from .auth import get_authenticator
 from .tls import fingerprint, server_context, trust_certificate
@@ -205,7 +206,8 @@ def check_settings(cfg):
 
 
 def looks_like_permissions(path):
-    """A CSV whose header has a group/principal column and a permission column, and no password column."""
+    """A CSV whose header has a group/user column and a permission column, and no password column
+    (the Workbench layout, or a Delinea folder-permissions report)."""
     if path.suffix.lower() != ".csv":
         return False
     try:
@@ -213,8 +215,10 @@ def looks_like_permissions(path):
             header = [h.strip().lower() for h in fh.readline().split(",")]
     except OSError:
         return False
-    return (any(h in ("group", "principal", "member", "group name") for h in header)
-            and any(h in ("permission", "role", "access") for h in header)
+    header = [h.strip('"').strip() for h in header]
+    who = {c.lower() for c in PERM_GROUP_COLUMNS + PERM_USER_COLUMNS}
+    roles = {c.lower() for c in PERM_ROLE_COLUMNS}
+    return (any(h in who for h in header) and any(h in roles for h in header)
             and not any("password" in h for h in header))
 
 

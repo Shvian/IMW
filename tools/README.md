@@ -7,8 +7,9 @@ python tools/generate_sample_pack.py --out sample_workspace
 python -m imw ui --workspace sample_workspace
 ```
 
-The pack is a Workbench workspace. It holds a starter `config.json` and an `inbox/` with four files:
+The pack is a Workbench workspace. It holds a starter `config.json` and an `inbox/` with five files:
 - a Delinea multi-template export, about 400 secrets
+- a Delinea Secret Server XML export, 80 secrets in UTF-16, with folder permissions (one folder inherits from its parent), a few secret-level overrides and a folder with none
 - a Delinea permissions file
 - a KeePass XML export, 60 entries
 - an Excel inventory, 120 rows
@@ -23,7 +24,7 @@ Everything in it is fake. It deliberately contains the problems a real migration
 - duplicate names
 - folders with no permissions, and secret-level overrides
 
-`SAMPLE_DATA_README.txt` in the pack lists the details and some things to try. You can set the volumes with `--delinea`, `--keepass` and `--excel`.
+`SAMPLE_DATA_README.txt` in the pack lists the details and some things to try. You can set the volumes with `--delinea`, `--delinea-xml`, `--keepass` and `--excel`.
 
 ## generate_synthetic_delinea.py: Delinea only, for volume testing
 

@@ -11,6 +11,7 @@ from pathlib import Path
 
 from test_imw import SAMPLES, Base, read_csv  # noqa: F401
 
+from imw.config import CONFIG_VERSION
 from imw.ui import server, tls
 from imw.ui.auth import TestAuth
 
@@ -189,7 +190,7 @@ class UiServer(Base):
         self.assertIn("same content as load #2", state["inputs"][2]["repeat"])
         st, r = self.req("POST", "/api/config", {"patch": {"default_platform": "WinServerLocal"}})
         self.assertEqual(st, 200, r)
-        self.assertEqual(json.loads((self.ws / "config.json").read_text()), {"default_platform": "WinServerLocal", "config_version": 3})
+        self.assertEqual(json.loads((self.ws / "config.json").read_text()), {"default_platform": "WinServerLocal", "config_version": CONFIG_VERSION})
         self.assertEqual(self.req("POST", "/api/config", {"patch": {"safe_rules": [
             {"safe_pattern": "(", "managingCPM": "x"}]}})[0], 400)
 

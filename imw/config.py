@@ -57,7 +57,7 @@ _V1_ROLE_PERMISSIONS = {
     "Viewer": _perms("listAccounts"),
 }
 _V1_TEMPLATE = "{env}-{folder}-{tech}-{flavor}-{acct}"
-CONFIG_VERSION = 3
+CONFIG_VERSION = 4
 
 
 DEFAULT_CONFIG = {
@@ -146,6 +146,8 @@ DEFAULT_CONFIG = {
         "AWS IAM Key": "AWSAccessKeys",
         "Amazon IAM Key": "AWSAccessKeys",
         "Azure AD Account": "AzureWebAccount",
+        # The template Delinea's KeePass migration tool gives every converted entry.
+        "Kee Pass": "GenericWebApp",
     },
     "default_platform": "",
     # Turn URL addresses into host names (https://fw01.example.com/login -> fw01.example.com).
@@ -303,7 +305,9 @@ def upgrade_config(user):
         _upgrade_v1_to_v2(user)
     if version < 3:
         _upgrade_v2_to_v3(user)
-    # Later versions: add "if version < 4: _upgrade_v3_to_v4(user)" here. Files saved by the
+    if version < 4:
+        _add_platform_types(user, _V4_NEW_PLATFORM_TYPES, 4)
+    # Later versions: add "if version < 5: ..." here. Files saved by the
     # Workbench since version 2 always carry config_version but only the changed settings.
     user["config_version"] = CONFIG_VERSION
     return user
@@ -337,18 +341,26 @@ _V3_NEW_PLATFORM_TYPES = (
     "MySQL", "MySQL Account", "AWS IAM Key", "Amazon IAM Key", "Azure AD Account")
 
 
+# Added in config version 4 (Delinea XML import).
+_V4_NEW_PLATFORM_TYPES = ("Kee Pass",)
+
+
 def _upgrade_v2_to_v3(user):
-    """A saved platform_map replaces the built-in one, so add the record types that version 3
-    added to it, unless the saved map already has that type (whatever its platform)."""
+    _add_platform_types(user, _V3_NEW_PLATFORM_TYPES, 3)
+
+
+def _add_platform_types(user, types, version):
+    """A saved platform_map replaces the built-in one, so add the record types that this
+    version added to it, unless the saved map already has that type (whatever its platform)."""
     pmap = user.get("platform_map")
     if isinstance(pmap, dict):
         have = {k.lower() for k in pmap}
         pmap = dict(pmap)
-        for t in _V3_NEW_PLATFORM_TYPES:
+        for t in types:
             if t.lower() not in have:
                 pmap[t] = DEFAULT_CONFIG["platform_map"][t]
         user["platform_map"] = pmap
-    user["config_version"] = 3
+    user["config_version"] = version
 
 
 def config_diff(cfg, base=None):

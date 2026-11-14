@@ -6,7 +6,7 @@ import unittest
 from test_roles import rec
 
 from imw.adapters.table import TableAdapter
-from imw.config import (DEFAULT_CONFIG, PERMISSION_PRESETS, config_from_dict, upgrade_config)
+from imw.config import (CONFIG_VERSION, DEFAULT_CONFIG, PERMISSION_PRESETS, config_from_dict, upgrade_config)
 from imw.model import SourceRecord, split_folder
 from imw.naming import DEFAULT_PLATFORM_CODES
 from imw.transform import NO_FULL_MEMBER_NOTE, build_plan, resolve_platform
@@ -52,7 +52,7 @@ class PlatformDefaults(unittest.TestCase):
 
     def test_saved_v2_platform_map_gets_the_new_types(self):
         up = upgrade_config({"config_version": 2, "platform_map": {"Windows Account": "X", "cisco account (ssh)": "Mine"}})
-        self.assertEqual(up["config_version"], 3)
+        self.assertEqual(up["config_version"], CONFIG_VERSION)
         self.assertEqual(up["platform_map"]["Windows Account"], "X")
         self.assertEqual(up["platform_map"]["cisco account (ssh)"], "Mine")      # yours stays
         self.assertNotIn("Cisco Account (SSH)", up["platform_map"])
