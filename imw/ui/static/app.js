@@ -1958,15 +1958,29 @@ PAGES.output = async () => {
         Type <b>INCLUDE SECRETS</b> to confirm: <input type="text" id="confirm" size="18"></div>
       <h3>Folder name</h3>
       <p class="row"><input type="text" id="o-name" size="28"> <label class="inline"><input type="checkbox" id="o-replace"> Replace if it exists</label></p>
+      <p class="small">The files go into <a class="pathlink" id="open-output" title="Open the output folder in Explorer"><code id="o-path">${esc(STATE.output)}</code></a>
+        <button class="btn small" id="open-output2">Open folder</button></p>
       <button class="btn primary" id="extract">Create files</button><div id="out-msg"></div>
     </div>
-    <div class="card"><h3>Earlier outputs in <code>${esc(STATE.output)}</code></h3>
+    <div class="card"><h3>Earlier outputs in <a class="pathlink" id="open-output3" title="Open this folder in Explorer"><code>${esc(STATE.output)}</code></a>
+      <button class="btn small" id="open-output4">Open folder</button></h3>
       ${STATE.outputs.length ? `<table><tr><th>Name</th><th>Created</th><th>Accounts</th><th>Secrets</th><th></th></tr>
-        ${STATE.outputs.map(o => `<tr><td>${esc(o.name)}</td><td>${esc(o.created)}</td><td>${o.counts.accounts ?? ""}</td>
+        ${STATE.outputs.map(o => `<tr><td><a class="pathlink" data-open-out="${esc(o.name)}" title="Open this folder in Explorer">${esc(o.name)}</a></td><td>${esc(o.created)}</td><td>${o.counts.accounts ?? ""}</td>
           <td>${o.secrets && o.has_upload ? '<span class="pill ERROR">plaintext</span>' : o.secrets ? "deleted" : "none"}</td>
           <td>${o.has_upload ? `<button class="btn danger" data-del="${esc(o.name)}">Securely delete upload files</button>` : ""}</td></tr>`).join("")}</table>` : '<p class="muted">None yet.</p>'}</div>`;
   if (LAST_OUT) { $("#out-msg").innerHTML = LAST_OUT; LAST_OUT = ""; }
   wireTiles();
+  // Clickable paths, as on the Load page: the output folder, or one output inside it.
+  const openOutput = async (name) => {
+    try {
+      const r = await api("/api/open", name ? { which: "output", name } : { which: "output" });
+      if (!r.opened) alert("Open this folder yourself: " + r.path);
+    } catch (e) { msg($("#out-msg"), "err", e.message); }
+  };
+  ["#open-output", "#open-output2", "#open-output3", "#open-output4"].forEach(id => $(id).onclick = () => openOutput());
+  document.querySelectorAll("[data-open-out]").forEach(a => a.onclick = () => openOutput(a.dataset.openOut));
+  const sep = STATE.output.includes("\\") ? "\\" : "/";
+  const showPath = () => { const n = $("#o-name").value.trim(); $("#o-path").textContent = n ? STATE.output + sep + n : STATE.output; };
   // A ready-made folder name (date, what is in it, dry run or not), until you type your own.
   let typed = false;
   const autoName = () => {
@@ -1978,8 +1992,9 @@ PAGES.output = async () => {
     const taken = new Set(STATE.outputs.map(o => o.name));
     let name = base, n = 1; while (taken.has(name)) name = `${base}-${++n}`;
     $("#o-name").value = name;
+    showPath();
   };
-  $("#o-name").addEventListener("input", () => { typed = !!$("#o-name").value.trim(); });
+  $("#o-name").addEventListener("input", () => { typed = !!$("#o-name").value.trim(); showPath(); });
   document.querySelectorAll("input[name=scope], input[name=sec], #o-safe, #o-platform, #o-source").forEach(el => el.addEventListener("change", () => setTimeout(autoName, 0)));
   autoName();
   document.querySelectorAll("input[name=sec]").forEach(r => r.onchange = () => $("#sec-confirm").classList.toggle("hidden", r.value !== "1" || !r.checked));
@@ -1996,7 +2011,7 @@ PAGES.output = async () => {
       const r = await api("/api/extract", { scope, view: "all", filters, include_secrets: include, confirm: $("#confirm").value,
                                             name: $("#o-name").value, replace: $("#o-replace").checked });
       LAST_OUT = `<div class="msg ok">Created <b>${esc(r.name)}</b>: ${r.counts.safes} Safes, ${r.counts.members} members, ${r.counts.accounts} accounts${include ? " (with secrets)" : " (dry run)"}.<br>
-        Folder: <code>${esc(r.path)}</code><br>${r.files.map(esc).join(" · ")}</div>`;
+        Folder: <a class="pathlink" data-open-out="${esc(r.name)}" title="Open this folder in Explorer"><code>${esc(r.path)}</code></a><br>${r.files.map(esc).join(" · ")}</div>`;
       go("output");
     } catch (e) { msg($("#out-msg"), "err", e.message); }
   };
