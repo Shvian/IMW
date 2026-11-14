@@ -38,7 +38,30 @@ GROUPS = {
     "net": "CORP\\PAM-Network", "web": "CORP\\PAM-Web-Ops", "pay": "CORP\\APP-Payments-Owners",
     "shop": "CORP\\APP-Storefront-Owners", "hr": "CORP\\APP-HRPortal-Owners",
     "help": "CORP\\Helpdesk", "audit": "CORP\\Security-Audit",
+    # Groups from the other two domains.
+    "emea_unix": "EMEA\\Linux-Ops-EU", "emea_help": "EMEA\\Helpdesk-EU", "apac_dba": "APAC\\DBA-Oncall",
 }
+# Named people with direct access (Safe members of type User), from three domains.
+USERS = {
+    "win": "CORP\\asmith-adm", "unix": "EMEA\\kmuller", "dba": "APAC\\wtan", "net": "CORP\\jdoe-net",
+    "pay": "EMEA\\pkhan", "shop": "APAC\\lnguyen",
+}
+OTHER_DOMAINS = {"EMEA": "emea.corp.example.com", "APAC": "apac.corp.example.com"}
+
+
+def folder_access(folder, team):
+    """(member, permission, member type) rows for one folder: the team group, helpdesk and audit,
+    a named admin, and groups from the other domains on some folders."""
+    rows = [(GROUPS[team], "Owner", "Group"), (GROUPS["help"], "List", "Group"), (GROUPS["audit"], "View", "Group")]
+    if team in USERS:
+        rows.append((USERS[team], "Edit", "User"))
+    if "Linux" in folder:
+        rows.append((GROUPS["emea_unix"], "Edit", "Group"))
+    if folder.startswith("\\Databases"):
+        rows.append((GROUPS["apac_dba"], "Edit", "Group"))
+    if folder.startswith(("\\Web", "\\Applications")):
+        rows.append((GROUPS["emea_help"], "List", "Group"))
+    return rows
 
 
 def pw(rnd):
@@ -151,16 +174,16 @@ def delinea(out, rnd, count):
     perms = out / "delinea_permissions.csv"
     with open(perms, "w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
-        w.writerow(["Folder Path", "Secret Name", "Secret ID", "Group", "Permission"])
+        w.writerow(["Folder Path", "Secret Name", "Secret ID", "Group", "Permission", "Member Type"])
         for folder, team, _ in FOLDERS:
             if team is None:
                 continue                                         # \Unfiled has no permissions
-            w.writerow([folder, "", "", GROUPS[team], "Owner"])
-            w.writerow([folder, "", "", GROUPS["help"], "List"])
-            w.writerow([folder, "", "", GROUPS["audit"], "View"])
-        w.writerow(["\\Infrastructure\\Linux", "", "", GROUPS["win"], "View"])   # mixed permissions
+            for member, perm, mtype in folder_access(folder, team):
+                w.writerow([folder, "", "", member, perm, mtype])
+        w.writerow(["\\Infrastructure\\Linux", "", "", GROUPS["win"], "View", "Group"])   # mixed permissions
         for r in rows_by_template["Web Password"][:4]:                           # secret-level overrides
-            w.writerow([r["Folder Path"], r["Secret Name"], r["Secret ID"], GROUPS["pay"], "Edit"])
+            w.writerow([r["Folder Path"], r["Secret Name"], r["Secret ID"], GROUPS["pay"], "Edit", "Group"])
+            w.writerow([r["Folder Path"], r["Secret Name"], r["Secret ID"], "CORP\\mlee", "View", "User"])
     return sum(len(v) for v in rows_by_template.values())
 
 
@@ -174,9 +197,10 @@ def delinea_xml(out, rnd, count):
         if not grants:
             return f"{ind}<Permissions />"
         lines = [f"{ind}<Permissions>"]
-        for group, role in grants:
-            domain, name = group.split("\\", 1)
-            lines += [f"{ind}  <Permission>", f"{ind}    <GroupName>{x(name)}</GroupName>",
+        for member, role, mtype in grants:
+            domain, name = member.split("\\", 1)
+            tag = "UserName" if mtype == "User" else "GroupName"
+            lines += [f"{ind}  <Permission>", f"{ind}    <{tag}>{x(name)}</{tag}>",
                       f"{ind}    <DomainName>{x(domain)}</DomainName>",
                       f"{ind}    <FolderAccessRoleName>{x('View' if role == 'List' else role)}</FolderAccessRoleName>",
                       f"{ind}    <SecretAccessRoleName>{x(role)}</SecretAccessRoleName>", f"{ind}  </Permission>"]
@@ -187,7 +211,7 @@ def delinea_xml(out, rnd, count):
     folder_grants = {}
     for folder, team, _ in FOLDERS:
         if team and "Legacy" not in folder:
-            folder_grants[folder] = [(GROUPS[team], "Owner"), (GROUPS["help"], "List"), (GROUPS["audit"], "View")]
+            folder_grants[folder] = folder_access(folder, team)
     all_folders = set()
     for folder, _, _ in FOLDERS:
         levels = folder.strip("\\").split("\\")
@@ -224,7 +248,8 @@ def delinea_xml(out, rnd, count):
         for e in extras:
             items.append((e, {"Port": "22", "Database": "FINPROD", "Attachment": "contract.pdf"}.get(e, pw(rnd))))
         items.append(("Notes", f"Sample XML record {n}"))
-        override = [(GROUPS["pay"], "Edit")] if n % 17 == 4 else None     # secret-level permissions
+        override = [(GROUPS["pay"], "Edit", "Group"), ("CORP\\mlee", "View", "User")] \
+            if n % 17 == 4 else None                                         # secret-level permissions
         xml += ["    <Secret>", f"      <SecretName>{x(user)}@{x(host.split('.')[0])}</SecretName>",
                 f"      <SecretTemplateName>{x(tmpl_name)}</SecretTemplateName>",
                 f"      <FolderPath>{x(folder)}</FolderPath>", "      <SecretItems>"]
@@ -319,7 +344,7 @@ def spreadsheet(out, rnd, count):
                  "Mainframe Login": "MFADMIN", "Unix Account (SSH)": "svc_batch"}[kind]
         folder = {"Windows Account": "Applications/HR Portal", "SQL Server Account": "Databases/HR",
                   "Mainframe Login": "Legacy/Mainframe", "Unix Account (SSH)": "Applications/Batch"}[kind]
-        access = f"{GROUPS['hr']}=Full; {GROUPS['help']}=Read" if "HR" in folder else \
+        access = f"{GROUPS['hr']}=Full; {GROUPS['help']}=Read; {GROUPS['emea_help']}=Read" if "HR" in folder else \
             (f"{GROUPS['dba']}=Full" if "Databases" in folder else
              (f"CORP\\Mainframe-Ops=Write" if kind == "Mainframe Login" else f"{GROUPS['unix']}=Full"))
         target = "APP-HRPortal" if n % 10 == 0 and "HR" in folder else ""
@@ -357,7 +382,7 @@ CONFIG = {
         {"field": "folder", "pattern": "(?i)^\\\\(Network|Vendors)", "platform": "GenericWebApp"},
         {"field": "folder", "pattern": "(?i)^\\\\Cloud", "platform": "AzureWebAccount"},
     ],
-    "directory_map": {"CORP": DOMAIN, "*": "Vault"},
+    "directory_map": {"CORP": DOMAIN, **OTHER_DOMAINS, "*": "Vault"},
     "account_property_map": {"Port": "Port", "Database": "Database"},
 }
 
@@ -383,6 +408,7 @@ Problems planted on purpose, so the review lists have something to show:
   - Missing usernames (Errors) and missing addresses
   - Empty secrets, SSH keys with passphrases, attachments that are not migrated
   - Duplicate secret names, folders with no permissions (\\Unfiled), mixed permissions
+  - Safe members from three domains (CORP, EMEA, APAC): groups, and named users (Member Type User)
   - Spreadsheet rows with no Access value, and rows that name their Safe directly
 
 Things to try:

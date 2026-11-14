@@ -1,6 +1,6 @@
 Hostname,Login,Password,Account Type,Folder,Access,Owner Team,Attachment
 srv101.corp.example.com,adm_srv101,Adm!101,Windows Account,Infrastructure/Windows/Member Servers,CORP\PAM-Windows-Admins=Full; CORP\Helpdesk=Read,Windows Team,
-srv102.corp.example.com,adm_srv102,Adm!102,Windows Account,Infrastructure/Windows/Member Servers,CORP\PAM-Windows-Admins=Full,Windows Team,runbook.pdf
+srv102.corp.example.com,adm_srv102,Adm!102,Windows Account,Infrastructure/Windows/Member Servers,CORP\PAM-Windows-Admins=Full; EMEA\Helpdesk-EU=Read,Windows Team,runbook.pdf
 mf01.corp.example.com,mfadmin,Mf!01,Mainframe Login,Legacy,CORP\Mainframe-Ops=Write,Mainframe Team,
 db301.corp.example.com,sa,Sa!301,SQL Server Account,Databases/SQL Production Reporting Replicas EU West,CORP\PAM-DBA=Owner,DBA Team,
 db302.corp.example.com,sa,Sa!302,SQL Server Account,Databases/SQL Production Reporting Replicas EU East,CORP\PAM-DBA=Owner,DBA Team,

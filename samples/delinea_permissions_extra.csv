@@ -1,3 +1,4 @@
-Folder Path,Secret Name,Secret ID,Group,Permission
-\IT\Windows,,,CORP\Windows-Ops,Edit
-\Linux,,,CORP\Linux-Audit,List
+Folder Path,Secret Name,Secret ID,Group,Permission,Member Type
+\IT\Windows,,,CORP\Windows-Ops,Edit,Group
+\Linux,,,CORP\Linux-Audit,List,Group
+\IT\Windows,,,APAC\rgarcia-adm,Owner,User

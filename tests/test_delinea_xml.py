@@ -78,18 +78,22 @@ class DelineaXml(Base):
         own = recs["svc_backup@srv002"]              # secret-level permissions replace the folder's
         self.assertEqual(own.access_source, "record")
         self.assertEqual([(g.member, g.permission, g.member_type) for g in own.grants],
-                         [("CORP\\Backup-Operators", "Edit", "Group"), ("CORP\\adm_jdoe", "Owner", "User")])
+                         [("CORP\\Backup-Operators", "Edit", "Group"), ("CORP\\adm_jdoe", "Owner", "User"),
+                          ("EMEA\\kmuller", "View", "User")])
         self.assertIn("1 secret dependency not migrated", own.notes)
         key = recs["deploy@web01"]
         self.assertEqual(key.secret_type, "key")
         self.assertTrue(key.secret.startswith("-----BEGIN OPENSSH"))
-        self.assertIn(("CORP\\jsmith", "View", "User"), [(g.member, g.permission, g.member_type) for g in key.grants])
+        self.assertEqual([(g.member, g.permission, g.member_type) for g in key.grants],
+                         [("CORP\\PAM-Unix-Admins", "Owner", "Group"), ("CORP\\jsmith", "View", "User"),
+                          ("EMEA\\Linux-Ops-EU", "Edit", "Group")])
         self.assertIsNone(recs["sa@sql-prod-01"].grants)        # no permissions anywhere above it
         self.assertEqual(recs["sa@sql-prod-01"].secret, "FAKE-Sq1&Prod<99>")
         portal = recs["Billing portal (Vendor 3)"]
         # Old true/false style; a <Name> listed under <Groups> is a group.
         self.assertEqual([(g.member, g.permission, g.member_type) for g in portal.grants],
-                         [("CORP\\APP-Payments-Owners", "Owner", "Group"), ("CORP\\Security-Audit", "View", "Group")])
+                         [("CORP\\APP-Payments-Owners", "Owner", "Group"), ("CORP\\Security-Audit", "View", "Group"),
+                          ("APAC\\wtan", "Edit", "User")])
         # ispassword fields are secrets whatever their name; isfile fields are attachments.
         self.assertEqual(portal.secret, "FAKE-Vend0r-Phrase-3")
         for f in ("Access Phrase", "Memorable Word", "Contract"):
@@ -102,7 +106,9 @@ class DelineaXml(Base):
 
     def test_convert_keeps_secrets_out_of_review(self):
         cfg = self.tmp / "cfg.json"
-        cfg.write_text('{"platform_rules": [{"field": "type", "pattern": "^Vendor Portal$", "platform": "GenericWebApp"}]}')
+        cfg.write_text('{"platform_rules": [{"field": "type", "pattern": "^Vendor Portal$", "platform": "GenericWebApp"}], '
+                       '"directory_map": {"CORP": "corp.example.com", "EMEA": "emea.corp.example.com", '
+                       '"APAC": "apac.corp.example.com", "*": "Vault"}}')
         out = self.convert(XML, config=cfg, extra=["--include-secrets"])
         for f in (out / "review").rglob("*"):
             body = f.read_text(encoding="utf-8-sig")
@@ -113,6 +119,11 @@ class DelineaXml(Base):
         self.assertIn("FAKE-Vend0r-Phrase-3", [a["secret"] for a in accounts.values()])
         members = read_csv(out / "upload" / "SafeMembers.csv")
         got = {(m["safeName"], m["memberName"], m["memberType"]) for m in members}
+        search_in = {(m["memberName"], m["memberType"]): m["searchIn"] for m in members}
+        self.assertEqual(search_in[("kmuller", "User")], "emea.corp.example.com")
+        self.assertEqual(search_in[("Linux-Ops-EU", "Group")], "emea.corp.example.com")
+        self.assertEqual(search_in[("wtan", "User")], "apac.corp.example.com")
+        self.assertEqual(search_in[("PAM-Infra-Admins", "Group")], "corp.example.com")
         self.assertLessEqual({("INF-WIN", "PAM-Infra-Admins", "Group"), ("INF-WIN", "adm_jdoe", "User"),
                               ("APP-PAY", "APP-Payments-Owners", "Group")}, got)
 
