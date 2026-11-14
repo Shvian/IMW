@@ -7,7 +7,7 @@ import re
 from collections import OrderedDict
 
 from ..model import ERROR_NOTE, Grant, SourceRecord, split_folder
-from .base import column_lookup, first_value, is_secret_column, matches_any
+from .base import column_lookup, first_value, is_otp_value, is_secret_column, matches_any, otp_fields, otp_note
 
 ACCESS_SPLIT = re.compile(r"[;\n]+")
 
@@ -112,9 +112,14 @@ def record_from_row(row, cfg, *, source, source_file, row_ref, row_number,
         rec.grants = (rec.grants or []) + [Grant(group_val, perm_val)]
 
     rec.extra = OrderedDict()
+    otp = otp_fields((c, v) for c, v in row.items() if not c.startswith("_"))
+    if otp:
+        rec.notes.append(otp_note(otp))
     for col, val in row.items():
         if col.startswith("_"):
             continue
+        if col in otp and (is_secret_column(col, cfg) or is_otp_value(val)):
+            continue                     # the seed: noted once above, never kept
         if is_secret_column(col, cfg):
             if str(val or "").strip() and col not in (used["password"][0], used["private_key"][0]) \
                     and "passphrase" not in col.lower():
