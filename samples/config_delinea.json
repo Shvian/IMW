@@ -10,5 +10,6 @@
   "folder_rules": [
     {"folder_prefix": "\\IT\\Network", "safe": "NET-Devices"}
   ],
+  "directory_map": {"CORP": "corp.example.com", "EMEA": "emea.corp.example.com", "APAC": "apac.corp.example.com", "*": "Vault"},
   "fallback_strategy": "folder_path"
 }

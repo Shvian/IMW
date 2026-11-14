@@ -7,6 +7,7 @@ Writes a ready-to-use workspace:
   <out>/config.json                      starter mapping rules matching the data
   <out>/inbox/delinea_export.csv         Delinea Secret Server multi-template export (fake secrets)
   <out>/inbox/delinea_permissions.csv    folder- and secret-level group permissions
+  <out>/inbox/delinea_export.xml         Delinea Secret Server XML export with folder permissions (fake secrets)
   <out>/inbox/keepass_export.xml         KeePass 2.x XML export (fake secrets)
   <out>/inbox/it_inventory.xlsx          spreadsheet inventory, one account per row
   <out>/SAMPLE_DATA_README.txt           what is in it, and the problems planted on purpose
@@ -37,7 +38,30 @@ GROUPS = {
     "net": "CORP\\PAM-Network", "web": "CORP\\PAM-Web-Ops", "pay": "CORP\\APP-Payments-Owners",
     "shop": "CORP\\APP-Storefront-Owners", "hr": "CORP\\APP-HRPortal-Owners",
     "help": "CORP\\Helpdesk", "audit": "CORP\\Security-Audit",
+    # Groups from the other two domains.
+    "emea_unix": "EMEA\\Linux-Ops-EU", "emea_help": "EMEA\\Helpdesk-EU", "apac_dba": "APAC\\DBA-Oncall",
 }
+# Named people with direct access (Safe members of type User), from three domains.
+USERS = {
+    "win": "CORP\\asmith-adm", "unix": "EMEA\\kmuller", "dba": "APAC\\wtan", "net": "CORP\\jdoe-net",
+    "pay": "EMEA\\pkhan", "shop": "APAC\\lnguyen",
+}
+OTHER_DOMAINS = {"EMEA": "emea.corp.example.com", "APAC": "apac.corp.example.com"}
+
+
+def folder_access(folder, team):
+    """(member, permission, member type) rows for one folder: the team group, helpdesk and audit,
+    a named admin, and groups from the other domains on some folders."""
+    rows = [(GROUPS[team], "Owner", "Group"), (GROUPS["help"], "List", "Group"), (GROUPS["audit"], "View", "Group")]
+    if team in USERS:
+        rows.append((USERS[team], "Edit", "User"))
+    if "Linux" in folder:
+        rows.append((GROUPS["emea_unix"], "Edit", "Group"))
+    if folder.startswith("\\Databases"):
+        rows.append((GROUPS["apac_dba"], "Edit", "Group"))
+    if folder.startswith(("\\Web", "\\Applications")):
+        rows.append((GROUPS["emea_help"], "List", "Group"))
+    return rows
 
 
 def pw(rnd):
@@ -150,17 +174,91 @@ def delinea(out, rnd, count):
     perms = out / "delinea_permissions.csv"
     with open(perms, "w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
-        w.writerow(["Folder Path", "Secret Name", "Secret ID", "Group", "Permission"])
+        w.writerow(["Folder Path", "Secret Name", "Secret ID", "Group", "Permission", "Member Type"])
         for folder, team, _ in FOLDERS:
             if team is None:
                 continue                                         # \Unfiled has no permissions
-            w.writerow([folder, "", "", GROUPS[team], "Owner"])
-            w.writerow([folder, "", "", GROUPS["help"], "List"])
-            w.writerow([folder, "", "", GROUPS["audit"], "View"])
-        w.writerow(["\\Infrastructure\\Linux", "", "", GROUPS["win"], "View"])   # mixed permissions
+            for member, perm, mtype in folder_access(folder, team):
+                w.writerow([folder, "", "", member, perm, mtype])
+        w.writerow(["\\Infrastructure\\Linux", "", "", GROUPS["win"], "View", "Group"])   # mixed permissions
         for r in rows_by_template["Web Password"][:4]:                           # secret-level overrides
-            w.writerow([r["Folder Path"], r["Secret Name"], r["Secret ID"], GROUPS["pay"], "Edit"])
+            w.writerow([r["Folder Path"], r["Secret Name"], r["Secret ID"], GROUPS["pay"], "Edit", "Group"])
+            w.writerow([r["Folder Path"], r["Secret Name"], r["Secret ID"], "CORP\\mlee", "View", "User"])
     return sum(len(v) for v in rows_by_template.values())
+
+
+def delinea_xml(out, rnd, count):
+    """Secret Server XML export (Advanced Import/Export format), UTF-16 like Secret Server
+    writes it, with folder permissions, inheritance and secret-level overrides."""
+    def x(v):
+        return escape(str(v))
+
+    def perms(grants, ind):
+        if not grants:
+            return f"{ind}<Permissions />"
+        lines = [f"{ind}<Permissions>"]
+        for member, role, mtype in grants:
+            domain, name = member.split("\\", 1)
+            tag = "UserName" if mtype == "User" else "GroupName"
+            lines += [f"{ind}  <Permission>", f"{ind}    <{tag}>{x(name)}</{tag}>",
+                      f"{ind}    <DomainName>{x(domain)}</DomainName>",
+                      f"{ind}    <FolderAccessRoleName>{x('View' if role == 'List' else role)}</FolderAccessRoleName>",
+                      f"{ind}    <SecretAccessRoleName>{x(role)}</SecretAccessRoleName>", f"{ind}  </Permission>"]
+        return "\n".join(lines + [f"{ind}</Permissions>"])
+
+    # Folder permissions: each team folder lists its own; "Legacy 2012R2" lists none, so it
+    # inherits from "Member Servers"; the top-level folders list none; \Unfiled has none at all.
+    folder_grants = {}
+    for folder, team, _ in FOLDERS:
+        if team and "Legacy" not in folder:
+            folder_grants[folder] = folder_access(folder, team)
+    all_folders = set()
+    for folder, _, _ in FOLDERS:
+        levels = folder.strip("\\").split("\\")
+        for i in range(1, len(levels) + 1):
+            all_folders.add("\\" + "\\".join(levels[:i]))
+    xml = ['<?xml version="1.0" encoding="utf-16"?>',
+           '<!-- FAKE Delinea Secret Server XML export: every name, host and password is invented. -->',
+           '<ImportFile xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">',
+           "  <Folders>"]
+    for folder in sorted(all_folders, key=lambda f: (f.count("\\"), f)):
+        xml += ["    <Folder>", f"      <FolderName>{x(folder.rsplit(chr(92), 1)[-1])}</FolderName>",
+                f"      <FolderPath>{x(folder)}</FolderPath>", perms(folder_grants.get(folder), "      "), "    </Folder>"]
+    xml += ["  </Folders>", "  <SecretTemplates>"]
+    for name, addr_col, secret_col, extras, _ in TEMPLATES:
+        fields = [(addr_col, False, addr_col == "URL", False), ("Username", False, False, False),
+                  (secret_col, True, False, False)]
+        fields += [(e, "Password" in e or "Passphrase" in e, False, e == "Attachment") for e in extras]
+        fields.append(("Notes", False, False, False))
+        xml += ["    <secrettype>", f"      <name>{x(name)}</name>", "      <active>true</active>", "      <fields>"]
+        for fname, is_pw, is_url, is_file in fields:
+            xml.append(f"        <field><displayname>{x(fname)}</displayname><name>{x(fname)}</name>"
+                       f"<isurl>{str(is_url).lower()}</isurl><ispassword>{str(is_pw).lower()}</ispassword>"
+                       f"<isnotes>{str(fname == 'Notes').lower()}</isnotes><isfile>{str(is_file).lower()}</isfile></field>")
+        xml += ["      </fields>", "    </secrettype>"]
+    xml += ["  </SecretTemplates>", "  <Secrets>"]
+    for n in range(count):
+        folder, team, tmpl_name = rnd.choice(FOLDERS)
+        _, addr_col, secret_col, extras, _ = next(t for t in TEMPLATES if t[0] == tmpl_name)
+        user = rnd.choice(["Administrator", "root", "svc_app", "deploy", "sa", "admin"])
+        host = f"{rnd.choice(['srv', 'app', 'db', 'web'])}{rnd.randint(1, 499):03d}.{DOMAIN}"
+        address = f"https://portal.vendor{rnd.randint(1, 9)}.example.com/login" if addr_col == "URL" else host
+        items = [(addr_col, address), ("Username", user),
+                 (secret_col, fake_key(rnd) if secret_col == "Private Key" else pw(rnd))]
+        for e in extras:
+            items.append((e, {"Port": "22", "Database": "FINPROD", "Attachment": "contract.pdf"}.get(e, pw(rnd))))
+        items.append(("Notes", f"Sample XML record {n}"))
+        override = [(GROUPS["pay"], "Edit", "Group"), ("CORP\\mlee", "View", "User")] \
+            if n % 17 == 4 else None                                         # secret-level permissions
+        xml += ["    <Secret>", f"      <SecretName>{x(user)}@{x(host.split('.')[0])}</SecretName>",
+                f"      <SecretTemplateName>{x(tmpl_name)}</SecretTemplateName>",
+                f"      <FolderPath>{x(folder)}</FolderPath>", "      <SecretItems>"]
+        for fname, val in items:
+            xml.append(f"        <SecretItem><FieldName>{x(fname)}</FieldName><Value>{x(val)}</Value></SecretItem>")
+        xml += ["      </SecretItems>", "      <SecretDependencies />", perms(override, "      "), "    </Secret>"]
+    xml += ["  </Secrets>", "  <Groups />", "</ImportFile>", ""]
+    (out / "delinea_export.xml").write_bytes("\r\n".join(xml).encode("utf-16"))
+    return count
 
 
 # --------------------------------------------------------------------------- #
@@ -246,7 +344,7 @@ def spreadsheet(out, rnd, count):
                  "Mainframe Login": "MFADMIN", "Unix Account (SSH)": "svc_batch"}[kind]
         folder = {"Windows Account": "Applications/HR Portal", "SQL Server Account": "Databases/HR",
                   "Mainframe Login": "Legacy/Mainframe", "Unix Account (SSH)": "Applications/Batch"}[kind]
-        access = f"{GROUPS['hr']}=Full; {GROUPS['help']}=Read" if "HR" in folder else \
+        access = f"{GROUPS['hr']}=Full; {GROUPS['help']}=Read; {GROUPS['emea_help']}=Read" if "HR" in folder else \
             (f"{GROUPS['dba']}=Full" if "Databases" in folder else
              (f"CORP\\Mainframe-Ops=Write" if kind == "Mainframe Login" else f"{GROUPS['unix']}=Full"))
         target = "APP-HRPortal" if n % 10 == 0 and "HR" in folder else ""
@@ -284,7 +382,7 @@ CONFIG = {
         {"field": "folder", "pattern": "(?i)^\\\\(Network|Vendors)", "platform": "GenericWebApp"},
         {"field": "folder", "pattern": "(?i)^\\\\Cloud", "platform": "AzureWebAccount"},
     ],
-    "directory_map": {"CORP": DOMAIN, "*": "Vault"},
+    "directory_map": {"CORP": DOMAIN, **OTHER_DOMAINS, "*": "Vault"},
     "account_property_map": {"Port": "Port", "Database": "Database"},
 }
 
@@ -297,6 +395,8 @@ Start the Workbench on this folder:
 inbox/
   delinea_export.csv       {d} Delinea secrets in 8 templates, multi-header format, fake passwords and SSH keys
   delinea_permissions.csv  tick this one as the "permissions file" when loading the Delinea export
+  delinea_export.xml       {dx} Delinea secrets as a Secret Server XML export (UTF-16), with its own folder
+                           and secret permissions: no permissions file needed
   keepass_export.xml       {k} KeePass entries in nested groups (plus a Recycle Bin entry and history that are skipped)
   it_inventory.xlsx        {x} rows from a spreadsheet: one account per row, an Access column, some Target Safe values
 config.json                starter mapping rules (open "Mapping rules" to see and change them)
@@ -308,10 +408,13 @@ Problems planted on purpose, so the review lists have something to show:
   - Missing usernames (Errors) and missing addresses
   - Empty secrets, SSH keys with passphrases, attachments that are not migrated
   - Duplicate secret names, folders with no permissions (\\Unfiled), mixed permissions
+  - Safe members from three domains (CORP, EMEA, APAC): groups, and named users (Member Type User)
   - Spreadsheet rows with no Access value, and rows that name their Safe directly
 
 Things to try:
-  1. Load all three exports (tick delinea_permissions.csv as the permissions file).
+  1. Load delinea_export.csv, keepass_export.xml and it_inventory.xlsx (tick delinea_permissions.csv as the
+     permissions file). delinea_export.xml is a separate set of Delinea secrets: load it too, or on its own
+     in a fresh workspace, to try the XML import with its built-in folder permissions.
   2. Mapping rules: give "Mainframe Login" a platform (pick one from the Platform ID list), Save.
   3. Review & change: open "Errors", "Safe name was changed", "No access groups"; move or exclude some accounts.
   4. Create upload files: first a dry run, then one wave (e.g. one Safe) upload-ready.
@@ -322,6 +425,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", default="sample_workspace")
     ap.add_argument("--delinea", type=int, default=400)
+    ap.add_argument("--delinea-xml", type=int, default=80)
     ap.add_argument("--keepass", type=int, default=60)
     ap.add_argument("--excel", type=int, default=120)
     ap.add_argument("--seed", type=int, default=7)
@@ -331,11 +435,12 @@ def main():
     inbox = out / "inbox"
     inbox.mkdir(parents=True, exist_ok=True)
     d = delinea(inbox, rnd, args.delinea)
+    dx = delinea_xml(inbox, rnd, args.delinea_xml)
     k = keepass(inbox, rnd, args.keepass)
     x = spreadsheet(inbox, rnd, args.excel)
     (out / "config.json").write_text(json.dumps(CONFIG, indent=2), encoding="utf-8")
-    (out / "SAMPLE_DATA_README.txt").write_text(README.format(out=out, d=d, k=k, x=x), encoding="utf-8")
-    print(f"Wrote sample workspace to {out.resolve()}: {d} Delinea, {k} KeePass, {x} spreadsheet records.")
+    (out / "SAMPLE_DATA_README.txt").write_text(README.format(out=out, d=d, dx=dx, k=k, x=x), encoding="utf-8")
+    print(f"Wrote sample workspace to {out.resolve()}: {d} Delinea CSV, {dx} Delinea XML, {k} KeePass, {x} spreadsheet records.")
     print(f"Start it with: python -m imw ui --workspace \"{out}\"")
 
 

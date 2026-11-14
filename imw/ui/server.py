@@ -44,10 +44,12 @@ from ..model import SourceRecord
 from ..naming import DEFAULT_PLATFORM_CODES, Namer
 from ..protect import ProtectError
 from ..store import Store, StoreError, run_extract, sha256_file
-from ..transform import (Permissions, apply_member_override, clean_line, member_target,
+from ..transform import (PERM_GROUP_COLUMNS, PERM_ROLE_COLUMNS, PERM_USER_COLUMNS, Permissions,
+                         apply_member_override, clean_line, member_target,
                          normalize_member_type, safe_settings, sanitize_safe_name)
 from .auth import get_authenticator
 from .tls import fingerprint, server_context, trust_certificate
+from .winfront import bring_to_front
 from ..owner import claim_workspace, peer_is_owner
 
 log = logging.getLogger("imw.ui")
@@ -194,6 +196,12 @@ def check_settings(cfg):
             rx(src["match"][3:], "Directory source match")
         if src.get("find"):
             rx(src["find"], "Directory source find")
+    for row in cfg.get("domain_map") or []:
+        to = str(row.get("to") or "").strip().lstrip("@")
+        if not str(row.get("from") or "").strip():
+            raise UiError("Each domain conversion row needs the source domain(s) it converts, or *.")
+        if to and not _re.fullmatch(r"[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*", to):
+            raise UiError(f"'{to}' is not a domain name (for example corp.example.com).")
     for rule in cfg.get("safe_rules") or []:
         rx(rule.get("safe_pattern"), "Safe settings rule")
         if str(rule.get("numberOfVersionsRetention", "")).strip() and str(rule.get("numberOfDaysRetention", "")).strip():
@@ -206,7 +214,8 @@ def check_settings(cfg):
 
 
 def looks_like_permissions(path):
-    """A CSV whose header has a group/principal column and a permission column, and no password column."""
+    """A CSV whose header has a group/user column and a permission column, and no password column
+    (the Workbench layout, or a Delinea folder-permissions report)."""
     if path.suffix.lower() != ".csv":
         return False
     try:
@@ -214,8 +223,10 @@ def looks_like_permissions(path):
             header = [h.strip().lower() for h in fh.readline().split(",")]
     except OSError:
         return False
-    return (any(h in ("group", "principal", "member", "group name") for h in header)
-            and any(h in ("permission", "role", "access") for h in header)
+    header = [h.strip('"').strip() for h in header]
+    who = {c.lower() for c in PERM_GROUP_COLUMNS + PERM_USER_COLUMNS}
+    roles = {c.lower() for c in PERM_ROLE_COLUMNS}
+    return (any(h in who for h in header) and any(h in roles for h in header)
             and not any("password" in h for h in header))
 
 
@@ -1063,6 +1074,7 @@ class App:
         try:
             if sys.platform == "win32":
                 os.startfile(str(path))   # noqa: S606 - opens Explorer on our own folder
+                bring_to_front(path)      # otherwise it opens behind the browser
                 opened = True
             elif os.environ.get("IMW_UI_NO_OPEN") != "1":
                 tool = "open" if sys.platform == "darwin" else "xdg-open"

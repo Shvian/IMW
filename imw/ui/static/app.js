@@ -296,6 +296,9 @@ const DIR_TIP = {
   add_prefix: "Text put in front of every name from this source, after Find/Replace.\nExample: PAM- turns DBA-Team into PAM-DBA-Team",
   add_suffix: "Text put after every name from this source, after Find/Replace.\nExample: @corp.example.com turns jdoe into jdoe@corp.example.com",
   case: "keep = as in the export; lower = all lower case (DBA-Team → dba-team); UPPER = all capitals (DBA-Team → DBA-TEAM).",
+  dm_from: "The domain(s) of members in the export this row converts. Separate several with commas to send them all to one output domain.\nA domain matches both forms: CORP matches CORP\\jdoe and jdoe@corp.example.com.\n* = every member, also names with no domain.\nExamples: CORP · CORP, EMEA, APAC · emea.corp.example.com",
+  dm_to: "The output domain. The name becomes UPN format: name@domain.\nLeave empty to drop the domain (CORP\\jdoe → jdoe).\nExamples: corp.example.com turns CORP\\jdoe into jdoe@corp.example.com",
+  dm_members: "Which members this row converts: users (the usual case for UPN names), groups, roles, or a combination: users and groups, groups and roles, or all three.",
 };
 const TIP_KEY = {
   name: DIR_TIP.name, match: DIR_TIP.match, search_in: DIR_TIP.search_in, strip_domain: DIR_TIP.strip_domain,
@@ -319,7 +322,7 @@ const TIP_KEY = {
 };
 const TIP_CLASS = {
   pick: "Tick to load this file. Tick Permissions file too if it lists access instead of accounts.",
-  perm: "This file lists access groups per folder or record. Ticking it also ticks Load.",
+  perm: "This file lists access groups per folder or record (the Workbench layout or a Delinea folder-permissions report). Ticking it also ticks Load.",
   src: "Which kind of export this is. Auto-detect usually works.",
   "l-label": "A name for this placeholder, for your reference.",
   "l-default": "Code used when no row below matches. Empty = the placeholder is left out of the name.",
@@ -537,9 +540,10 @@ PAGES.load = async () => {
   $("#main").innerHTML = `<h2>1. Load exports</h2>
     <p class="lead">Copy export files into the inbox folder, tick the ones to load, then click Load.</p>
     <div class="card"><h3>Inbox: <a class="pathlink" id="open-inbox" title="Open this folder in Explorer"><code>${esc(STATE.inbox)}</code></a>
-      <button class="btn small" id="open-inbox2">Open folder</button></h3>
+      <button class="btn small" id="open-inbox2">Open folder</button>
+      <button class="btn small" data-copy="${esc(STATE.inbox)}" title="Copy the folder path, to paste into File Explorer's address bar or a file dialog">Copy path</button></h3>
     ${files.length ? `<table><tr><th title="Tick every file to use: exports and permissions files">Load</th><th>File</th><th>Status</th><th>Size</th><th title="Which kind of export this is. It is detected from the file; click change if the guess is wrong.">Type</th>
-        <th class="has-tip" title="A permissions file lists groups per folder or record (columns: Folder Path, Secret Name, Secret ID, Group, Permission). Use one when the export itself has no access data, as with Delinea and KeePass. Tick several to merge them; a group listed in more than one file for the same folder is counted once.">Permissions file <span class="q">?</span></th><th></th></tr>
+        <th class="has-tip" title="A permissions file lists groups per folder or record (columns: Folder Path, Secret Name, Secret ID, Group, Permission), or is a Delinea folder-permissions report saved as CSV. Use one when the export itself has no access data, as with a Delinea CSV export or KeePass. A Delinea XML export carries its own folder and secret permissions; a permissions file only fills in records that have none. Tick several to merge them; a group listed in more than one file for the same folder is counted once.">Permissions file <span class="q">?</span></th><th></th></tr>
       ${files.map((f, i) => `<tr><td><input type="checkbox" class="pick" data-i="${i}" ${(f.guess || f.permissions) && f.loaded !== "same" ? "checked" : ""}></td>
         <td>${esc(f.name)}</td><td>${status(f)}</td><td class="nowrap">${(f.size / 1024).toFixed(1)} KB</td>
         <td>${f.guess ? `<span class="src-show">${esc(SOURCE_NAMES[f.guess] || f.guess)} <button class="linkbtn src-change" data-i="${i}">change</button></span>` : ""}
@@ -561,6 +565,7 @@ PAGES.load = async () => {
     catch (e) { msg($("#load-msg"), "err", e.message); }
   };
   $("#open-inbox").onclick = openInbox; $("#open-inbox2").onclick = openInbox;
+  wireCopy($("#main"));
   document.querySelectorAll(".src-change").forEach(b => b.onclick = () => {
     b.parentElement.classList.add("hidden"); const sel = document.querySelector(`.src[data-i="${b.dataset.i}"]`); sel.classList.remove("hidden"); sel.focus(); });
   // "Load" says which files to use; "Permissions file" says how to use one. Ticking it as a permissions file also ticks Load.
@@ -631,6 +636,17 @@ document.addEventListener("click", (e) => {
 });
 // "How this page works": folded, so the inputs come first; the tooltips cover each field.
 const explain = (inner, label = "How this page works") => `<details class="explain"><summary>${esc(label)}</summary>${inner}</details>`;
+/* "Copy path" buttons: the path goes to the clipboard, to paste into File Explorer's address bar
+   (Windows may open a folder behind the browser; a pasted path always comes to the front). */
+async function copyText(btn, text) {
+  try { await navigator.clipboard.writeText(text); }
+  catch (e) {
+    const t = document.createElement("textarea"); t.value = text; document.body.appendChild(t); t.select();
+    try { document.execCommand("copy"); } finally { t.remove(); }
+  }
+  const was = btn.textContent; btn.textContent = "Copied"; setTimeout(() => { btn.textContent = was; }, 1500);
+}
+function wireCopy(root) { root.querySelectorAll("[data-copy]").forEach(b => b.onclick = () => copyText(b, b.dataset.copy)); }
 function editorTable(id, cols, rows, addLabel = "+ Add row", open = false) {
   TABLES[id] = cols;
   return editBlock(rowCount(rows.length), `<table class="editor" id="${esc(id)}"><tr>${cols.map(c => `<th${c.tip ? ` class="has-tip" title="${esc(c.tip)}"` : ""}>${esc(c.label)}${c.tip ? ' <span class="q">?</span>' : ""}</th>`).join("")}<th></th></tr>
@@ -735,8 +751,8 @@ function updateBlockCount(id) {
 }
 let onTableCount = null;   // a page can listen for row counts changing (the Safes page's placeholder summaries)
 const normName = (t) => String(t).toLowerCase().split(/[\s\-_/\\:;,.()\[\]{}"'&+]+/).filter(Boolean).join(" ");
-const RULE_PAGES = [["rules-safes", "A. Safes"], ["rules-members", "B. Safe members"], ["rules-platforms", "C. Platforms"],
-  ["rules-accounts", "D. Accounts"], ["rules-dir", "E. Member names (optional)"], ["rules-json", "Advanced: settings file (JSON)"]];
+const RULE_PAGES = [["rules-safes", "A. Safes"], ["rules-members", "B. Safe permissions"], ["rules-platforms", "C. Platforms"],
+  ["rules-accounts", "D. Accounts"], ["rules-dir", "E. Member names"], ["rules-json", "Advanced: settings file (JSON)"]];
 
 // One settings page: its own cards and its own Save & apply, which saves only its keys.
 async function rulesPage(page, intro, render) {
@@ -877,6 +893,10 @@ PAGES["rules-dir"] = () => rulesPage("rules-dir",
     const rowsFor = (kind) => sources.filter(s => (s.members || "both") === "both" || s.members === kind)
       .map(s => ({ ...s, strip_domain: s.strip_domain === false || s.strip_domain === "no" ? "no" : "yes" }));
     const fallbackDir = (cfg.directory_map || {})["*"] || "";
+    const DM_COLS = [{ key: "from", label: "Source domain(s)", ph: "CORP, EMEA", tip: DIR_TIP.dm_from },
+      { key: "to", label: "Output domain (UPN)", ph: "corp.example.com, or empty to drop", tip: DIR_TIP.dm_to },
+      { key: "members", label: "Applies to", options: [["users", "users"], ["groups", "groups"], ["roles", "roles"], ["users+groups", "users and groups"],
+        ["groups+roles", "groups and roles"], ["all", "users, groups and roles"]], tip: DIR_TIP.dm_members }];
     return {
       html: `${explain(`<p><b>How it works.</b> For each member in the export (for example <code>CORP\\DBA-Team</code>), the Workbench goes down the list of sources
           for that member's type and uses the <b>first</b> one whose "Matches members from" fits. That source decides the member's name in SafeMembers.csv (memberName) and, if you fill it in, the directory to look in (searchIn).
@@ -888,13 +908,17 @@ PAGES["rules-dir"] = () => rulesPage("rules-dir",
           <label class="inline">searchIn <input type="text" id="dir-fallback" value="${esc(fallbackDir)}" size="20" placeholder="empty = all directories"></label>
           <label class="inline"><input type="checkbox" id="dir-strip" ${cfg.strip_domain_prefix ? "checked" : ""}> Drop the CORP\\ prefix from names</label>
           <label class="inline">A member the export doesn't give a type is a <select id="dir-type">${MEMBER_TYPES.map(t => `<option ${cfg.default_member_type === t ? "selected" : ""}>${t}</option>`).join("")}</select></label></div></div>
+        <div class="card"><h3>Domain conversion <span class="muted small">(checked before the default above, top to bottom; the first match wins)</span></h3>
+          <p class="small">Drop a domain, or change it and give the name in UPN format (<code>name@domain</code>). One row per output domain: list several source domains on one row to send them all to the same domain (<code>CORP, EMEA → corp.example.com</code>), or add a row per source domain to send each to its own. Example: <code>CORP\\jdoe</code> → <code>jdoe@corp.example.com</code>. A member no row matches keeps the default above. A source below still applies its find and replace, added text and case to the converted name.</p>
+          ${editorTable("t-dm", DM_COLS, cfg.domain_map || [], "+ Add domain conversion", true)}</div>
         <div class="card"><h3>Exceptions: sources for some members <span class="muted small">(checked before the default above, top to bottom; the first match wins)</span></h3>
           <h4 style="margin:6px 0">Groups and roles</h4>${editorTable("t-dg", COLS, rowsFor("groups"), "+ Add group source")}
           <h4 style="margin:12px 0 6px">Users</h4>${editorTable("t-du", COLS, rowsFor("users"), "+ Add user source")}</div>`,
       collect() {
         const fix = (r, members) => ({ ...r, members, strip_domain: r.strip_domain !== "no", name: r.name || r.match || "" });
         const list = readTable("t-dg").map(r => fix(r, "groups")).concat(readTable("t-du").map(r => fix(r, "users")));
-        return { directory_sources: list, directory_map: { "*": $("#dir-fallback").value.trim() },
+        const domainMap = readTable("t-dm").filter(r => r.from || r.to).map(r => ({ from: r.from || "", to: (r.to || "").replace(/^@/, ""), members: r.members || "users" }));
+        return { directory_sources: list, directory_map: { "*": $("#dir-fallback").value.trim() }, domain_map: domainMap,
                  strip_domain_prefix: $("#dir-strip").checked, default_member_type: $("#dir-type").value };
       },
       preview: {
@@ -1599,14 +1623,14 @@ PAGES["review-safes"] = async () => {
     : s.issues ? ` <span class="pill REVIEW" title="${esc(s.issues)}">⚠</span>` : "";
   $("#main").innerHTML = `<h2>3. Review &amp; change · A. Safes &amp; members</h2>
     <p class="lead">The Safes the upload will create and who gets access. Click a Safe or a member to see and change it. To change how Safes are named or who gets access everywhere, use the rules in step 2
-      (<a href="#" data-go="rules-safes">Safes</a>, <a href="#" data-go="rules-members">Safe members</a>, <a href="#" data-go="rules-dir">member names</a>).</p>
+      (<a href="#" data-go="rules-safes">Safes</a>, <a href="#" data-go="rules-members">Safe permissions</a>, <a href="#" data-go="rules-dir">member names</a>).</p>
     ${safeEditsHtml(d)}${editsHtml}
     <div class="tabs" role="tablist"><button data-tab="safes" class="${tab === "safes" ? "on" : ""}" role="tab">Safes (${d.safes.length})</button>
       <button data-tab="members" class="${tab === "members" ? "on" : ""}" role="tab">Members (${d.people.length})</button><label class="inline small" style="margin-left:auto;align-self:center" title="Review: the usual columns. Source → upload CSV: what the export had on the left, and the Safes.csv / SafeMembers.csv columns it becomes on the right.">Columns
       <select id="s-cols-mode"><option value="review">Review</option><option value="csv" ${csvMode ? "selected" : ""}>Source → upload CSV</option></select></label></div>
     <div id="tab-safes" class="${tab === "safes" ? "" : "hidden"}">
       ${noFullCount ? `<div class="msg warn">${noFullCount} ${noFullCount === 1 ? "Safe has" : "Safes have"} no member with full permissions, so nobody from your source could manage ${noFullCount === 1 ? "it" : "them"} or ${noFullCount === 1 ? "its" : "their"} members after the upload.
-        Give one user, group or role the <b>Full</b> role: tick the Safes, then <b>Add to ticked Safes</b> with role Full; or map a source permission to Full in <a href="#" data-go="rules-members">B. Safe members</a>.
+        Give one user, group or role the <b>Full</b> role: tick the Safes, then <b>Add to ticked Safes</b> with role Full; or map a source permission to Full in <a href="#" data-go="rules-members">B. Safe permissions</a>.
         <label class="inline" style="margin-left:8px"><input type="checkbox" id="s-nofull" ${SAFES.nofull ? "checked" : ""}> show only these Safes</label></div>` : ""}
       <div class="row" style="margin-bottom:8px"><input type="search" id="s-filter" placeholder="Show Safes containing…" size="28" value="${esc(SAFES.filter)}">
         <button class="btn small" id="s-tick-shown">Tick the Safes shown</button>
@@ -1958,15 +1982,33 @@ PAGES.output = async () => {
         Type <b>INCLUDE SECRETS</b> to confirm: <input type="text" id="confirm" size="18"></div>
       <h3>Folder name</h3>
       <p class="row"><input type="text" id="o-name" size="28"> <label class="inline"><input type="checkbox" id="o-replace"> Replace if it exists</label></p>
+      <p class="small">The files go into <a class="pathlink" id="open-output" title="Open the output folder in Explorer"><code id="o-path">${esc(STATE.output)}</code></a>
+        <button class="btn small" id="open-output2">Open folder</button>
+        <button class="btn small" id="copy-output" title="Copy the folder path, to paste into File Explorer's address bar or a file dialog">Copy path</button></p>
       <button class="btn primary" id="extract">Create files</button><div id="out-msg"></div>
     </div>
-    <div class="card"><h3>Earlier outputs in <code>${esc(STATE.output)}</code></h3>
+    <div class="card"><h3>Earlier outputs in <a class="pathlink" id="open-output3" title="Open this folder in Explorer"><code>${esc(STATE.output)}</code></a>
+      <button class="btn small" id="open-output4">Open folder</button>
+      <button class="btn small" data-copy="${esc(STATE.output)}" title="Copy the folder path, to paste into File Explorer's address bar or a file dialog">Copy path</button></h3>
       ${STATE.outputs.length ? `<table><tr><th>Name</th><th>Created</th><th>Accounts</th><th>Secrets</th><th></th></tr>
-        ${STATE.outputs.map(o => `<tr><td>${esc(o.name)}</td><td>${esc(o.created)}</td><td>${o.counts.accounts ?? ""}</td>
+        ${STATE.outputs.map(o => `<tr><td><a class="pathlink" data-open-out="${esc(o.name)}" title="Open this folder in Explorer">${esc(o.name)}</a></td><td>${esc(o.created)}</td><td>${o.counts.accounts ?? ""}</td>
           <td>${o.secrets && o.has_upload ? '<span class="pill ERROR">plaintext</span>' : o.secrets ? "deleted" : "none"}</td>
           <td>${o.has_upload ? `<button class="btn danger" data-del="${esc(o.name)}">Securely delete upload files</button>` : ""}</td></tr>`).join("")}</table>` : '<p class="muted">None yet.</p>'}</div>`;
   if (LAST_OUT) { $("#out-msg").innerHTML = LAST_OUT; LAST_OUT = ""; }
   wireTiles();
+  // Clickable paths, as on the Load page: the output folder, or one output inside it.
+  const openOutput = async (name) => {
+    try {
+      const r = await api("/api/open", name ? { which: "output", name } : { which: "output" });
+      if (!r.opened) alert("Open this folder yourself: " + r.path);
+    } catch (e) { msg($("#out-msg"), "err", e.message); }
+  };
+  ["#open-output", "#open-output2", "#open-output3", "#open-output4"].forEach(id => $(id).onclick = () => openOutput());
+  document.querySelectorAll("[data-open-out]").forEach(a => a.onclick = () => openOutput(a.dataset.openOut));
+  const sep = STATE.output.includes("\\") ? "\\" : "/";
+  const showPath = () => { const n = $("#o-name").value.trim(); $("#o-path").textContent = n ? STATE.output + sep + n : STATE.output; };
+  $("#copy-output").onclick = () => copyText($("#copy-output"), $("#o-path").textContent);
+  wireCopy($("#main"));
   // A ready-made folder name (date, what is in it, dry run or not), until you type your own.
   let typed = false;
   const autoName = () => {
@@ -1978,8 +2020,9 @@ PAGES.output = async () => {
     const taken = new Set(STATE.outputs.map(o => o.name));
     let name = base, n = 1; while (taken.has(name)) name = `${base}-${++n}`;
     $("#o-name").value = name;
+    showPath();
   };
-  $("#o-name").addEventListener("input", () => { typed = !!$("#o-name").value.trim(); });
+  $("#o-name").addEventListener("input", () => { typed = !!$("#o-name").value.trim(); showPath(); });
   document.querySelectorAll("input[name=scope], input[name=sec], #o-safe, #o-platform, #o-source").forEach(el => el.addEventListener("change", () => setTimeout(autoName, 0)));
   autoName();
   document.querySelectorAll("input[name=sec]").forEach(r => r.onchange = () => $("#sec-confirm").classList.toggle("hidden", r.value !== "1" || !r.checked));
@@ -1996,7 +2039,8 @@ PAGES.output = async () => {
       const r = await api("/api/extract", { scope, view: "all", filters, include_secrets: include, confirm: $("#confirm").value,
                                             name: $("#o-name").value, replace: $("#o-replace").checked });
       LAST_OUT = `<div class="msg ok">Created <b>${esc(r.name)}</b>: ${r.counts.safes} Safes, ${r.counts.members} members, ${r.counts.accounts} accounts${include ? " (with secrets)" : " (dry run)"}.<br>
-        Folder: <code>${esc(r.path)}</code><br>${r.files.map(esc).join(" · ")}</div>`;
+        Folder: <a class="pathlink" data-open-out="${esc(r.name)}" title="Open this folder in Explorer"><code>${esc(r.path)}</code></a>
+        <button class="btn small" data-copy="${esc(r.path)}" title="Copy the folder path">Copy path</button><br>${r.files.map(esc).join(" · ")}</div>`;
       go("output");
     } catch (e) { msg($("#out-msg"), "err", e.message); }
   };

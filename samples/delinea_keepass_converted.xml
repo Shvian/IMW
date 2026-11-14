@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="utf-16"?>
+<ImportFile xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <Folders />
+  <SecretTemplates>
+    <secrettype>
+      <name>Kee Pass</name>
+      <active>true</active>
+      <fields>
+        <field isexpirationfield="false">
+          <displayname>Username</displayname>
+          <description>The username of the password.</description>
+          <name>Username</name>
+          <mustencrypt>true</mustencrypt>
+          <isurl>false</isurl>
+          <ispassword>false</ispassword>
+          <isnotes>false</isnotes>
+          <isfile>false</isfile>
+          <passwordlength>10</passwordlength>
+          <historylength>2147483647</historylength>
+          <isindexable>true</isindexable>
+        </field>
+        <field isexpirationfield="false">
+          <displayname>URL</displayname>
+          <description>The URL of the password.</description>
+          <name>URL</name>
+          <mustencrypt>true</mustencrypt>
+          <isurl>true</isurl>
+          <ispassword>false</ispassword>
+          <isnotes>false</isnotes>
+          <isfile>false</isfile>
+          <passwordlength>10</passwordlength>
+          <historylength>2147483647</historylength>
+          <isindexable>true</isindexable>
+        </field>
+        <field isexpirationfield="false">
+          <displayname>Password</displayname>
+          <description>The password used to access a secure resource.</description>
+          <name>Password</name>
+          <mustencrypt>true</mustencrypt>
+          <isurl>false</isurl>
+          <ispassword>true</ispassword>
+          <isnotes>false</isnotes>
+          <isfile>false</isfile>
+          <passwordlength>10</passwordlength>
+          <historylength>2147483647</historylength>
+          <isindexable>false</isindexable>
+        </field>
+        <field isexpirationfield="false">
+          <displayname>Notes</displayname>
+          <description>Any additional notes.</description>
+          <name>Notes</name>
+          <mustencrypt>true</mustencrypt>
+          <isurl>false</isurl>
+          <ispassword>false</ispassword>
+          <isnotes>true</isnotes>
+          <isfile>false</isfile>
+          <passwordlength>10</passwordlength>
+          <historylength>2147483647</historylength>
+          <isindexable>true</isindexable>
+        </field>
+        <field isexpirationfield="false">
+          <displayname>Date Created</displayname>
+          <description>The date the original Kee Pass password was created.</description>
+          <name>Date Created</name>
+          <mustencrypt>true</mustencrypt>
+          <isurl>false</isurl>
+          <ispassword>false</ispassword>
+          <isnotes>false</isnotes>
+          <isfile>false</isfile>
+          <passwordlength>10</passwordlength>
+          <historylength>2147483647</historylength>
+          <isindexable>false</isindexable>
+        </field>
+        <field isexpirationfield="false">
+          <displayname>Expires</displayname>
+          <description>The date the Kee Pass password is set to expire.</description>
+          <name>Expires</name>
+          <mustencrypt>true</mustencrypt>
+          <isurl>false</isurl>
+          <ispassword>false</ispassword>
+          <isnotes>false</isnotes>
+          <isfile>false</isfile>
+          <passwordlength>10</passwordlength>
+          <historylength>2147483647</historylength>
+          <isindexable>false</isindexable>
+        </field>
+      </fields>
+      <expirationdays>0</expirationdays>
+    </secrettype>
+  </SecretTemplates>
+  <Secrets>
+    <Secret>
+      <SecretName>Sample Entry</SecretName>
+      <SecretTemplateName>Kee Pass</SecretTemplateName>
+      <FolderPath />
+      <SecretItems>
+        <SecretItem>
+          <FieldName>Username</FieldName>
+          <Value>User Name</Value>
+        </SecretItem>
+        <SecretItem>
+          <FieldName>URL</FieldName>
+          <Value>https://keepass.info/</Value>
+        </SecretItem>
+        <SecretItem>
+          <FieldName>Password</FieldName>
+          <Value>Password</Value>
+        </SecretItem>
+        <SecretItem>
+          <FieldName>Notes</FieldName>
+          <Value>Notes</Value>
+        </SecretItem>
+        <SecretItem>
+          <FieldName>Date Created</FieldName>
+          <Value>2026-11-14 01:46:52 AM</Value>
+        </SecretItem>
+        <SecretItem>
+          <FieldName>Expires</FieldName>
+          <Value>2026-11-14 01:45:50 AM</Value>
+        </SecretItem>
+      </SecretItems>
+      <SecretDependencies />
+      <Permissions />
+    </Secret>
+    <Secret>
+      <SecretName>Sample Entry #2</SecretName>
+      <SecretTemplateName>Kee Pass</SecretTemplateName>
+      <FolderPath />
+      <SecretItems>
+        <SecretItem>
+          <FieldName>Username</FieldName>
+          <Value>Michael321</Value>
+        </SecretItem>
+        <SecretItem>
+          <FieldName>URL</FieldName>
+          <Value>https://keepass.info/help/kb/testform.html</Value>
+        </SecretItem>
+        <SecretItem>
+          <FieldName>Password</FieldName>
+          <Value>12345</Value>
+        </SecretItem>
+        <SecretItem>
+          <FieldName>Notes</FieldName>
+          <Value />
+        </SecretItem>
+        <SecretItem>
+          <FieldName>Date Created</FieldName>
+          <Value>2026-11-14 01:46:52 AM</Value>
+        </SecretItem>
+        <SecretItem>
+          <FieldName>Expires</FieldName>
+          <Value>2026-11-14 01:45:50 AM</Value>
+        </SecretItem>
+      </SecretItems>
+      <SecretDependencies />
+      <Permissions />
+    </Secret>
+  </Secrets>
+  <Groups />
+</ImportFile>

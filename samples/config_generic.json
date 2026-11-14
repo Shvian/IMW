@@ -15,6 +15,6 @@
     {"field": "folder", "pattern": "(?i)Oracle", "platform": "Oracle"},
     {"field": "folder", "pattern": "(?i)\\\\SQL$", "platform": "MSSql"}
   ],
-  "directory_map": {"CORP": "corp.example.com", "*": "Vault"},
+  "directory_map": {"CORP": "corp.example.com", "EMEA": "emea.corp.example.com", "APAC": "apac.corp.example.com", "*": "Vault"},
   "account_property_map": {"Port": "Port"}
 }

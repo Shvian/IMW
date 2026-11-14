@@ -33,13 +33,45 @@ ACCOUNT_NAME_MAX = 128
 # --------------------------------------------------------------------------- #
 # Permissions file: grants for sources that do not carry them (Delinea, KeePass)
 # --------------------------------------------------------------------------- #
+# Column names a permissions file may use (case-insensitive), in order of preference. They
+# cover the Workbench's own layout and Delinea's folder-permission reports ("What folder
+# permissions exist for groups?", "What folder permissions exist?", "What folders can a user
+# see?", "What folders can all users see?"), which list assigned and inherited permissions alike.
+PERM_FOLDER_COLUMNS = ("Folder Path", "FolderPath", "Folder", "Path", "Folder Name")
+PERM_GROUP_COLUMNS = ("Group", "Group Name", "GroupName", "Principal", "Member", "User/Group",
+                      "Member Name", "Group Display Name")
+PERM_USER_COLUMNS = ("User", "User Name", "UserName", "Username", "User Display Name", "Display Name")
+# For a folder the secret role is what its secrets get, so it comes before the folder role.
+PERM_ROLE_COLUMNS = ("Permission", "Secret Permission", "Secret Permissions", "Secret Access Role",
+                     "Secret Access Role Name", "SecretAccessRoleName", "Secret Role", "Role", "Access",
+                     "Permissions", "Folder Permission", "Folder Permissions", "Folder Access Role",
+                     "Folder Access Role Name", "FolderAccessRoleName", "Folder Role")
+PERM_TYPE_COLUMNS = ("Member Type", "Type", "Principal Type")
+PERM_DOMAIN_COLUMNS = ("Domain", "Domain Name", "DomainName")
+# Strongest first: a report cell such as "View, Edit, Owner" keeps the strongest right.
+_PERMISSION_ORDER = ("owner", "full", "admin", "manage", "edit", "write", "modify", "add secret",
+                     "approve", "view", "read", "use", "connect", "list")
+
+
+def strongest_permission(text):
+    """'View, Edit, Owner' (or '/', ';' or '|' between them) -> 'Owner'; a single word stays as is."""
+    parts = [p.strip() for p in re.split(r"[,;/|]+", text or "") if p.strip()]
+    if len(parts) <= 1:
+        return (text or "").strip()
+    rank = {w: i for i, w in enumerate(_PERMISSION_ORDER)}
+    return min(parts, key=lambda p: rank.get(p.lower(), len(rank)))
+
+
 class Permissions:
     """
-    CSV with one grant per row. Columns (case-insensitive):
-      Folder Path, Secret Name (or Name), Secret ID (or ID), Group (or Principal/Member),
-      Permission, optional Member Type.
+    CSV with one grant per row. Columns (case-insensitive, see PERM_*_COLUMNS):
+      Folder Path, Secret Name (or Name), Secret ID (or ID), Group (or Principal/Member) or
+      User, Permission (or a Delinea report's Secret / Folder Permission), optional Member Type
+      and Domain.
     Rows with an ID or name apply to that record; rows with only a folder apply to
     the folder and its subfolders (nearest folder wins). Record-level rows win.
+    Delinea reports list inherited permissions next to assigned ones; both are read the same
+    way, since an inherited row only repeats what the parent folder already has.
     """
 
     def __init__(self, path=None, encoding="utf-8-sig"):
@@ -64,7 +96,18 @@ class Permissions:
     def _read(self, path, encoding):
         with open(path, newline="", encoding=encoding) as fh, csvsafe.reading(path):
             reader = csv.DictReader(fh)
-            cols = {c.lower().strip(): c for c in reader.fieldnames or []}
+            cols = {c.lower().strip(): c for c in reader.fieldnames or [] if c}
+
+            def pick(names):
+                return next((cols[n.lower()] for n in names if n.lower() in cols), None)
+
+            group_col, user_col = pick(PERM_GROUP_COLUMNS), pick(PERM_USER_COLUMNS)
+            perm_cols = [cols[n.lower()] for n in PERM_ROLE_COLUMNS if n.lower() in cols]
+            type_col = pick(PERM_TYPE_COLUMNS)
+            domain_col = pick(PERM_DOMAIN_COLUMNS)
+            if user_col and not group_col:
+                log.warning("%s lists permissions per user, not per group: each user becomes a Safe member. "
+                            "Delinea's 'What folder permissions exist for groups?' report keeps the groups.", path)
 
             def col(row, *names):
                 for n in names:
@@ -74,14 +117,25 @@ class Permissions:
                 return ""
 
             for row in reader:
-                member = col(row, "Group", "Principal", "Member", "Group Name", "User/Group", "Member Name")
-                perm = col(row, "Permission", "Role", "Access")
+                member, mtype = "", ""
+                # A report row that names both a user and the group the access comes from:
+                # the group is the Safe member.
+                if group_col and (row.get(group_col) or "").strip():
+                    member = row[group_col].strip()
+                    mtype = "Group" if user_col else ""
+                elif user_col and (row.get(user_col) or "").strip():
+                    member, mtype = row[user_col].strip(), "User"
+                domain = (row.get(domain_col) or "").strip() if domain_col else ""
+                if member and domain and "\\" not in member:
+                    member = f"{domain}\\{member}"
+                perm = strongest_permission(next(((row.get(c) or "").strip() for c in perm_cols
+                                                  if (row.get(c) or "").strip()), ""))
                 if not member or not perm:
                     continue
-                g = Grant(member, perm, col(row, "Member Type", "Type", "Principal Type"))
+                g = Grant(member, perm, ((row.get(type_col) or "").strip() if type_col else "") or mtype)
                 rid = col(row, "Secret ID", "SecretId", "ID", "Record ID")
                 name = col(row, "Secret Name", "SecretName", "Name", "Title")
-                folder = "\\".join(split_folder(col(row, "Folder Path", "Folder", "Path"), "auto")).lower()
+                folder = "\\".join(split_folder(col(row, *PERM_FOLDER_COLUMNS), "auto")).lower()
                 if rid:
                     self._add(self.by_id[rid], g)
                 elif name:
@@ -300,8 +354,52 @@ def _source_matches(src, name, domain, member_type):
     return bool(d) and (d == m or d.split(".")[0] == m or m.split(".")[0] == d)
 
 
-def convert_member_name(src, name, domain, short):
-    out = short if (domain and src.get("strip_domain", True)) else name
+def _domain_matches(spec, domain):
+    """spec: one or more domains separated by , or ; (CORP, corp.example.com) or * for every member."""
+    d = (domain or "").lower()
+    for m in re.split(r"[,;]+", spec or ""):
+        m = m.strip().lower().lstrip("@")
+        if not m:
+            continue
+        if m == "*":
+            return True
+        if d and (d == m or d.split(".")[0] == m or m.split(".")[0] == d):
+            return True
+    return False
+
+
+DOMAIN_MAP_KINDS = ("users", "groups", "roles")
+
+
+def domain_map_kinds(value):
+    """'users', 'groups', 'roles' or a combination joined with + ('users+groups'); 'both' or
+    'all' = every kind. Empty = users."""
+    v = (value or "users").strip().lower()
+    if v in ("both", "all"):
+        return set(DOMAIN_MAP_KINDS)
+    return {k for k in re.split(r"[+,\s]+", v) if k in DOMAIN_MAP_KINDS} or {"users"}
+
+
+def convert_domain(cfg, domain, short, member_type):
+    """The domain conversion rows (domain_map), checked top to bottom: the first whose
+    "from" domains and member kind fit gives the name with the domain dropped (to empty) or
+    in UPN form, short@to, and a label for the row. (None, "") when no row fits."""
+    mt = normalize_member_type(member_type, "Group").lower() + "s"
+    for row in cfg.get("domain_map") or []:
+        kinds = domain_map_kinds(row.get("members"))
+        if mt not in kinds:
+            continue
+        if _domain_matches(row.get("from"), domain):
+            to = str(row.get("to") or "").strip().lstrip("@")
+            return (f"{short}@{to}" if to else short), f"domain conversion {row.get('from', '').strip()}"
+    return None, ""
+
+
+def convert_member_name(src, name, domain, short, mapped=None):
+    if mapped is not None:
+        out = mapped
+    else:
+        out = short if (domain and src.get("strip_domain", True)) else name
     if src.get("find"):
         out = re.sub(src["find"], src.get("replace", ""), out, flags=re.IGNORECASE)
     out = f"{src.get('add_prefix', '')}{out}{src.get('add_suffix', '')}"
@@ -322,16 +420,22 @@ def normalize_member_type(value, default="Group"):
 
 
 def member_target(name, cfg, member_type=""):
-    """'CORP\\Group' -> (memberName, searchIn, source name) using directory_sources, then directory_map."""
+    """'CORP\\Group' -> (memberName, searchIn, source name) using domain_map, directory_sources,
+    then directory_map."""
     domain, short = _split_member(name)
     member_type = member_type or cfg.get("default_member_type", "Group")
+    # Domain conversion (drop the domain, or give the UPN form) comes first; a directory
+    # source's find/replace, added text and case then work on its result.
+    mapped, mapped_by = convert_domain(cfg, domain, short, member_type)
     for src in cfg.get("directory_sources") or []:
         if _source_matches(src, name, domain, member_type):
-            return convert_member_name(src, name, domain, short), src.get("search_in") or "", \
+            return convert_member_name(src, name, domain, short, mapped), src.get("search_in") or "", \
                 src.get("name") or src.get("match") or ""
     dmap = {k.lower(): v for k, v in cfg["directory_map"].items()}
     search_in = (dmap.get(domain.lower()) or dmap.get(domain.split(".")[0].lower())
                  or dmap.get("*", "")) if domain else dmap.get("*", "")
+    if mapped is not None:
+        return mapped, search_in, mapped_by
     member = short if (domain and cfg["strip_domain_prefix"]) else name
     return member, search_in, ""
 

@@ -1,9 +1,15 @@
-Folder Path,Secret Name,Secret ID,Group,Permission
-\IT\Database,,,CORP\DBA-Team,Owner
-\IT\Database,,,CORP\Helpdesk,List
-\IT\Backup,,,CORP\Backup-Operators,Edit
-\Linux,,,CORP\Unix-Admins,Owner
-\Linux\Web Servers,root@web01,103,CORP\Web-Ops,View
-\Linux\Application Servers Customer Facing Tier,,,CORP\APP-Storefront-Owners,Owner
-\Linux\Application Servers Customer Facing Tier,,,CORP\Unix-Admins,View
-\Finance,,,CORP\Finance-Admins,Edit
+Folder Path,Secret Name,Secret ID,Group,Permission,Member Type
+\IT\Database,,,CORP\DBA-Team,Owner,Group
+\IT\Database,,,CORP\Helpdesk,List,Group
+\IT\Backup,,,CORP\Backup-Operators,Edit,Group
+\Linux,,,CORP\Unix-Admins,Owner,Group
+\Linux\Web Servers,root@web01,103,CORP\Web-Ops,View,Group
+\Linux\Application Servers Customer Facing Tier,,,CORP\APP-Storefront-Owners,Owner,Group
+\Linux\Application Servers Customer Facing Tier,,,CORP\Unix-Admins,View,Group
+\Finance,,,CORP\Finance-Admins,Edit,Group
+\IT\Database,,,CORP\jdoe,Edit,User
+\Linux,,,CORP\asmith-adm,Owner,User
+\Linux\Web Servers,root@web01,103,CORP\mlee,View,User
+\Finance,,,EMEA\pkhan,View,User
+\Finance,,,EMEA\Finance-Auditors,View,Group
+\IT\Database,,,APAC\DBA-Oncall,Edit,Group

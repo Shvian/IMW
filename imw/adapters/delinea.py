@@ -1,4 +1,7 @@
-"""Delinea (Thycotic) Secret Server CSV export.
+"""Delinea (Thycotic) Secret Server exports: the multi-template CSV export, and the XML
+export / import file (see delinea_xml.py), which also carries folders and permissions.
+
+CSV:
 
 The export repeats a header row for each Secret Template, each with its own
 columns, often preceded by a one-cell row holding the template name. Quoted
@@ -10,6 +13,8 @@ import logging
 from collections import OrderedDict, defaultdict
 
 from ..csvsafe import reading
+from .. import safexml
+from . import delinea_xml
 from .base import Adapter, file_stem, read_head
 from .rows import record_from_row
 
@@ -68,11 +73,13 @@ def parse_sections(path, markers, encoding="utf-8-sig"):
 
 class DelineaAdapter(Adapter):
     name = "delinea"
-    description = "Delinea / Thycotic Secret Server multi-template CSV export"
-    extensions = (".csv",)
+    description = "Delinea / Thycotic Secret Server export: multi-template CSV, or XML (with folders and permissions)"
+    extensions = (".csv", ".xml")
 
     @classmethod
     def sniff(cls, path):
+        if str(path).lower().endswith(".xml"):
+            return delinea_xml.sniff(safexml.read_head_text(path))
         if not str(path).lower().endswith(".csv"):
             return 0
         head = read_head(path).lower()
@@ -81,6 +88,11 @@ class DelineaAdapter(Adapter):
         return 0
 
     def read(self, path, cfg, encoding="utf-8-sig"):
+        if str(path).lower().endswith(".xml"):
+            return delinea_xml.read(self.name, path, cfg)
+        return self._read_csv(path, cfg, encoding)
+
+    def _read_csv(self, path, cfg, encoding):
         scfg = cfg["sources"]["delinea"]
         stem = file_stem(path)
         n = 0

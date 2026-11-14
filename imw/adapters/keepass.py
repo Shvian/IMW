@@ -32,7 +32,7 @@ class KeePassAdapter(Adapter):
         p = str(path).lower()
         if p.endswith(".kdbx"):
             return 90  # read() explains that an XML export is needed
-        head = read_head(path, 4096)
+        head = safexml.read_head_text(path, 4096) if p.endswith(".xml") else read_head(path, 4096)
         if p.endswith(".xml") and "<KeePassFile" in head:
             return 95
         if p.endswith(".csv"):
