@@ -49,6 +49,7 @@ from ..transform import (PERM_GROUP_COLUMNS, PERM_ROLE_COLUMNS, PERM_USER_COLUMN
                          normalize_member_type, safe_settings, sanitize_safe_name)
 from .auth import get_authenticator
 from .tls import fingerprint, server_context, trust_certificate
+from .winfront import bring_to_front
 from ..owner import claim_workspace, peer_is_owner
 
 log = logging.getLogger("imw.ui")
@@ -1067,6 +1068,7 @@ class App:
         try:
             if sys.platform == "win32":
                 os.startfile(str(path))   # noqa: S606 - opens Explorer on our own folder
+                bring_to_front(path)      # otherwise it opens behind the browser
                 opened = True
             elif os.environ.get("IMW_UI_NO_OPEN") != "1":
                 tool = "open" if sys.platform == "darwin" else "xdg-open"
