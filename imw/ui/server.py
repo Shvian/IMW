@@ -74,7 +74,8 @@ VIEWS = {
     "no_access": ("No access groups", "access_groups = ''"),
     "no_secret": ("Empty secret", "has_secret = 'N'"),
     "fallback": ("Safe named by the convention (no rule matched)", "safe_mapping_source LIKE 'fallback:%'"),
-    "duplicates": ("Possible duplicates", "notes LIKE '%possible duplicate%'"),
+    "duplicates": ("Possible duplicates (same username and address)", "notes LIKE '%possible duplicate%'"),
+    "otp": ("One-time password in the source", "notes LIKE '%one-time password (OTP)%'"),
     "edited": ("Changed by you", "record_id IN (SELECT record_id FROM edits)"),
     "sanitized": ("Forbidden characters changed", "(notes LIKE '%forbidden characters%' OR valid_safe_name = 'FALSE' "
                   "OR record_id IN (SELECT record_id FROM records WHERE notes_json LIKE '%forbidden characters%'))"),

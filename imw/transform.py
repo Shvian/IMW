@@ -634,20 +634,14 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
             p.safe = spelling.setdefault(p.safe.lower(), p.safe)
             p.safe_source = "Safe renamed by you"
         # A changed (sanitized) Safe name is a Safe issue: p.safe_issues, shown on the Safe.
-        if not p.uploadable:
-            continue
-        dupes[(p.safe.lower(), p.rec.username.lower(), p.rec.address.lower(),
-               p.rec.secret_type)].append(p)
+        # Same username and address (trimmed, any case) is a possible duplicate wherever it is:
+        # another Safe, another folder or another source file. Accounts you set to not migrate
+        # (or an extract filter leaves out) drop out, so setting one copy to N clears the flag.
+        user, addr = p.rec.username.strip().lower(), p.rec.address.strip().lower()
+        if p.migrate == "Y" and p.in_scope and user and addr:
+            dupes[(user, addr)].append(p)
     _unique_account_names(plans)
-    for group in dupes.values():
-        if len(group) > 1:
-            for x in group:
-                others = [y.rec.record_id for y in group if y is not x]
-                more = f" and {len(others) - 3} more" if len(others) > 3 else ""
-                x.warnings.append("possible duplicate: same username/address/type in this Safe as "
-                                  + ", ".join(others[:3]) + more
-                                  + ("; with no account name Privilege Cloud gives both the same "
-                                     "name and rejects the second" if not x.account_name else ""))
+    flag_duplicates(dupes.values())
 
     # A Safe you renamed onto a name another Safe already has: both now share one Safe.
     from_rules = {p.safe.lower() for p in plans if p.rule_safe == p.safe}
@@ -661,6 +655,37 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
     flag_safes_without_full_member(safes, members, cfg)
     return Plan(plans, safes, members,
                 list(member_edits or []), dict(member_overrides or {}), dict(safe_overrides))
+
+
+DUPLICATE_NOTE = "possible duplicate"
+
+
+def _describe(y, x):
+    """How another copy y differs from account x, so the note says where to look."""
+    where = []
+    if y.rec.source_file != x.rec.source_file or y.rec.source != x.rec.source:
+        where.append(f"file {y.rec.source_file}")
+    where.append("same Safe" if y.safe.lower() == x.safe.lower() else f"Safe {y.safe}")
+    label = f"'{y.rec.name}' " if y.rec.name else ""
+    return f"{label}{y.rec.record_id} ({', '.join(where)})"
+
+
+def flag_duplicates(groups):
+    """Note every account that shares its username and address with another account."""
+    for group in groups:
+        if len(group) < 2:
+            continue
+        for x in group:
+            others = [y for y in group if y is not x]
+            more = f" and {len(others) - 3} more" if len(others) > 3 else ""
+            same_safe_no_name = not x.account_name and any(
+                y.safe.lower() == x.safe.lower() and y.rec.secret_type == x.rec.secret_type
+                and not y.account_name for y in others)
+            x.warnings.append(f"{DUPLICATE_NOTE}: same username and address as "
+                              + "; ".join(_describe(y, x) for y in others[:3]) + more
+                              + (". With no account name Privilege Cloud gives both the same "
+                                 "name and rejects the second" if same_safe_no_name else
+                                 ". Keep one, or set the others to not migrate"))
 
 
 def _unique_account_names(plans):

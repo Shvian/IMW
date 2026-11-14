@@ -1271,7 +1271,7 @@ PAGES["rules-accounts"] = () => rulesPage("rules-accounts",
             Invalid characters become _, and a name repeated in one Safe gets _2, _3.</p>
           <label class="inline" style="display:block;margin:6px 0"><input type="radio" name="an-mode" value="none" ${none ? "checked" : ""}>
             <b>Leave the name empty and let Privilege Cloud name each account</b></label>
-          <p class="muted small" style="margin-left:24px">The <code>name</code> column in Accounts.csv stays empty. Two accounts with the same platform, address and username in one Safe would get the same generated name, so the second is rejected; those are flagged as possible duplicates.
+          <p class="muted small" style="margin-left:24px">The <code>name</code> column in Accounts.csv stays empty. Two accounts with the same platform, address and username in one Safe would get the same generated name, so the second is rejected. Accounts sharing a username and address are flagged as possible duplicates anyway, in any Safe.
             You can also leave single accounts unnamed in step 3 (<b>Let Privilege Cloud name them</b>).</p>
           <p><label class="inline"><input type="checkbox" id="url-host" ${cfg.url_address_to_host ? "checked" : ""}> Turn URL addresses into host names (https://fw01.example.com/login → fw01.example.com)</label></p></div>
         <div class="card"><h3>Extra account properties</h3>
