@@ -41,7 +41,7 @@ from ..adapters import ADAPTERS, AdapterError, detect_adapter, get_adapter
 from ..config import (ALL_PERMISSIONS, DEFAULT_CONFIG, PERMISSION_PRESETS, config_diff,
                       all_roles, config_from_dict, load_config, resolve_role)
 from ..model import SourceRecord
-from ..naming import Namer
+from ..naming import DEFAULT_PLATFORM_CODES, Namer
 from ..protect import ProtectError
 from ..store import Store, StoreError, run_extract, sha256_file
 from ..transform import (Permissions, apply_member_override, clean_line, member_target,
@@ -384,8 +384,14 @@ class App:
                 adapter = get_adapter(f["source"]) if f.get("source") else detect_adapter(path)
                 records = list(adapter.read(path, cfg))
                 n, replaced = st.ingest(adapter.name, path, records, perms, [str(p) for p in perm_paths])
-                results.append({"name": f["name"], "source": adapter.name, "records": n, "replaced": replaced,
-                                "sanitized": st.last_sanitized})
+                result = {"name": f["name"], "source": adapter.name, "records": n, "replaced": replaced,
+                          "sanitized": st.last_sanitized}
+                # A spreadsheet whose headers the Workbench didn't recognise: offer the column picker.
+                missing = [k for k in ("username", "address") if records and not any(getattr(r, k) for r in records)]
+                if missing and hasattr(adapter, "column_report"):
+                    headers, current = adapter.column_report(path, cfg)
+                    result["columns"] = {"missing": missing, "headers": headers, "current": current}
+                results.append(result)
             st.map(cfg, str(self.config_path) if self.config_path.exists() else None)
         except (AdapterError, ValueError, OSError, ProtectError, StoreError) as exc:
             raise UiError(f"{exc}")
@@ -406,7 +412,8 @@ class App:
 
     def api_config_get(self, _body):
         cfg = self.config()
-        hints = {"types_without_platform": [], "groups": [], "folders": []}
+        hints = {"types_without_platform": [], "groups": [], "folders": [], "columns": []}
+        used_platforms = []
         if self.db_path.exists():
             st = self.store()
             try:
@@ -420,10 +427,40 @@ class App:
                     "SELECT folder, COUNT(*) FROM records GROUP BY folder ORDER BY 1 LIMIT 500")]
                 hints["types"] = [{"name": r[0], "accounts": r[1]} for r in st.db.execute(
                     "SELECT type, COUNT(*) FROM records GROUP BY type ORDER BY 2 DESC")]
+                used_platforms = [r[0] for r in st.db.execute(
+                    "SELECT DISTINCT platform_id FROM plan_accounts WHERE platform_id <> ''")]
+                hints["columns"] = self._source_columns(st)
             finally:
                 st.close()
+        hints["platforms"] = self._platform_ids(cfg, used_platforms)
         return {"config": cfg, "defaults": DEFAULT_CONFIG, "hints": hints, "saved": self.config_path.exists(),
                 "presets": PERMISSION_PRESETS, "permissions": ALL_PERMISSIONS}
+
+    @staticmethod
+    def _source_columns(st):
+        """Every extra source column in the loaded records (the columns not used for the
+        name, address, username, folder...), with how many records have a value in it."""
+        counts = {}
+        for (extra,) in st.db.execute("SELECT extra_json FROM records"):
+            for k, v in json.loads(extra or "{}").items():
+                n = counts.setdefault(k, [0, 0])
+                n[0] += 1
+                n[1] += 1 if str(v or "").strip() else 0
+        return [{"name": k, "records": n[0], "filled": n[1]}
+                for k, n in sorted(counts.items(), key=lambda kv: kv[0].lower())]
+
+    @staticmethod
+    def _platform_ids(cfg, used=()):
+        """Platform IDs to suggest: the usual Privilege Cloud IDs plus every one already in use."""
+        ids = {p: "standard Privilege Cloud platform" for p in DEFAULT_PLATFORM_CODES}
+        for p in list(cfg.get("platform_map", {}).values()) + [r.get("platform", "") for r in cfg.get("platform_rules") or []] \
+                + [cfg.get("default_platform") or ""]:
+            if p and p not in ids:
+                ids[p] = "used in your rules"
+        for p in used:
+            if p and p not in ids:
+                ids[p] = "used by loaded accounts"
+        return [{"id": k, "note": v} for k, v in sorted(ids.items(), key=lambda kv: kv[0].lower())]
 
     def _naming_samples(self, st, cfg, limit=400):
         """Generated convention names for the distinct folder/platform/username combinations."""

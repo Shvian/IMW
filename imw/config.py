@@ -57,7 +57,7 @@ _V1_ROLE_PERMISSIONS = {
     "Viewer": _perms("listAccounts"),
 }
 _V1_TEMPLATE = "{env}-{folder}-{tech}-{flavor}-{acct}"
-CONFIG_VERSION = 2
+CONFIG_VERSION = 3
 
 
 DEFAULT_CONFIG = {
@@ -130,6 +130,22 @@ DEFAULT_CONFIG = {
         "Oracle Account": "Oracle",
         "Web Password": "GenericWebApp",
         "Password": "GenericWebApp",
+        # Common Delinea templates. The platform IDs are Privilege Cloud's usual out-of-the-box
+        # IDs; check them in Platform Management, as a tenant can name its platforms differently.
+        "Windows Local Admin": "WinServerLocal",
+        "Active Directory Domain Admin": "WinDomain",
+        "Cisco Account (SSH)": "CiscoSSH",
+        "Palo Alto": "PaloAltoNetworks",
+        "Palo Alto Networks Firewall": "PaloAltoNetworks",
+        "VMware ESXi": "VMwareESX",
+        "VMware ESX/ESXi": "VMwareESX",
+        "PostgreSQL": "PostgreSQL",
+        "PostgreSQL Account": "PostgreSQL",
+        "MySQL": "MySQL",
+        "MySQL Account": "MySQL",
+        "AWS IAM Key": "AWSAccessKeys",
+        "Amazon IAM Key": "AWSAccessKeys",
+        "Azure AD Account": "AzureWebAccount",
     },
     "default_platform": "",
     # Turn URL addresses into host names (https://fw01.example.com/login -> fw01.example.com).
@@ -285,7 +301,9 @@ def upgrade_config(user):
         if "config_version" not in user and "field_aliases" not in user:
             return user
         _upgrade_v1_to_v2(user)
-    # Later versions: add "if version < 3: _upgrade_v2_to_v3(user)" here. Files saved by the
+    if version < 3:
+        _upgrade_v2_to_v3(user)
+    # Later versions: add "if version < 4: _upgrade_v3_to_v4(user)" here. Files saved by the
     # Workbench since version 2 always carry config_version but only the changed settings.
     user["config_version"] = CONFIG_VERSION
     return user
@@ -310,6 +328,27 @@ def _upgrade_v1_to_v2(user):
         conv.pop("template")
         user["safe_convention"] = conv
     user["config_version"] = 2
+
+
+# Record types added to the built-in platform_map in config version 3.
+_V3_NEW_PLATFORM_TYPES = (
+    "Windows Local Admin", "Active Directory Domain Admin", "Cisco Account (SSH)", "Palo Alto",
+    "Palo Alto Networks Firewall", "VMware ESXi", "VMware ESX/ESXi", "PostgreSQL", "PostgreSQL Account",
+    "MySQL", "MySQL Account", "AWS IAM Key", "Amazon IAM Key", "Azure AD Account")
+
+
+def _upgrade_v2_to_v3(user):
+    """A saved platform_map replaces the built-in one, so add the record types that version 3
+    added to it, unless the saved map already has that type (whatever its platform)."""
+    pmap = user.get("platform_map")
+    if isinstance(pmap, dict):
+        have = {k.lower() for k in pmap}
+        pmap = dict(pmap)
+        for t in _V3_NEW_PLATFORM_TYPES:
+            if t.lower() not in have:
+                pmap[t] = DEFAULT_CONFIG["platform_map"][t]
+        user["platform_map"] = pmap
+    user["config_version"] = 3
 
 
 def config_diff(cfg, base=None):

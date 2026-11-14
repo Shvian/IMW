@@ -9,7 +9,7 @@ from collections import OrderedDict
 
 from .. import xlsx
 from ..csvsafe import reading
-from .base import Adapter, file_stem, read_head
+from .base import Adapter, column_lookup, file_stem, find_column, read_head
 from .rows import record_from_row
 
 
@@ -59,6 +59,24 @@ class TableAdapter(Adapter):
             values += [""] * (len(headers) - len(values))
             cols = headers + [f"Extra_{i + 1}" for i in range(len(values) - len(headers))]
             yield f"{label}{n}", n, OrderedDict(zip(cols, values))
+
+    # The fields the column picker offers, in the order it shows them.
+    PICKABLE = ("name", "address", "username", "folder", "type", "password", "private_key", "access",
+                "safe", "platform", "id")
+
+    def column_report(self, path, cfg, encoding="utf-8-sig"):
+        """The file's column headers and, for each field, the column it is read from now
+        (an explicit sources.table.columns entry, else the first field_aliases name present)."""
+        tcfg = cfg["sources"]["table"]
+        first = next(iter(self._rows(path, tcfg, encoding)), None)
+        headers = [h for h in (first[2] if first else {}) if not h.startswith("Extra_")]
+        lookup = column_lookup(headers)
+        explicit = tcfg.get("columns") or {}
+        current = {}
+        for field in self.PICKABLE:
+            aliases = [explicit[field]] if explicit.get(field) else cfg["field_aliases"].get(field, [])
+            current[field] = find_column(lookup, aliases) or ""
+        return headers, current
 
     def read(self, path, cfg, encoding="utf-8-sig"):
         tcfg = cfg["sources"]["table"]

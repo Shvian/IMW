@@ -62,7 +62,7 @@ TEMPLATES = [
     ("SQL Server Account", "Server", "Password", ["Port", "Database"], 12),
     ("Oracle Account", "Server", "Password", ["Port", "Database"], 6),
     ("Web Password", "URL", "Password", ["Attachment"], 10),
-    ("Cisco Account (SSH)", "Host", "Password", ["Enable Password"], 5),  # no platform yet
+    ("Cisco Account (SSH)", "Host", "Password", ["Enable Password"], 5),
 ]
 FOLDERS = [
     ("\\Infrastructure\\Windows\\Domain Controllers", "win", "Active Directory Account"),
@@ -304,7 +304,7 @@ config.json                starter mapping rules (open "Mapping rules" to see an
 Problems planted on purpose, so the review lists have something to show:
   - Safe names over 28 characters, two that collide after shortening (SQL ... Replicas EU West/East)
   - Invalid Safe-name characters (Batch: Nightly/Weekly Jobs, HR Portal "Self-Service")
-  - Record types with no platform yet: "Cisco Account (SSH)" and "Mainframe Login" -> Errors list
+  - A record type with no platform yet: "Mainframe Login" -> Errors list
   - Missing usernames (Errors) and missing addresses
   - Empty secrets, SSH keys with passphrases, attachments that are not migrated
   - Duplicate secret names, folders with no permissions (\\Unfiled), mixed permissions
@@ -312,7 +312,7 @@ Problems planted on purpose, so the review lists have something to show:
 
 Things to try:
   1. Load all three exports (tick delinea_permissions.csv as the permissions file).
-  2. Mapping rules: give "Cisco Account (SSH)" the platform CiscoSSH and "Mainframe Login" a platform, Save.
+  2. Mapping rules: give "Mainframe Login" a platform (pick one from the Platform ID list), Save.
   3. Review & change: open "Errors", "Safe name was changed", "No access groups"; move or exclude some accounts.
   4. Create upload files: first a dry run, then one wave (e.g. one Safe) upload-ready.
 """

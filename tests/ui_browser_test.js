@@ -175,7 +175,9 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   if (!(await page.$eval('[data-block="layer-region"]', e => e.open))) throw new Error('new placeholder not opened');
   rows = await page.$$('#t-layer-region tr');
   await (await rows[1].$('[data-k=field]')).fill('address');
-  await (await rows[1].$('[data-k=pattern]')).fill('corp\\.example\\.com$');
+  // Pattern columns have a Contains / Starts with / Ends with / Equals / Regex picker before the text.
+  await (await rows[1].$('select.m-op[data-op-for=pattern]')).selectOption('ends');
+  await (await rows[1].$('[data-k=pattern]')).fill('corp.example.com');
   await (await rows[1].$('[data-k=code]')).fill('HQ');
   await page.fill('#conv-template', '{region}-{folder}');
   await page.fill('#s-cpm', 'PasswordManager');

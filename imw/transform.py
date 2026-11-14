@@ -12,7 +12,7 @@ from typing import List
 
 from . import csvsafe
 from .adapters.base import address_from_url
-from .config import all_roles, resolve_role
+from .config import PERMISSION_PRESETS, all_roles, resolve_role
 from .model import ERROR_NOTE, Grant, split_folder
 from .naming import Namer
 
@@ -268,7 +268,8 @@ def resolve_platform(rec, cfg):
     if rec.target_platform:
         return rec.target_platform, "source"
     for rule in cfg["platform_rules"]:
-        if re.search(rule["pattern"], _rule_field(rec, rule.get("field", "type"))):
+        # Case-insensitive, like every other pattern in the rules.
+        if re.search(rule["pattern"], _rule_field(rec, rule.get("field", "type")), re.IGNORECASE):
             return rule["platform"], f"platform_rule:{rule.get('field', 'type')}"
     pmap = {k.lower(): v for k, v in cfg["platform_map"].items()}
     if rec.type.lower() in pmap:
@@ -414,6 +415,7 @@ def rebuild_totals(plan, cfg):
     """Recompute Safe and member totals after in_scope or migrate changed."""
     plan.safes = _safes(plan.accounts, cfg, plan.safe_overrides)
     plan.members = _members(plan.accounts, cfg, plan.member_edits, plan.member_overrides)
+    flag_safes_without_full_member(plan.safes, plan.members, cfg)
     return plan
 
 
@@ -600,8 +602,10 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
             p.safe_notes.append(f"Safe '{p.rule_safe}' renamed by you to '{p.safe}', which another Safe "
                                 "already has: their accounts are now in one Safe")
 
-    return Plan(plans, _safes(plans, cfg, safe_overrides),
-                _members(plans, cfg, member_edits, member_overrides),
+    safes = _safes(plans, cfg, safe_overrides)
+    members = _members(plans, cfg, member_edits, member_overrides)
+    flag_safes_without_full_member(safes, members, cfg)
+    return Plan(plans, safes, members,
                 list(member_edits or []), dict(member_overrides or {}), dict(safe_overrides))
 
 
@@ -847,6 +851,28 @@ def _safes(plans, cfg=None, safe_overrides=None):
         for s in safes.values():
             if s["accounts"] > limit:
                 s["issues"].add(f"{s['accounts']} accounts; over the {limit} recommended per Safe")
+    return safes
+
+
+NO_FULL_MEMBER_NOTE = ("no member with full permissions: no user, group or role from your source can manage "
+                       "this Safe or its members (only the user who uploads it and the Privilege Cloud "
+                       "administrators can). Give one member the Full role, or a custom role with every "
+                       "Full permission")
+
+
+def full_roles(cfg):
+    """Role names that grant every permission of the Full preset (case-insensitive)."""
+    full = set(PERMISSION_PRESETS["Full"])
+    return {name.lower() for name, perms in all_roles(cfg).items() if full <= set(perms)}
+
+
+def flag_safes_without_full_member(safes, members, cfg):
+    """A Safe that will be uploaded needs at least one member who can fully manage it."""
+    full = full_roles(cfg)
+    managed = {safe.lower() for (safe, _), m in members.items() if (m.get("role") or "").lower() in full}
+    for name, s in safes.items():
+        if s.get("migrating") and name.lower() not in managed:
+            s["issues"].add(NO_FULL_MEMBER_NOTE)
     return safes
 
 

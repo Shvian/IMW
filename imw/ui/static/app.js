@@ -33,7 +33,7 @@ async function refresh() {
 // closing or switching the panel, or closing the browser tab then asks first. Filters, search boxes,
 // ticks that only select rows, reasons and the output page don't count.
 const DIRTY = { main: false, panel: false };
-const NOT_A_CHANGE = new Set(["f-search", "s-filter", "p-filter", "view", "f-safe", "f-platform", "f-source", "f-status", "allmatch",
+const NOT_A_CHANGE = new Set(["f-search", "s-filter", "s-nofull", "p-filter", "view", "f-safe", "f-platform", "f-source", "f-status", "allmatch",
   "p-nosafe", "s-selall", "m-selall", "selall", "reason", "m-reason", "ra-reason", "pe-reason", "o-safe", "o-platform", "o-source",
   "o-name", "o-replace", "confirm", "pa-safe", "pa-role", "role-from", "new-layer", "sv-reason",
   "pv-filter", "pv-changed", "cols-mode", "s-cols-mode"]);
@@ -255,6 +255,7 @@ const TIP_ID = {
   "a-plat": "Platform ID for the ticked accounts, exactly as in Privilege Cloud (letters, digits, _ . -). (none) removes the platform, so they are not uploaded.",
   "a-name": "New name for the one ticked account. \\ / : * ? \" < > | become _. To leave names empty so Privilege Cloud names them, use the button next to Rename.",
   "s-filter": "Show only Safes whose name contains this text.",
+  "s-nofull": "Show only the Safes where no member has full permissions. Only shows or hides rows; changes nothing.",
   "m-reason": "Why you changed the members. Saved with the change in the activity log.",
   "m-name": "The member to add, as Privilege Cloud will search for it (no CORP\\ prefix if the directory below already says which domain).",
   "m-dir": "Optional searchIn. Leave empty so Privilege Cloud searches every directory. Fill it only if the name exists in more than one directory: the directory's ID (GUID) from Identity, or Vault.",
@@ -472,6 +473,58 @@ function loadedFilesHtml() {
       <td>${i.permissions_path ? i.permissions_path.split(" | ").map((pth, k) => `${esc(pth.split(/[\\/]/).pop())} <code title="${esc((i.permissions_sha256 || "").split(" | ")[k] || "")}">${esc(((i.permissions_sha256 || "").split(" | ")[k] || "").slice(0, 8))}…</code>`).join("<br>") : '<span class="muted">none</span>'}</td>
       <td>${esc(String(i.loaded_utc || "").slice(0, 16).replace("T", " "))}</td><td>${esc(i.loaded_by)}</td></tr>`).join("")}</table></div></details>`;
 }
+/* Column picker: a spreadsheet whose headers the Workbench didn't recognise (no username or
+   address found) gets a card to say which column holds what, instead of editing JSON. */
+let COLUMN_PICK = null;   // {results, perm} from the last load, shown once on the Load page
+const PICK_FIELDS = [["name", "Account name", "The account's display name, e.g. a Secret Name or Title column."],
+  ["address", "Address", "Host name, IP address or URL the account is for, e.g. TargetHost or Server."],
+  ["username", "Username", "The account's user name, e.g. SAMAccountName or Login."],
+  ["folder", "Folder path", "Folder the account sits in; Safes are named from it, e.g. \\IT\\Windows."],
+  ["type", "Record type", "A type or template column; the platform is chosen from it (step 2 C. Platforms)."],
+  ["password", "Password", "The column holding the password. Never shown in the review files."],
+  ["private_key", "SSH key", "A column holding a private SSH key, if any."],
+  ["access", "Access groups", "Who has access, e.g. CORP\\DBA-Team=Owner; CORP\\Ops=View."],
+  ["safe", "Target Safe", "Optional: a column that names each account's Safe directly."],
+  ["platform", "Platform ID", "Optional: a column that names each account's platform directly."],
+  ["id", "Record ID", "Optional: a unique ID per row. Without one, rows are numbered."]];
+const FIELD_WORD = { username: "username", address: "address" };
+function columnPickHtml() {
+  if (!COLUMN_PICK) return "";
+  return COLUMN_PICK.results.filter(x => x.columns).map((x, n) => `<div class="card col-pick-card" data-file="${esc(x.name)}">
+    <h3>Which column holds what in ${esc(x.name)}?</h3>
+    <div class="msg warn">No ${x.columns.missing.map(k => FIELD_WORD[k]).join(" or ")} was found in any row of ${esc(x.name)}, so its accounts can't be uploaded yet.
+      The column names probably differ from the usual ones (Username, Address...). Pick the right column for each field and load the file again.</div>
+    <table class="small col-pick"><tr><th>Field</th><th>Column in ${esc(x.name)}</th></tr>
+    ${PICK_FIELDS.map(([k, label, tip]) => `<tr><td title="${esc(tip)}">${esc(label)}${x.columns.missing.includes(k) ? ' <span class="pill ERROR">not found</span>' : ""}</td>
+      <td><select class="col-pick-sel" data-field="${k}" title="${esc(tip)} Automatic uses the usual column names for this field.">
+        <option value="">${x.columns.current[k] ? `Automatic (now: ${esc(x.columns.current[k])})` : "Automatic (none found)"}</option>
+        ${x.columns.headers.map(h => `<option value="${esc(h)}">${esc(h)}</option>`).join("")}</select></td></tr>`).join("")}</table>
+    <p class="muted small">Your choice is used for every spreadsheet you load from now on. You can change it later under 2. Mapping rules, Advanced (sources → table → columns).</p>
+    <div class="row"><button class="btn primary col-pick-go" data-n="${n}">Save and load ${esc(x.name)} again</button><span class="col-pick-msg"></span></div></div>`).join("");
+}
+function wireColumnPick() {
+  const pick = COLUMN_PICK; COLUMN_PICK = null;
+  if (!pick) return;
+  document.querySelectorAll(".col-pick-card").forEach(card => {
+    $(".col-pick-go", card).onclick = async () => {
+      const chosen = {}; card.querySelectorAll(".col-pick-sel").forEach(sel => { if (sel.value) chosen[sel.dataset.field] = sel.value; });
+      if (!Object.keys(chosen).length) return msg($(".col-pick-msg", card), "err", "Pick at least one column first.");
+      try {
+        const { config: cfg } = await api("/api/config");
+        const sources = JSON.parse(JSON.stringify(cfg.sources));
+        sources.table.columns = { ...(sources.table.columns || {}), ...chosen };
+        await api("/api/config", { patch: { sources } });
+        saved("main");
+        const r = await api("/api/ingest", { files: [{ name: card.dataset.file, source: "table" }], permissions: pick.perm });
+        await refresh();
+        const x = r.results[0];
+        LAST_LOAD = `<div class="msg ${x.columns ? "warn" : "ok"}">${esc(x.name)}: ${x.records} records loaded again with the columns you picked${x.columns ? `, but there is still no ${x.columns.missing.map(k => FIELD_WORD[k]).join(" or ")}. Check the picks below.` : ". Mapping rules applied."}</div>`;
+        if (x.columns) COLUMN_PICK = { results: r.results, perm: pick.perm };
+        await PAGES.load();
+      } catch (e) { msg($(".col-pick-msg", card), "err", e.message); }
+    };
+  });
+}
 PAGES.load = async () => {
   await refresh();
   const files = STATE.inbox_files;
@@ -498,8 +551,10 @@ PAGES.load = async () => {
         ${loadedSame.length ? `<button class="btn danger" id="del-loaded" title="Overwrite and delete the export files that are loaded and unchanged: ${esc(loadedSame.map(f => f.name).join(", "))}">Securely delete the loaded exports (${loadedSame.length})</button>` : ""}</div>`
       : `<p class="muted">The inbox is empty. Copy your export files into the folder above, then <button class="btn" id="re">Refresh</button></p>`}
     <div id="load-msg">${LAST_LOAD}</div></div>
+    ${columnPickHtml()}
     ${loadedFilesHtml()}`;
   LAST_LOAD = "";
+  wireColumnPick();
   $("#re").onclick = () => go("load");
   const openInbox = async () => {
     try { const r = await api("/api/open", { which: "inbox" }); if (!r.opened) alert("Open this folder yourself: " + r.path); }
@@ -530,6 +585,7 @@ PAGES.load = async () => {
     try {
       const r = await api("/api/ingest", { files: picks, permissions: perm });
       await refresh();
+      if (r.results.some(x => x.columns)) COLUMN_PICK = { results: r.results, perm };
       LAST_LOAD = `<div class="msg ok">${r.results.map(x => `${esc(x.name)}: ${x.records} records loaded as ${esc(SOURCE_NAMES[x.source] || x.source)}${x.replaced ? ` (${x.replaced} replaced)` : ""}${x.sanitized ? `; <b style="color:var(--warn)">${x.sanitized} with forbidden characters removed</b>` : ""}`).join("<br>")}
         ${perm.length ? `<br>Permissions merged from ${perm.map(esc).join(", ")}.` : ""}
         <br>Mapping rules applied.${STATE.protector === "dpapi" ? " Secrets are encrypted in the database now, so you can securely delete the loaded exports (button above)." : ""}</div>
@@ -587,9 +643,69 @@ function roleOptions(value, blank) {
   if (value && !names.includes(value)) opts.push(value);
   return opts.map(o => `<option ${o === (value || "") ? "selected" : ""}>${esc(o)}</option>`).join("");
 }
+/* Match operators: most rules only need "contains", "starts with"... so the pattern columns
+   show a picker and plain text, and the Workbench writes the regular expression. A pattern
+   that isn't one of these simple forms opens as "Regex". Every pattern is case-insensitive. */
+const MATCH_OPS = [["contains", "Contains"], ["starts", "Starts with"], ["ends", "Ends with"], ["equals", "Equals"], ["regex", "Regex (advanced)"]];
+const MATCH_TIP = {
+  contains: "Text to look for anywhere in the value. Upper/lower case is ignored. Example: unix",
+  starts: "Text the value starts with. Upper/lower case is ignored. Example: svc_",
+  ends: "Text the value ends with. Upper/lower case is ignored. Example: .corp.example.com",
+  equals: "The whole value, exactly (upper/lower case is ignored). Example: Prod",
+  regex: "A regular expression (Python syntax), upper/lower case ignored. ^ = starts with, $ = ends with, | = or, ( ) = a part you can reuse as {1}.\nExamples: ^prod$|^live$ · ^CORP\\\\APP-(.+)-Owners$",
+};
+const reEsc = (t) => String(t).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// The text of a pattern with no special characters (escaped ones allowed), or null.
+function reLiteral(p) {
+  let out = "";
+  for (let i = 0; i < p.length; i++) {
+    const c = p[i];
+    if (c === "\\") { const n = p[i + 1]; if (n === undefined || /[A-Za-z0-9]/.test(n)) return null; out += n; i++; }
+    else if (".*+?^${}()|[]".includes(c)) return null;
+    else out += c;
+  }
+  return out;
+}
+function toPattern(op, text) {
+  if (op === "regex" || !text) return text;
+  const t = reEsc(text);
+  return op === "starts" ? "^" + t : op === "ends" ? t + "$" : op === "equals" ? "^" + t + "$" : t;
+}
+function fromPattern(p) {
+  p = String(p ?? "");
+  if (!p) return ["contains", ""];
+  const core = p.replace(/^\(\?i\)/, "");
+  const tries = [["equals", /^\^(.*)\$$/], ["starts", /^\^(.*)$/], ["ends", /^(.*)\$$/], ["contains", /^(.*)$/]];
+  for (const [op, re] of tries) {
+    const m = core.match(re); if (!m) continue;
+    const t = reLiteral(m[1]); if (t !== null && t !== "") return [op, t];
+  }
+  return ["regex", p];
+}
+// A Python pattern as a JavaScript RegExp (for previews only), or null.
+function jsRegex(p) {
+  try { return new RegExp(String(p).replace(/^\(\?i\)/, "").replace(/\(\?P</g, "(?<"), "i"); } catch (e) { return null; }
+}
+function matchCell(c, value, tt) {
+  const [op, text] = fromPattern(value);
+  return `<td class="match-cell"><div class="match"><select class="m-op" data-op-for="${c.key}" data-prev="${op}">${MATCH_OPS.map(([v, l]) => `<option value="${v}" ${v === op ? "selected" : ""}>${l}</option>`).join("")}</select><input type="text" data-k="${c.key}" data-match="1" title="${esc(MATCH_TIP[op])}" value="${esc(text)}" placeholder="${esc(op === "regex" ? c.ph || "" : c.phText || "")}"${c.size ? ` size="${c.size}"` : ""}></div></td>`;
+}
+// Changing the operator keeps what the rule does where it can: to Regex shows the pattern it was, from Regex shows the plain text when there is one.
+document.addEventListener("change", (e) => {
+  const sel = e.target.closest && e.target.closest("select.m-op"); if (!sel) return;
+  const inp = sel.parentElement.querySelector("input[data-match]"), prev = sel.dataset.prev || "contains";
+  if (sel.value === "regex" && prev !== "regex") inp.value = toPattern(prev, inp.value.trim());
+  else if (sel.value !== "regex" && prev === "regex") { const [, t] = fromPattern(inp.value.trim()); if (fromPattern(inp.value.trim())[0] !== "regex") inp.value = t; }
+  sel.dataset.prev = sel.value;
+  inp.title = MATCH_TIP[sel.value];
+  const col = (TABLES[sel.closest("table").id] || []).find(c => c.key === sel.dataset.opFor) || {};
+  inp.placeholder = sel.value === "regex" ? col.ph || "" : col.phText || "";
+  inp.dispatchEvent(new Event("input", { bubbles: true }));
+});
+document.addEventListener("focusin", (e) => { if (e.target.matches && e.target.matches("select.m-op")) e.target.dataset.prev = e.target.value; });
 function editorRow(cols, r = {}) {
   const tt = (c) => c.tip ? ` title="${esc(c.tip)}"` : "";
-  return `<tr>${cols.map(c => c.roles
+  return `<tr>${cols.map(c => c.match ? matchCell(c, r[c.key], tt) : c.roles
     ? `<td><select class="role-select" data-blank="${c.blank ? 1 : ""}" data-k="${c.key}"${tt(c)}>${roleOptions(r[c.key] || "", c.blank)}</select></td>`
     : c.options
     ? `<td><select data-k="${c.key}"${tt(c)}>${c.options.map(o => { const [v, l] = Array.isArray(o) ? o : [o, o];
@@ -599,7 +715,10 @@ function editorRow(cols, r = {}) {
 }
 function readTable(id) {
   return [...document.querySelectorAll(`#${id} tr`)].slice(1).map(tr => {
-    const o = {}; tr.querySelectorAll("[data-k]").forEach(i => { if (i.value.trim()) o[i.dataset.k] = i.value.trim(); }); return o;
+    const o = {}; tr.querySelectorAll("[data-k]").forEach(i => {
+      let v = i.value.trim();
+      if (v && i.dataset.match) { const op = i.parentElement.querySelector("select.m-op"); v = toPattern(op ? op.value : "regex", v); }
+      if (v) o[i.dataset.k] = v; }); return o;
   }).filter(o => Object.keys(o).length);
 }
 function wireAddButtons(root = document) {
@@ -634,6 +753,8 @@ async function rulesPage(page, intro, render) {
     <datalist id="dl-groups">${(data.hints.groups || []).map(g => `<option value="${esc(g.name)}">${g.accounts} accounts</option>`).join("")}</datalist>
     <datalist id="dl-folders">${(data.hints.folders || []).map(g => `<option value="${esc(g.name)}">${g.accounts} accounts</option>`).join("")}</datalist>
     <datalist id="dl-types">${(data.hints.types || []).map(g => `<option value="${esc(g.name)}">${g.accounts} accounts</option>`).join("")}</datalist>
+    <datalist id="dl-platforms">${(data.hints.platforms || []).map(p => `<option value="${esc(p.id)}">${esc(p.note)}</option>`).join("")}</datalist>
+    <datalist id="dl-columns">${(data.hints.columns || []).map(c => `<option value="${esc(c.name)}">${c.filled} of ${c.records} records have a value</option>`).join("")}</datalist>
     <div id="rules-body">${view.html}</div>
     ${view.preview ? previewDockHtml(view.preview) : ""}
     <div class="floatbar"><button class="btn primary" id="save" title="Saves this page only and re-runs the rules on everything loaded. Your own changes in step 3 always win.">Save &amp; apply this page</button>
@@ -744,7 +865,7 @@ PAGES["rules-dir"] = () => rulesPage("rules-dir",
       { key: "match", label: "Matches members from", ph: "CORP, corp.example.com, * or re:^APP-", tip: DIR_TIP.match },
       { key: "search_in", label: "searchIn (optional)", ph: "empty = all directories", tip: DIR_TIP.search_in },
       { key: "strip_domain", label: "Drop CORP\\ / @domain", options: [["yes", "yes"], ["no", "no"]], tip: DIR_TIP.strip_domain },
-      { key: "find", label: "Find (pattern)", ph: "^GRP-", tip: DIR_TIP.find }, { key: "replace", label: "Replace with", ph: "PAM-", tip: DIR_TIP.replace },
+      { key: "find", label: "Find", ph: "^GRP-", phText: "GRP-", match: true, tip: DIR_TIP.find }, { key: "replace", label: "Replace with", ph: "PAM-", tip: DIR_TIP.replace },
       { key: "add_prefix", label: "Add before", ph: "PAM-", tip: DIR_TIP.add_prefix }, { key: "add_suffix", label: "Add after", ph: "@corp.example.com", tip: DIR_TIP.add_suffix },
       { key: "case", label: "Case", options: [["keep", "keep"], ["lower", "lower"], ["upper", "UPPER"]], tip: DIR_TIP.case }];
     let sources = cfg.directory_sources || [];
@@ -795,17 +916,17 @@ PAGES["rules-safes"] = () => rulesPage("rules-safes",
   ({ config: cfg, hints, presets }) => {
     ROLE_NAMES = () => Object.keys(presets).concat(Object.keys(cfg.custom_roles || {}));
     const GR = [{ key: "group", label: "Group (exact name)", ph: "CORP\\Unix-Admins", list: "dl-groups" },
-                { key: "group_pattern", label: "…or pattern (advanced)", ph: "^CORP\\\\APP-(.+)-Owners$" },
+                { key: "group_pattern", label: "…or group names that match", ph: "^CORP\\\\APP-(.+)-Owners$", phText: "APP-", match: true },
                 { key: "safe", label: "Target Safe", ph: "UNIX-Admins or APP-{1}" },
                 { key: "min_role", label: "Only if role at least", roles: true, blank: true }];
     const FR = [{ key: "folder_prefix", label: "Folder (and everything under it)", ph: "\\IT\\Network", list: "dl-folders" },
                 { key: "safe", label: "Target Safe", ph: "NET-Devices or {convention}" }];
     const AB = [{ key: "word", label: "Word or phrase" }, { key: "code", label: "Code (1-4 letters)", ph: "e.g. BOS" }];
-    const SR = [{ key: "safe_pattern", label: "Safes matching (pattern)", ph: "^P-|^DB-" }, { key: "managingCPM", label: "CPM", ph: "PasswordManager_DB" },
+    const SR = [{ key: "safe_pattern", label: "Safes whose name", ph: "^P-|^DB-", phText: "DB-", match: true }, { key: "managingCPM", label: "CPM", ph: "PasswordManager_DB" },
                 { key: "description", label: "Description", ph: "{folder}" }, { key: "numberOfVersionsRetention", label: "Keep versions", size: 4 },
                 { key: "numberOfDaysRetention", label: "or keep days", size: 4 }];
-    const RULE = [{ key: "field", label: "Look at", list: "dl-fields", ph: "folder_word" }, { key: "pattern", label: "Matches (pattern)", ph: "^prod$" },
-                  { key: "field2", label: "and look at", list: "dl-fields" }, { key: "pattern2", label: "matches" },
+    const RULE = [{ key: "field", label: "Look at", list: "dl-fields", ph: "folder_word" }, { key: "pattern", label: "Matches", ph: "^prod$|^live$", phText: "prod", match: true },
+                  { key: "field2", label: "and look at", list: "dl-fields" }, { key: "pattern2", label: "matches", ph: "^svc", phText: "svc_", match: true },
                   { key: "code", label: "Code", ph: "P", size: 6 }];
     const LEGACY = { owner: "Full", editor: "Accounts manager", user: "Read only", viewer: "List only" };
     const fixRole = (r) => r ? (LEGACY[String(r).toLowerCase()] && !(cfg.custom_roles || {})[r] ? LEGACY[String(r).toLowerCase()] : r) : "";
@@ -831,7 +952,7 @@ PAGES["rules-safes"] = () => rulesPage("rules-safes",
     const layersTotal = () => { const names = Object.keys(layers); const vals = names.reduce((n, k) => n + ((layers[k].rules || []).length), 0);
       return `${names.length} placeholders, ${vals} values`; };
     const html = `
-      <datalist id="dl-fields">${LAYER_FIELDS.map(f => `<option value="${f}">`).join("")}</datalist>
+      <datalist id="dl-fields">${LAYER_FIELDS.filter(f => f !== "column:").map(f => `<option value="${f}">`).join("")}${(hints.columns || []).map(c => `<option value="column:${esc(c.name)}">source column, ${c.filled} records have a value</option>`).join("")}<option value="column:">column:&lt;any source column&gt;</option></datalist>
       <div class="card"><h3>Safe name <span class="muted small">(the default: object-oriented Safes that follow your existing folders)</span></h3>
         <div class="row"><label class="inline">Name each Safe after
           <select id="fallback">${fb.map(([v, l]) => `<option value="${v}" ${cfg.fallback_strategy === v ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>
@@ -867,6 +988,7 @@ PAGES["rules-safes"] = () => rulesPage("rules-safes",
         ${editorTable("t-fr", FR, cfg.folder_rules)}
         <h4 style="margin:14px 0 6px">Safe from access groups <span class="muted small">(role-oriented Safes: they scale worse than folder Safes; first match wins)</span></h4>
         ${editorTable("t-gr", GR, (cfg.group_rules || []).map(r => ({ ...r, min_role: fixRole(r.min_role) })))}
+        <ul class="capture-pv muted" id="gr-capture" title="What each access-group row matches in your loaded data, and the Safe name it gives"></ul>
         <p><label class="inline"><input type="checkbox" id="gr-first" ${cfg.group_rules_first ? "checked" : ""}> Check access groups before the folder exceptions</label></p>
         <h4 style="margin:14px 0 6px">Different settings for some Safes <span class="muted small">(first match wins; empty cells keep the Safe settings above)</span></h4>
         ${editorTable("t-sr", SR, cfg.safe_rules || [])}</div>`;
@@ -974,6 +1096,32 @@ PAGES["rules-safes"] = () => rulesPage("rules-safes",
           if (!confirm("Put the built-in values back for {env}, {tech}, {flavor} and {acct}? Your own placeholders stay.")) return;
           readLayers(); const d = await api("/api/config"); Object.assign(layers, d.defaults.safe_convention.layers); renderLayers();
         };
+        // Each access-group row: which group in the loaded data it matches first and the Safe that gives,
+        // so {1}, {2} in "Target Safe" can be checked without guessing.
+        const groups = hints.groups || [];
+        const capture = () => {
+          const out = [...document.querySelectorAll("#t-gr tr")].slice(1).map((tr, i) => {
+            const v = (k) => { const el = tr.querySelector(`[data-k="${k}"]`); return el ? el.value.trim() : ""; };
+            const op = tr.querySelector("select.m-op"), safe = v("safe") || "(no Target Safe yet)", row = `Row ${i + 1}: `;
+            if (v("group")) {
+              const g = groups.find(x => x.name.toLowerCase() === v("group").toLowerCase());
+              return row + (g ? `<b>${esc(g.name)}</b> (${g.accounts} accounts) → <b>${esc(safe)}</b>` : `${esc(v("group"))} is not in your loaded data`);
+            }
+            if (!v("group_pattern")) return "";
+            const re = jsRegex(toPattern(op ? op.value : "regex", v("group_pattern")));
+            if (!re) return row + "this pattern can't be previewed here; the Safes preview below shows what it does";
+            const hits = groups.filter(x => re.test(x.name));
+            if (!hits.length) return row + "matches none of the access groups in your loaded data";
+            const m = hits[0].name.match(re);
+            let name = safe; m.slice(1).forEach((val, k) => { name = name.split(`{${k + 1}}`).join(val || ""); });
+            const parts = m.length > 1 ? " · " + m.slice(1).map((val, k) => `{${k + 1}} = <code>${esc(val || "")}</code>`).join(", ") : (/\{\d\}/.test(safe) ? " · the pattern has no ( ) part, so {1} is empty" : "");
+            return row + `${hits.length} ${hits.length === 1 ? "group matches" : "groups match"}, e.g. <b>${esc(hits[0].name)}</b>${parts} → <b>${esc(name)}</b>`;
+          }).filter(Boolean);
+          $("#gr-capture").innerHTML = out.map(x => `<li>${x}</li>`).join("");
+        };
+        ["input", "change"].forEach(ev => $("#t-gr").addEventListener(ev, capture));
+        $("#t-gr").closest("details").addEventListener("click", () => setTimeout(capture, 0));
+        capture();
         // Don't redraw the folder codes while you type in one of them.
         this.previewed = (r) => { if (!$("#conv-folders").contains(document.activeElement)) renderFolderCodes(r.folder_codes || []); };
         // The pattern fields matter only when Safes are named by the convention.
@@ -1056,11 +1204,13 @@ PAGES["rules-platforms"] = () => rulesPage("rules-platforms",
   "Which Privilege Cloud platform each account uses. The platform decides how Privilege Cloud connects to the account and changes its password.",
   ({ config: cfg, hints }) => {
     const PM = [{ key: "type", label: "Record type / template", list: "dl-types", tip: "The record type exactly as in the export: a Delinea Secret Template (e.g. Windows Account), a KeePass or spreadsheet type column. Types found in your loaded data are suggested." },
-                { key: "platform", label: "Platform ID", ph: "WinDomain", tip: "The platform ID exactly as in Privilege Cloud, as shown in Platform Management, e.g. WinDomain, WinServerLocal, UnixSSH, Oracle." }];
-    const PRU = [{ key: "field", label: "Look at", options: [["type", "type"], ["folder", "folder"], ["name", "name"], ["address", "address"], ["username", "username"]],
-                   tip: "Which part of the account the pattern is checked against: its record type, folder path, name, address or username." },
-                 { key: "pattern", label: "Matches (pattern)", ph: "(?i)linux|unix", tip: "A regular expression. Examples:\n\\\\Unix\\\\ (folder contains \\Unix\\)\n^svc_ (username starts svc_)\n\\.db\\.corp\\.example\\.com$ (address ends .db.corp.example.com)\nlinux|unix (either word)" },
-                 { key: "platform", label: "Platform ID", ph: "UnixSSH", tip: "The platform ID exactly as in Privilege Cloud, e.g. UnixSSH." }];
+                { key: "platform", label: "Platform ID", ph: "WinDomain", list: "dl-platforms", tip: "The platform ID exactly as in Privilege Cloud, as shown in Platform Management, e.g. WinDomain, WinServerLocal, UnixSSH, Oracle. Pick from the list (the usual Privilege Cloud IDs and the ones you already use) or type your own." }];
+    const PRU = [{ key: "field", label: "Look at", options: [["type", "type"], ["folder", "folder"], ["name", "name"], ["address", "address"], ["username", "username"]]
+                   .concat([...new Set((hints.columns || []).map(c => c.name).concat((cfg.platform_rules || []).map(r => r.field)
+                     .filter(f => f && !["type", "folder", "name", "address", "username"].includes(f))))].map(c => [c, "column: " + c])),
+                   tip: "Which part of the account is checked: its record type, folder path, name, address, username, or one of your export's other columns (listed as column: …)." },
+                 { key: "pattern", label: "Matches", ph: "linux|unix", phText: "\\Unix\\", match: true, tip: "Pick how to compare, then type the text. Examples:\nContains \\Unix\\ (folder contains \\Unix\\)\nStarts with svc_ (username starts svc_)\nEnds with .db.corp.example.com (address)\nRegex linux|unix (either word)" },
+                 { key: "platform", label: "Platform ID", ph: "UnixSSH", list: "dl-platforms", tip: "The platform ID exactly as in Privilege Cloud, e.g. UnixSSH. Pick from the list or type your own." }];
     const platRows = Object.entries(cfg.platform_map).map(([type, platform]) => ({ type, platform }));
     hints.types_without_platform.forEach(t => { if (t && !platRows.some(r => r.type.toLowerCase() === t.toLowerCase())) platRows.unshift({ type: t, platform: "" }); });
     return {
@@ -1075,7 +1225,7 @@ PAGES["rules-platforms"] = () => rulesPage("rules-platforms",
             <li>service accounts need their own platform: a rule on <b>username</b> such as <code>^svc_</code>.</li></ul>
           <p class="muted small">You can still change single accounts in step 3, and your changes there always win.</p>`, "How a platform is chosen")}
         <div class="card"><h3>Platform by record type <span class="muted small">(the default)</span></h3>${editorTable("t-pm", PM, platRows)}
-        <p><label class="inline">Default platform for any other type <input type="text" id="defplat" value="${esc(cfg.default_platform || "")}" placeholder="empty = flag as error" data-check="platform"></label></p></div>
+        <p><label class="inline">Default platform for any other type <input type="text" id="defplat" list="dl-platforms" value="${esc(cfg.default_platform || "")}" placeholder="empty = flag as error" data-check="platform"></label></p></div>
         <div class="card"><h3>Exceptions: platform rules <span class="muted small">(checked before the record type list, top to bottom; the first match wins)</span></h3>${editorTable("t-pru", PRU, cfg.platform_rules || [])}</div>`,
       preview: {
         title: "each record type → the platform its accounts get",
@@ -1105,7 +1255,7 @@ PAGES["rules-platforms"] = () => rulesPage("rules-platforms",
 PAGES["rules-accounts"] = () => rulesPage("rules-accounts",
   "How each account is named and which extra source columns become account properties.",
   ({ config: cfg }) => {
-    const AP = [{ key: "column", label: "Source column", tip: "Column name exactly as in your export, e.g. Port or Notes." },
+    const AP = [{ key: "column", label: "Source column", list: "dl-columns", ph: "Port", tip: "Column name exactly as in your export, e.g. Port or Notes. The columns found in your loaded exports are listed: click the box to pick one." },
                 { key: "property", label: "Platform property", ph: "Port", tip: "Property name on the Privilege Cloud platform, e.g. Port. It must exist on the platform, or the upload rejects the account." }];
     const an = cfg.account_name || {};
     const none = String(an.mode || "").toLowerCase() === "none";
@@ -1409,7 +1559,9 @@ async function showRecord(id) {
 }
 
 /* ---------------- 3A. Safes & Safe members ---------------- */
-const SAFES = { selected: new Set(), members: new Set(), filter: "" };
+const SAFES = { selected: new Set(), members: new Set(), filter: "", nofull: false };
+const NO_FULL = "no member with full permissions";   // the start of the Safe issue (imw/transform.py NO_FULL_MEMBER_NOTE)
+const NO_FULL_TIP = "No user, group or role from your source has full permissions on this Safe (the Full role, or a custom role with every Full permission), so after the upload only the user who uploads it and the Privilege Cloud administrators can manage it and its members.";
 PAGES.safes = async () => go("review-safes");
 PAGES["review-safes"] = async () => {
   await refresh();
@@ -1433,6 +1585,12 @@ PAGES["review-safes"] = async () => {
         <td><button class="btn small" data-undo-person="${esc(p.key)}">Undo</button></td></tr>`).join("")}</table></div></details>` : "";
   const memberCount = {};
   d.people.forEach(p => p.safes.forEach(x => { memberCount[x.safe_name] = (memberCount[x.safe_name] || 0) + 1; }));
+  // A Safe that is uploaded needs at least one member with full permissions (the Full role, or a custom role with all of Full's).
+  const noFull = (s) => (s.issues || "").includes(NO_FULL);
+  const noFullCount = d.safes.filter(noFull).length;
+  const membersCell = (s) => memberCount[s.safe_name]
+    ? memberCount[s.safe_name] + (noFull(s) ? ` <span class="pill REVIEW" title="${esc(NO_FULL_TIP)}">no full member</span>` : "")
+    : `<span class="pill REVIEW" title="Nobody from your source gets access to this Safe. ${esc(NO_FULL_TIP)}">none</span>`;
   const tab = SAFES.tab || "safes";
   const csvMode = SAFES.mode === "csv";
   const safeLink = (s) => `<a href="#" data-members-of="${esc(s.safe_name)}" title="Rename this Safe, change its settings or its members">${esc(s.safe_name)}</a>${s.override_json ? ' <span class="pill REVIEW" title="You changed this Safe\'s name or settings directly">changed by you</span>' : ""}${nameNote(s)}`;
@@ -1447,6 +1605,9 @@ PAGES["review-safes"] = async () => {
       <button data-tab="members" class="${tab === "members" ? "on" : ""}" role="tab">Members (${d.people.length})</button><label class="inline small" style="margin-left:auto;align-self:center" title="Review: the usual columns. Source → upload CSV: what the export had on the left, and the Safes.csv / SafeMembers.csv columns it becomes on the right.">Columns
       <select id="s-cols-mode"><option value="review">Review</option><option value="csv" ${csvMode ? "selected" : ""}>Source → upload CSV</option></select></label></div>
     <div id="tab-safes" class="${tab === "safes" ? "" : "hidden"}">
+      ${noFullCount ? `<div class="msg warn">${noFullCount} ${noFullCount === 1 ? "Safe has" : "Safes have"} no member with full permissions, so nobody from your source could manage ${noFullCount === 1 ? "it" : "them"} or ${noFullCount === 1 ? "its" : "their"} members after the upload.
+        Give one user, group or role the <b>Full</b> role: tick the Safes, then <b>Add to ticked Safes</b> with role Full; or map a source permission to Full in <a href="#" data-go="rules-members">B. Safe members</a>.
+        <label class="inline" style="margin-left:8px"><input type="checkbox" id="s-nofull" ${SAFES.nofull ? "checked" : ""}> show only these Safes</label></div>` : ""}
       <div class="row" style="margin-bottom:8px"><input type="search" id="s-filter" placeholder="Show Safes containing…" size="28" value="${esc(SAFES.filter)}">
         <button class="btn small" id="s-tick-shown">Tick the Safes shown</button>
         <span class="muted small" id="s-count"></span></div>
@@ -1454,16 +1615,16 @@ PAGES["review-safes"] = async () => {
         <tr><th></th><th title="The source folders whose accounts go to this Safe">Folders</th><th title="The name the rules gave, before cleanup or your rename">Rules proposed</th>
         <th>safeName</th><th>managingCPM</th><th title="numberOfVersionsRetention or numberOfDaysRetention">Keeps</th><th>description</th><th>location</th><th>olacEnabled</th><th>autoPurgeEnabled</th>
         <th>Accounts</th><th>Members</th></tr></thead><tbody>` : `<tr><th></th><th>Safe</th><th>Accounts</th><th>To upload</th><th>Members</th><th>CPM</th><th>Keeps</th><th>Description</th></tr>`}
-      ${d.safes.map(s => csvMode ? `<tr data-name="${esc((s.safe_name + " " + (s.source_folders || "")).toLowerCase())}"><td><input type="checkbox" class="s-sel" value="${esc(s.safe_name)}" ${SAFES.selected.has(s.safe_name) ? "checked" : ""}></td>
+      ${d.safes.map(s => csvMode ? `<tr data-name="${esc((s.safe_name + " " + (s.source_folders || "")).toLowerCase())}"${noFull(s) ? ' data-nofull="1"' : ""}><td><input type="checkbox" class="s-sel" value="${esc(s.safe_name)}" ${SAFES.selected.has(s.safe_name) ? "checked" : ""}></td>
         <td class="small">${esc(s.source_folders || "").split(" | ").join("<br>")}</td><td class="small">${esc(s.proposed_names || "")}</td>
         <td class="nowrap">${safeLink(s)}</td><td class="small">${esc(s.managing_cpm || "")}</td><td class="small nowrap">${esc(s.retention || "")}</td><td class="small">${esc(s.description || "")}</td>
         <td class="small">${esc(s.location || "")}</td><td class="small">${esc(s.olac_enabled || "")}</td><td class="small">${esc(s.auto_purge || "")}</td>
         <td><a href="#" data-safe="${esc(s.safe_name)}" title="Show this Safe's accounts in B. Accounts &amp; platforms">${s.accounts}</a></td>
-        <td>${memberCount[s.safe_name] || '<span class="pill REVIEW" title="Nobody gets access to this Safe">none</span>'}</td></tr>`
-        : `<tr data-name="${esc(s.safe_name.toLowerCase())}"><td><input type="checkbox" class="s-sel" value="${esc(s.safe_name)}" ${SAFES.selected.has(s.safe_name) ? "checked" : ""}></td>
+        <td class="nowrap">${membersCell(s)}</td></tr>`
+        : `<tr data-name="${esc(s.safe_name.toLowerCase())}"${noFull(s) ? ' data-nofull="1"' : ""}><td><input type="checkbox" class="s-sel" value="${esc(s.safe_name)}" ${SAFES.selected.has(s.safe_name) ? "checked" : ""}></td>
         <td class="nowrap">${safeLink(s)}</td>
         <td><a href="#" data-safe="${esc(s.safe_name)}" title="Show this Safe's accounts in B. Accounts &amp; platforms">${s.accounts}</a></td><td>${s.accounts_to_upload}</td>
-        <td>${memberCount[s.safe_name] || '<span class="pill REVIEW" title="Nobody gets access to this Safe">none</span>'}</td>
+        <td class="nowrap">${membersCell(s)}</td>
         <td class="small">${esc(s.managing_cpm || "")}</td><td class="small nowrap">${esc(s.retention || "")}</td><td class="small">${esc(s.description || "")}</td></tr>`).join("")}${csvMode ? "</tbody>" : ""}</table></div>
       <div class="actionbar hidden" id="s-acts"><div class="row"><b id="s-selinfo"></b><input type="text" id="m-reason" placeholder="Reason (optional, kept in the log)" size="30">
           <button class="linkbtn" id="s-untick">Untick all</button></div>
@@ -1507,13 +1668,14 @@ PAGES["review-safes"] = async () => {
   const showInfo = () => { $("#s-selinfo").textContent = `${SAFES.selected.size} of ${d.safes.length} Safes ticked`;
     $("#s-acts").classList.toggle("hidden", !SAFES.selected.size); };
   const applyFilter = () => {
-    const f = SAFES.filter.toLowerCase(); let n = 0;
-    document.querySelectorAll("#safes-table tr[data-name]").forEach(tr => { const hit = !f || tr.dataset.name.includes(f); tr.classList.toggle("hidden", !hit); n += hit; });
-    $("#s-count").textContent = f ? `${n} shown` : "";
+    const f = SAFES.filter.toLowerCase(), only = !!(SAFES.nofull && noFullCount); let n = 0;
+    document.querySelectorAll("#safes-table tr[data-name]").forEach(tr => { const hit = (!f || tr.dataset.name.includes(f)) && (!only || tr.dataset.nofull === "1"); tr.classList.toggle("hidden", !hit); n += hit; });
+    $("#s-count").textContent = f || only ? `${n} shown` : "";
   };
   document.querySelectorAll(".s-sel").forEach(cb => cb.onchange = () => { cb.checked ? SAFES.selected.add(cb.value) : SAFES.selected.delete(cb.value); cb.closest("tr").classList.toggle("selected", cb.checked); showInfo(); });
   document.querySelectorAll(".s-sel:checked").forEach(cb => cb.closest("tr").classList.add("selected"));
   $("#s-filter").oninput = () => { SAFES.filter = $("#s-filter").value; applyFilter(); };
+  if ($("#s-nofull")) $("#s-nofull").onchange = () => { SAFES.nofull = $("#s-nofull").checked; applyFilter(); };
   $("#s-tick-shown").onclick = () => { document.querySelectorAll("#safes-table tr[data-name]:not(.hidden) .s-sel").forEach(cb => { cb.checked = true; cb.onchange(); }); };
   $("#s-untick").onclick = () => { document.querySelectorAll(".s-sel:checked").forEach(cb => { cb.checked = false; cb.onchange(); }); };
   applyFilter(); showInfo();

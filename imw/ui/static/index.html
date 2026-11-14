@@ -91,6 +91,12 @@ code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; font-si
 .drawer dt { color: var(--muted); }
 .drawer dd { margin: 0; word-break: break-word; }
 .editor td input, .editor td select { width: 100%; }
+.editor td .match { display: flex; gap: 4px; align-items: center; }
+.editor td .match select { width: auto; flex: none; }
+.editor td .match input { flex: 1; min-width: 8em; width: auto; }
+.capture-pv { margin: 6px 0 0; font-size: 13px; }
+.capture-pv li { margin: 2px 0; }
+.col-pick td { padding: 3px 8px; }
 .editor td.x { width: 40px; }
 .roles td.c { text-align: center; }
 .roles .tick { color: var(--ok); font-weight: 700; }

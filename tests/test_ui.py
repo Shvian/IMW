@@ -86,6 +86,26 @@ class UiServer(Base):
         if unlock:
             self.assertEqual(self.req("POST", "/api/unlock", {"password": PASSWORD})[0], 200)
 
+    def test_hints_and_column_picker(self):
+        self.login()
+        (self.ws / "inbox" / "inventory.csv").write_text(
+            "Title,SAMAccountName,TargetHost,Port\nWeb admin,svc_web,web01,8443\n", encoding="utf-8")
+        st, r = self.req("POST", "/api/ingest", {"files": [{"name": "inventory.csv", "source": "table"}]})
+        self.assertEqual(st, 200, r)
+        cols = r["results"][0]["columns"]
+        self.assertEqual(cols["missing"], ["username", "address"])
+        self.assertIn("SAMAccountName", cols["headers"])
+        st, c = self.req("GET", "/api/config")
+        self.assertIn({"name": "Port", "records": 1, "filled": 1}, c["hints"]["columns"])
+        ids = [p["id"] for p in c["hints"]["platforms"]]
+        self.assertIn("WinDomain", ids)
+        self.assertIn("PaloAltoNetworks", ids)
+        sources = c["config"]["sources"]
+        sources["table"]["columns"] = {"username": "SAMAccountName", "address": "TargetHost"}
+        self.assertEqual(self.req("POST", "/api/config", {"patch": {"sources": sources}})[0], 200)
+        st, r = self.req("POST", "/api/ingest", {"files": [{"name": "inventory.csv", "source": "table"}]})
+        self.assertNotIn("columns", r["results"][0])
+
     def test_https_only(self):
         c = http.client.HTTPSConnection("127.0.0.1", self.port, timeout=10, context=self.tls)
         c.request("GET", f"/?t={self.token}", headers={"Host": f"127.0.0.1:{self.port}"})
@@ -169,7 +189,7 @@ class UiServer(Base):
         self.assertIn("same content as load #2", state["inputs"][2]["repeat"])
         st, r = self.req("POST", "/api/config", {"patch": {"default_platform": "WinServerLocal"}})
         self.assertEqual(st, 200, r)
-        self.assertEqual(json.loads((self.ws / "config.json").read_text()), {"default_platform": "WinServerLocal", "config_version": 2})
+        self.assertEqual(json.loads((self.ws / "config.json").read_text()), {"default_platform": "WinServerLocal", "config_version": 3})
         self.assertEqual(self.req("POST", "/api/config", {"patch": {"safe_rules": [
             {"safe_pattern": "(", "managingCPM": "x"}]}})[0], 400)
 
