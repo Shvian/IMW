@@ -88,9 +88,9 @@ class ConfigUpgradeSteps(unittest.TestCase):
     def test_workbench_saved_v2_upgrades_to_future_version(self):
         saved = config_diff(config_from_dict({"default_platform": "X"}))
         self.assertNotIn("field_aliases", saved)
-        with mock.patch.object(config_mod, "CONFIG_VERSION", 3):
+        with mock.patch.object(config_mod, "CONFIG_VERSION", 4):
             up = upgrade_config(saved)
-        self.assertEqual(up["config_version"], 3)
+        self.assertEqual(up["config_version"], 4)
         self.assertEqual(up["default_platform"], "X")
 
     def test_hand_written_v1_left_alone(self):
