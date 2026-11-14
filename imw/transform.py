@@ -20,6 +20,7 @@ log = logging.getLogger("imw.transform")
 
 NO_PLATFORM = "(none)"          # an edit that removes the platform on purpose
 NO_NAME = "(none)"              # an edit that leaves the account name empty: Privilege Cloud names it
+NO_ACCESS_NOTE = "no access groups found; Safe gets no members from the source"
 PLATFORM_INVALID = re.compile(r"[^A-Za-z0-9_.\-]")
 # Characters removed from every stored text value: control characters, zero-width and BOM.
 UNSAFE_TEXT = re.compile("[\x00-\x08\x0b-\x1f\x7f\u200b-\u200f\u2028\u2029\u2060\ufeff]")
@@ -355,6 +356,10 @@ class AccountPlan:
     errors: List[str] = field(default_factory=list)
     in_scope: bool = True          # False when an extract filter leaves the record out
     rule_safe: str = ""            # the Safe name the rules gave, before you renamed the Safe
+    # Notes about the account's Safe rather than the account itself (no access groups, a long
+    # name shortened, a Safe shared by several folders). They show on the Safe, not on the
+    # account, so they never make an account "need a look".
+    safe_notes: List[str] = field(default_factory=list)
 
     @property
     def status(self):
@@ -464,7 +469,7 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
             rec.address = address_from_url(rec.address)
         ov = overrides.get(rec.record_id, {})
         if not p.grants:
-            p.warnings.append("no access groups found; Safe gets no members from the source")
+            p.safe_notes.append(NO_ACCESS_NOTE)
 
         # Platform
         p.platform, p.platform_source = resolve_platform(rec, cfg)
@@ -507,7 +512,7 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
         p.proposed_safe = safe
         p.safe_source = src
         if src != "override" and namer.last_notes:
-            p.warnings.extend("Safe name: " + n for n in namer.last_notes)
+            p.safe_notes.extend("Safe name: " + n for n in namer.last_notes)
         p.by_convention = (namer.used or src.startswith("fallback:folder")) and src != "override"
         if p.by_convention:
             convention_folders[safe.lower()].add(rec.folder_path)
@@ -544,7 +549,7 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
     for p in plans:
         folders = convention_folders.get(p.proposed_safe.lower(), set())
         if getattr(p, "by_convention", False) and len(folders) > 1:
-            p.warnings.append(f"Safe shared by {len(folders)} source folders; check least privilege")
+            p.safe_notes.append(f"Safe shared by {len(folders)} source folders; check least privilege")
 
     # Clean Safe names and resolve collisions across the whole run.
     cleaned = {}
@@ -572,10 +577,7 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
             p.safe, p.valid_safe, p.safe_issues = sanitize_safe_name(new_name, cfg)
             p.safe = spelling.setdefault(p.safe.lower(), p.safe)
             p.safe_source = "Safe renamed by you"
-            if not p.valid_safe:
-                p.warnings.insert(0, "Safe name changed: " + "; ".join(p.safe_issues))
-        elif not valid:
-            p.warnings.insert(0, "Safe name changed: " + "; ".join(p.safe_issues))
+        # A changed (sanitized) Safe name is a Safe issue: p.safe_issues, shown on the Safe.
         if not p.uploadable:
             continue
         dupes[(p.safe.lower(), p.rec.username.lower(), p.rec.address.lower(),
@@ -595,8 +597,8 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
     from_rules = {p.safe.lower() for p in plans if p.rule_safe == p.safe}
     for p in plans:
         if p.rule_safe != p.safe and p.safe.lower() in from_rules:
-            p.warnings.append(f"Safe '{p.rule_safe}' renamed by you to '{p.safe}', which another Safe "
-                              "already has: their accounts are now in one Safe")
+            p.safe_notes.append(f"Safe '{p.rule_safe}' renamed by you to '{p.safe}', which another Safe "
+                                "already has: their accounts are now in one Safe")
 
     return Plan(plans, _safes(plans, cfg, safe_overrides),
                 _members(plans, cfg, member_edits, member_overrides),
@@ -826,6 +828,8 @@ def _safes(plans, cfg=None, safe_overrides=None):
         s["proposed"].add(p.proposed_safe)
         s["valid"] &= p.valid_safe
         s["issues"].update(p.safe_issues)
+        s["issues"].update(n for n in p.safe_notes if n != NO_ACCESS_NOTE)
+        s["no_access"] = s.get("no_access", 0) + (1 if NO_ACCESS_NOTE in p.safe_notes else 0)
         s["sources"].add(p.safe_source)
         s["accounts"] += 1
         s["migrating"] += 1 if p.uploadable else 0
@@ -834,6 +838,11 @@ def _safes(plans, cfg=None, safe_overrides=None):
         # this Safe itself applies (the renamed Safes' other settings don't follow them).
         if name.lower() in {n.lower() for n in s["rule_names"]}:
             s["override"] = safe_overrides.get(name.lower())
+    for s in safes.values():
+        n = s.pop("no_access", 0)
+        if n:
+            s["issues"].add(f"{n} of its accounts have no access groups in the source"
+                            if n < s["accounts"] else "no access groups in the source for any of its accounts")
     if limit:
         for s in safes.values():
             if s["accounts"] > limit:

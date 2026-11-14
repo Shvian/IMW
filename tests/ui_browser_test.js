@@ -112,7 +112,8 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
 
   // 2. Mapping rules, page by page
   await navTo('rules-dir');
-  await page.waitForSelector('#dir-out table');
+  await page.waitForSelector('#t-dg', { state: 'attached' });
+  await page.waitForSelector('#pv-out th >> text=memberName');
   if (await page.$eval('[data-block="t-dg"]', e => e.open)) throw new Error('input table not folded by default');
   // Every column heading explains its field with an example; so does every cell
   {
@@ -130,8 +131,12 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   await (await rows[rows.length - 1].$('[data-k=match]')).fill('CORP');
   await (await rows[rows.length - 1].$('[data-k=search_in]')).fill('corp.example.com');
   await (await rows[rows.length - 1].$('[data-k=case]')).selectOption('upper');
-  await page.click('#dir-preview');
-  await page.waitForSelector('#dir-out >> text=Corporate AD');
+  // The floating preview follows the settings live, and shows the change highlighted.
+  await page.waitForSelector('#pv-out >> text=Corporate AD');
+  await page.waitForSelector('#pv-out td.chg');
+  const dockPos = await page.$eval('#pv-dock', e => getComputedStyle(e).position);
+  if (dockPos !== 'sticky') throw new Error('preview does not float at the bottom');
+  if (!(await page.$('#pv-out th.grp.csv'))) throw new Error('preview has no upload CSV column group');
   await shot(page, '02a_directory');
   await page.click('#save');
   await page.waitForSelector('#rules-msg .msg.ok');
@@ -177,8 +182,17 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   await page.fill('#s-desc', 'Migrated from {folder}');
   await page.check('input[name=ret][value=versions]');
   await page.fill('#s-ver', '10');
-  await page.click('#conv-preview');
-  await page.waitForSelector('#conv-out >> text=HQ-');
+  // The preview at the bottom follows the settings above live, before Save & apply, with each Safe's CPM.
+  await page.waitForSelector('#pv-out >> text=HQ-');
+  await page.waitForSelector('#pv-out td.chg >> text=PasswordManager');
+  await page.fill('#s-cpm', 'CPM-Live');
+  await page.waitForSelector('#pv-out td >> text=CPM-Live');
+  await page.fill('#s-cpm', 'PasswordManager');
+  await page.waitForSelector('#pv-out td >> text=PasswordManager');
+  await page.check('#pv-changed');
+  if (!(await page.$$('#pv-out tr')).length) throw new Error('changed-only preview filter shows nothing');
+  await page.uncheck('#pv-changed');
+  await page.$eval('#pv-out', e => e.scrollTop = 0);
   await shot(page, '02b_safes');
   await page.click('#save');
   await page.waitForSelector('#rules-msg .msg.ok');
@@ -197,6 +211,7 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   await page.waitForSelector('#roles table', { state: 'attached' });
   if (!(await page.innerText('h2')).includes('B. Safe members')) throw new Error('Next did not open B. Safe members');
   await page.waitForSelector('#roles table', { state: 'attached' });
+  await page.waitForSelector('#pv-out table');           // members preview: source member -> SafeMembers.csv
   await page.selectOption('#role-from', 'Read only');
   await page.click('#role-add');
   await page.fill('.role-name >> nth=-1', 'Helpdesk');
@@ -249,6 +264,31 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   await page.waitForTimeout(500);
   console.log('ALL:', await page.innerText('#list p'));
   await shot(page, '03_review');
+  // Source -> upload CSV columns
+  await page.selectOption('#cols-mode', 'csv');
+  await page.waitForSelector('#acc-table th.grp.csv >> text=Accounts.csv');
+  if (!(await page.$('#acc-table td.csv-first'))) throw new Error('no line where the CSV columns start');
+  await shot(page, '03_review_csv');
+  await page.selectOption('#cols-mode', 'review');
+  await page.waitForSelector('#acc-table th >> text=Account');
+  // Approve an account that needs a look: it keeps the label, gets a green tick, and loses it once it changes.
+  await page.selectOption('#view', 'review');
+  await page.waitForTimeout(500);
+  if (!(await page.innerText('#list thead')).includes('Why it needs a look')) throw new Error('no reason column on the review list');
+  if ((await page.innerText('#list tbody')).includes('no access groups')) throw new Error('Safe-level note shown on an account');
+  await page.check('.sel');
+  await page.click('[data-act=approve]');
+  await page.waitForSelector('#act-msg >> text=Approved 1 account');
+  await page.waitForSelector('#list .approved');
+  console.log('APPROVE:', await page.innerText('#act-msg'));
+  await shot(page, '03_review_approved');
+  await page.click('#list tr.clickable:has(.approved) td:nth-child(2)');
+  await page.waitForSelector('#drawer #ra-unapprove');
+  await shot(page, '04_record_approved');
+  await page.click('[data-close-drawer]');
+  await page.$eval('#act-msg', e => e.innerHTML = '');
+  await page.selectOption('#view', 'all');
+  await page.waitForTimeout(500);
   await page.fill('#f-search', 'Vendor');
   await page.waitForTimeout(800);
   await page.check('.sel');
@@ -322,6 +362,14 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   // 3A. Safes & Safe members: add one member to two Safes, then undo one of them
   await navTo('review-safes');
   await page.waitForSelector('text=Members (');
+  await page.selectOption('#s-cols-mode', 'csv');
+  await page.waitForSelector('#safes-table th.grp.csv >> text=Safes.csv');
+  await shot(page, '05_safes_csv');
+  await page.click('[data-tab=members]');
+  await page.waitForSelector('#sm-table th.grp.csv >> text=SafeMembers.csv');
+  await page.click('[data-tab=safes]');
+  await page.selectOption('#s-cols-mode', 'review');
+  await page.waitForSelector('#safes-table th >> text=To upload');
   // clicking a Safe shows its members (in a panel on this page), not its accounts
   {
     const first = await page.$('[data-members-of="UNIX-Servers"]');

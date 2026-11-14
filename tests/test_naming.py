@@ -143,7 +143,10 @@ class ConventionInPlan(Base):
         cfg = config_from_dict({"safe_convention": {"skip_folder_levels": ["Team A", "Team B"]}})
         recs = [rec("\\Team A\\Windows", "x", "Windows Account"), rec("\\Team B\\Windows", "y", "Windows Account")]
         plan = build_plan(recs, cfg)
-        self.assertTrue(any("shared by 2 source folders" in w for w in plan.accounts[0].warnings))
+        # A Safe-level note: it shows on the Safe, and doesn't make the accounts need a look.
+        self.assertFalse(any("shared by" in w for w in plan.accounts[0].warnings))
+        issues = list(plan.safes.values())[0]["issues"]
+        self.assertTrue(any("shared by 2 source folders" in i for i in issues))
 
 
 if __name__ == "__main__":

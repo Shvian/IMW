@@ -234,6 +234,85 @@ class UiServer(Base):
         self.assertTrue(text.decode("utf-8-sig").startswith("record_id,field,value"))
 
 
+    def test_approve_needs_a_look_until_it_changes(self):
+        self.login()
+        st, r = self.req("POST", "/api/ingest", {"files": [{"name": "delinea_export.csv", "source": ""},
+                                                           {"name": "keepass_export.xml", "source": ""}],
+                                                 "permissions": ["delinea_permissions.csv"]})
+        self.assertEqual(st, 200, r)
+        # Safe-level notes (no access groups, shared Safe, name shortened) are not account notes.
+        st, d = self.req("POST", "/api/accounts", {"view": "all"})
+        for row in d["rows"]:
+            for bad in ("no access groups", "Safe shared by", "Safe name"):
+                self.assertNotIn(bad, row["notes"] or "", row)
+        st, d = self.req("POST", "/api/accounts", {"view": "review"})
+        self.assertGreater(d["total"], 0)
+        rid = d["rows"][0]["record_id"]
+        ok = self.req("POST", "/api/accounts", {"view": "all"})[1]["rows"]
+        ok_id = next(x["record_id"] for x in ok if x["status"] == "OK")
+        st, r = self.req("POST", "/api/approve", {"ids": [rid, ok_id], "reason": "checked"})
+        self.assertEqual((st, r["changed"]), (200, 1))                       # only "needs a look" can be approved
+        st, state = self.req("GET", "/api/state")
+        self.assertEqual(state["approved"], 1)
+        st, d = self.req("POST", "/api/accounts", {"view": "approved"})
+        self.assertEqual([x["record_id"] for x in d["rows"]], [rid])
+        self.assertEqual(d["rows"][0]["status"], "REVIEW")                   # still needs a look, with a tick
+        st, d = self.req("POST", "/api/accounts", {"view": "review_open"})
+        self.assertNotIn(rid, [x["record_id"] for x in d["rows"]])
+        st, rec = self.req("POST", "/api/record", {"id": rid})
+        self.assertEqual(rec["approval"]["reason"], "checked")
+        # Applying the same rules again keeps the approval ...
+        self.assertEqual(self.req("POST", "/api/config", {"patch": {}})[0], 200)
+        self.assertEqual(self.req("GET", "/api/state")[1]["approved"], 1)
+        # ... a change to the account drops it.
+        self.req("POST", "/api/edit", {"ids": [rid], "values": {"account_name": "Changed-Name"}})
+        self.assertEqual(self.req("GET", "/api/state")[1]["approved"], 0)
+        self.assertIsNone(self.req("POST", "/api/record", {"id": rid})[1]["approval"])
+        st, a = self.req("GET", "/api/audit")
+        self.assertIn("approval_cleared", [x["action"] for x in a["audit"]])
+        # Approve again, then take it back.
+        self.req("POST", "/api/approve", {"ids": [rid]})
+        st, r = self.req("POST", "/api/approve", {"ids": [rid], "approve": False})
+        self.assertEqual(r["changed"], 1)
+        self.assertEqual(self.req("GET", "/api/state")[1]["approved"], 0)
+
+    def test_safes_preview_shows_unsaved_settings(self):
+        self.login()
+        self.req("POST", "/api/ingest", {"files": [{"name": "delinea_export.csv", "source": ""}],
+                                         "permissions": ["delinea_permissions.csv"]})
+        st, cfg = self.req("GET", "/api/config")
+        user = dict(cfg["config"], safe_defaults=dict(cfg["config"]["safe_defaults"], managingCPM="CPM-Preview"),
+                    safe_rules=[{"safe_pattern": "DB", "managingCPM": "CPM-DB"}])
+        st, r = self.req("POST", "/api/safes/preview", {"config": user})
+        self.assertEqual(st, 200, r)
+        self.assertEqual(r["accounts"], 8)
+        self.assertTrue(r["rows"])
+        for row in r["rows"]:
+            self.assertEqual(row["cpm"], "CPM-DB" if "db" in row["safe"].lower() else "CPM-Preview", row)
+            self.assertIn("cpm", row["changed"])                             # differs from what is saved
+        self.assertIn("P@ssw0rd", open(SAMPLES / "delinea_export.csv", encoding="utf-8").read())
+        self.assertNotIn("P@ssw0rd", json.dumps(r))
+        # Nothing was saved.
+        st, d = self.req("GET", "/api/safes")
+        self.assertNotIn("CPM-Preview", json.dumps(d))
+        bad = dict(user, safe_rules=[{"safe_pattern": "(", "managingCPM": "x"}])
+        self.assertEqual(self.req("POST", "/api/safes/preview", {"config": bad})[0], 400)
+        # The other rules pages: a patch on top of the saved settings.
+        st, r = self.req("POST", "/api/rules/preview", {"kind": "members", "patch": {"permission_map": {"View": "Full", "Edit": "Full", "Owner": "Full", "List": "Full"}}})
+        self.assertEqual(st, 200, r)
+        self.assertTrue(r["rows"])
+        self.assertTrue(all(m["role"] == "Full" for m in r["rows"]), r["rows"])
+        self.assertTrue(any("role" in m["changed"] for m in r["rows"]))
+        st, r = self.req("POST", "/api/rules/preview", {"kind": "platforms", "patch": {"platform_rules": [
+            {"field": "type", "pattern": ".", "platform": "OnePlatform"}]}})
+        self.assertEqual({x["platform"] for x in r["rows"]}, {"OnePlatform"})
+        self.assertTrue(all(x["changed"] == ["platform"] for x in r["rows"]))
+        st, r = self.req("POST", "/api/rules/preview", {"kind": "accounts", "patch": {"account_name": {
+            "mode": "pattern", "template": "X-{username}", "fallback": "{address}"}}})
+        self.assertTrue(all(x["account_name"].startswith("X-") for x in r["rows"]), r["rows"])
+        self.assertNotIn("P@ssw0rd", json.dumps(r))
+        self.assertEqual(self.req("POST", "/api/rules/preview", {"kind": "nope", "patch": {}})[0], 400)
+
     def test_members_platforms_and_sanitizing(self):
         dirty = (SAMPLES / "delinea_export.csv").read_text(encoding="utf-8-sig").replace("svc_sql", "svc\u200b_sql", 1)
         (self.ws / "inbox" / "delinea_export.csv").write_text(dirty, encoding="utf-8")

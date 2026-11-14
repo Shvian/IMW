@@ -57,7 +57,8 @@ class SafeOverridesInPlan(unittest.TestCase):
         web = safe_of(base, "Web")
         plan, _ = self.plan({web.lower(): {"new_name": apps}})
         self.assertEqual(list(plan.safes), [apps])
-        self.assertTrue(any("already has" in w for p in plan.accounts for w in p.warnings))
+        self.assertFalse(any("already has" in w for p in plan.accounts for w in p.warnings))
+        self.assertTrue(any("already has" in i for i in plan.safes[apps]["issues"]))
 
 
 class SafeOverridesInStore(Base):
