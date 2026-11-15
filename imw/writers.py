@@ -265,3 +265,147 @@ def write_manifest(out_dir, inputs, files, counts, include_secrets, cfg_path):
     path = Path(out_dir) / "manifest.json"
     path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     return path
+
+
+# --------------------------------------------------------------------------- #
+# Safe naming convention: the rules as a document to keep using after the migration
+# --------------------------------------------------------------------------- #
+CONVENTION_HEADER = ["Section", "Item", "Code_Or_Value", "Applies_When", "Notes"]
+FIELD_WORDS = {"folder_word": "a word in any folder level", "folder_level": "a whole folder level",
+               "folder": "the folder path", "platform": "the platform ID", "username": "the username",
+               "address": "the address", "address_domain": "the address's domain", "name": "the account name",
+               "type": "the record type", "source": "the source", "env": "the {env} code",
+               "tech": "the {tech} code", "flavor": "the {flavor} code", "acct": "the {acct} code"}
+
+
+def _plain_pattern(pattern):
+    """A rule pattern in words: ^Boston$ -> 'is Boston', ^svc -> 'starts with svc'."""
+    import re
+    p = re.sub(r"^\(\?i\)", "", str(pattern or ""))
+
+    def literal(t):
+        out, i = "", 0
+        while i < len(t):
+            c = t[i]
+            if c == "\\" and i + 1 < len(t) and not t[i + 1].isalnum():
+                out, i = out + t[i + 1], i + 2
+                continue
+            if c in ".*+?^${}()|[]\\":
+                return None
+            out, i = out + c, i + 1
+        return out
+    alts = p.split("|")
+    if len(alts) > 1 and all(a.startswith("^") and a.endswith("$") and literal(a[1:-1]) for a in alts):
+        vals = [literal(a[1:-1]) for a in alts]
+        return ("is one of " + ", ".join(vals)) if len(vals) > 1 else f"is {vals[0]}"
+    if p.startswith("^(") and p.endswith(")$") and all(literal(a) for a in p[2:-2].split("|")):
+        vals = [literal(a) for a in p[2:-2].split("|")]
+        return ("is one of " + ", ".join(vals)) if len(vals) > 1 else f"is {vals[0]}"
+    for test, words, core in ((p.startswith("^") and p.endswith("$"), "is", p[1:-1]),
+                              (p.startswith("^"), "starts with", p[1:]), (p.endswith("$"), "ends with", p[:-1]),
+                              (True, "contains", p)):
+        if test and core and literal(core) is not None:
+            return f"{words} {literal(core)}"
+    return f"matches the pattern {p}"
+
+
+def _n(n, word):
+    return f"{n} {word}{'' if n == 1 else 's'}"
+
+
+def _field_words(field):
+    if str(field).startswith("column:"):
+        return f"the {field[7:]} column"
+    return FIELD_WORDS.get(field, field)
+
+
+def convention_rows(plan, cfg, examples=25):
+    """Every rule that names Safes (and their standard member groups), in plain words, so
+    the same convention can name new Safes once Privilege Cloud is live."""
+    from .naming import DEFAULT_ABBREVIATIONS, Namer, default_layers, norm
+    conv, sn = cfg.get("safe_convention") or {}, cfg["safe_name"]
+    sep = conv.get("separator", "-")
+    rows = [
+        ["Pattern", "Safes for accounts with folders", conv.get("template") or "{folder}",
+         "the account is in a folder", "each placeholder becomes a short code; codes are joined with " + repr(sep)],
+        ["Pattern", "Safes for accounts without folders", conv.get("template_no_folders") or "",
+         "the account has no folder", ""],
+        ["Pattern", "Naming", cfg.get("fallback_strategy", "convention"), "no exception below applies",
+         "convention = the patterns above; folder_leaf / folder_path = the folder name as is; unmapped = UNMAPPED"],
+        ["Limit", "Maximum length", sn["max_length"], "always",
+         "too long: long folder names become initials, then the top folder levels are left out, then the end is cut"],
+        ["Limit", "Forbidden characters", sn["invalid_chars"], "always", f"each becomes '{sn['replacement']}'"],
+        ["Limit", "Prefix", sn.get("prefix") or "(none)", "every Safe", "counts toward the maximum length"],
+        ["Limit", "Accounts per Safe", cfg.get("safe_max_accounts") or "(no limit)", "always",
+         "over the limit: split into numbered Safes (" + sep + "01, " + sep + "02...) by address"
+         if cfg.get("safe_split_over_max") else "over the limit: flagged for a look"],
+        ["Limit", "Same name twice", f"{sn['replacement'] or '-'}2, {sn['replacement'] or '-'}3...", "two Safes end up with one name",
+         "the later Safe gets the suffix, still within the maximum length"],
+        ["Limit", "Repeated codes", "", "a code already appears earlier in the name", "it is left out the second time"],
+        ["Placeholder", "{folder}", "", "the account has folders",
+         "every folder level, in order, each abbreviated (see Abbreviation rows)"],
+        ["Placeholder", "{folder_leaf}", "", "the account has folders", "the last folder level only, abbreviated"],
+    ]
+    layers = {k: v for k, v in (conv.get("layers") or default_layers()).items()}
+    for name, base in default_layers().items():
+        layers.setdefault(name, base)
+    for name, layer in layers.items():
+        label = layer.get("label") or name
+        for r in layer.get("rules") or []:
+            when = f"{_field_words(r.get('field'))} {_plain_pattern(r.get('pattern'))}"
+            if r.get("field2"):
+                when += f" and {_field_words(r['field2'])} {_plain_pattern(r.get('pattern2'))}"
+            rows.append(["Placeholder", "{%s}" % name, r.get("code") or "(left out)", when, label])
+        rows.append(["Placeholder", "{%s}" % name, layer.get("default") or "(left out)", "no row above matches",
+                     label + ": default"])
+    for r in cfg.get("folder_rules") or []:
+        rows.append(["Exception", "Folder → Safe", r.get("safe", ""), f"the folder is {r.get('folder_prefix', '')} or under it",
+                     "the most specific folder wins"])
+    for r in cfg.get("group_rules") or []:
+        what = f"the access group is {r['group']}" if r.get("group") else \
+            f"the access group {_plain_pattern(r.get('group_pattern'))}"
+        rows.append(["Exception", "Access group → Safe", r.get("safe", ""), what, "first match wins"])
+    # Abbreviations: yours first, then the codes the loaded folders got, then the dictionary.
+    namer = Namer(cfg)
+    yours = {norm(k) for k in (conv.get("abbreviations") or {})}
+    for word, code in sorted((conv.get("abbreviations") or {}).items(), key=lambda kv: kv[0].lower()):
+        rows.append(["Abbreviation", word, code, "a folder name or word", "yours"])
+    counts = {}
+    for p in plan.accounts:
+        for level in p.rec.folder:
+            counts[level] = counts.get(level, 0) + 1
+    for s in namer.suggest(counts):
+        if not s["yours"]:
+            rows.append(["Abbreviation", s["folder"], s["code"], "a folder name",
+                         ("automatic" if s["automatic"] else "built-in") + f", used by {_n(s['accounts'], 'account')}"])
+    for word, code in sorted(DEFAULT_ABBREVIATIONS.items()):
+        if norm(word) not in yours and code:
+            rows.append(["Abbreviation", word, code, "a folder name or word", "built-in"])
+    rows.append(["Abbreviation", "(any other word)", "", "no abbreviation above",
+                 "automatic: up to 4 letters, CamelCase and compound words become initials (SharePoint → SP)"])
+    std = cfg.get("standard_members") or {}
+    if (std.get("apply_to") or "no_source_members") != "off":
+        where = "every Safe" if std.get("apply_to") == "all" else "Safes with no members from the source"
+        for r in std.get("members") or []:
+            rows.append(["Member group", r.get("name", ""), r.get("role", ""), where,
+                         f"{r.get('member_type') or 'Group'}; {{safe}} = the Safe's name"
+                         + (f"; searchIn {r['search_in']}" if r.get("search_in") else "")])
+    shown = 0
+    for name, s in plan.safes.items():
+        if shown >= examples:
+            break
+        folders = sorted(f for f in s["folders"] if f and f != "\\")
+        rows.append(["Example", name, "", "; ".join(folders[:2]) or "accounts without folders",
+                     f"{len(name)} characters, {_n(s['accounts'], 'account')}"])
+        shown += 1
+    return rows
+
+
+def write_convention(plan, cfg, out_dir):
+    path = Path(out_dir) / "review" / "SafeNamingConvention.csv"
+    with _open(path) as fh:
+        w = csvsafe.SafeWriter(csv.writer(fh))
+        w.writerow(CONVENTION_HEADER)
+        for row in convention_rows(plan, cfg):
+            w.writerow(row)
+    return path

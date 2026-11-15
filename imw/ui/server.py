@@ -50,6 +50,7 @@ from ..transform import (PERM_GROUP_COLUMNS, PERM_ROLE_COLUMNS, PERM_USER_COLUMN
 from .auth import get_authenticator
 from .tls import fingerprint, server_context, trust_certificate
 from .winfront import bring_to_front
+from ..writers import CONVENTION_HEADER, convention_rows
 from ..owner import claim_workspace, peer_is_owner
 
 log = logging.getLogger("imw.ui")
@@ -1121,10 +1122,13 @@ class App:
                 "summary": summary}
 
     def export_csv(self, what):
-        """Every row of the activity log or of the changes, as CSV text."""
+        """Every row of the activity log or of the changes, or the Safe naming convention, as CSV text."""
         st = self.store()
         try:
-            if what == "audit":
+            if what == "convention":
+                cfg = self.config()
+                cols, rows = CONVENTION_HEADER, convention_rows(st.plan(cfg), cfg)
+            elif what == "audit":
                 cols, rows = st.query("SELECT id, ts, user, host, action, detail FROM audit ORDER BY id")
             else:
                 cols, rows = st.query("SELECT record_id, field, value, changed_utc, changed_by, reason "
@@ -1407,7 +1411,7 @@ def make_handler(app, port, scheme="https"):
                 if not self._unlocked():
                     return self._send(HTTPStatus.LOCKED, {"error": "locked"})
                 what = url.path.rsplit("/", 1)[-1].replace(".csv", "")
-                if what not in ("audit", "edits"):
+                if what not in ("audit", "edits", "convention"):
                     return self._send(HTTPStatus.NOT_FOUND, {"error": "not found"})
                 try:
                     with app.lock:
@@ -1416,7 +1420,7 @@ def make_handler(app, port, scheme="https"):
                     return self._send(exc.status, {"error": str(exc)})
                 stamp = time.strftime("%Y%m%d-%H%M%S")
                 return self._send(HTTPStatus.OK, text.encode("utf-8"), "text/csv; charset=utf-8",
-                                  {"Content-Disposition": f'attachment; filename="imw_{what}_{stamp}.csv"'})
+                                  {"Content-Disposition": f'attachment; filename="imw_{"safe_naming_convention" if what == "convention" else what}_{stamp}.csv"'})
             name = App.OPEN_ROUTES.get((method, url.path))
             if name:
                 self._unlocked(touch=False)          # applies the idle lock before answering

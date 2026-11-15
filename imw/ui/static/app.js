@@ -1023,6 +1023,8 @@ PAGES["rules-safes"] = () => rulesPage("rules-safes",
         <div class="row"><label class="inline">Leave out folder levels <input type="text" id="conv-skip" size="24" value="${esc((conv.skip_folder_levels || []).join(", "))}" placeholder="e.g. Root"></label>
           <label class="inline">Safes with more than <input type="text" id="max-acc" size="6" value="${esc(cfg.safe_max_accounts)}"> accounts:
             <select id="split">${[["", "flag them for a look"], ["1", "split them into numbered Safes (-01, -02…)"]].map(([v, l]) => `<option value="${v}" ${(cfg.safe_split_over_max ? "1" : "") === v ? "selected" : ""}>${l}</option>`).join("")}</select></label></div></div>
+        <p class="small"><a class="btn small" href="#" data-export="convention" title="Every naming rule in plain words, as saved (patterns, placeholder codes, abbreviations, limits, standard member groups and example names), to keep naming new Safes the same way once Privilege Cloud is live. Click Save &amp; apply first to include changes on this page. The same file is written as review/SafeNamingConvention.csv with every set of upload files.">Download the naming convention (CSV)</a>
+          <span class="muted">to keep naming new Safes the same way after the migration</span></p>
         <p class="muted small">⚠ Safe names are always cut to ${cfg.safe_name.max_length} characters, and the characters <code>${esc(cfg.safe_name.invalid_chars)}</code> become "${esc(cfg.safe_name.replacement)}". The preview at the bottom of the window shows the result as you type.</p></div>
       ${flatCard}
       <details class="card fold" data-block="codes"><summary>Codes used in names <span class="muted small" style="font-weight:400">· folder abbreviations, other words and placeholders such as {env}: most migrations leave these as they are</span></summary>
@@ -2232,19 +2234,23 @@ PAGES.activity = async () => {
       ${d.audit.map(a => `<tr><td class="small nowrap">${esc(String(a.ts || "").slice(0, 19).replace("T", " "))}</td><td>${esc(a.user)}</td><td class="nowrap">${esc(ACTION_NAMES[a.action] || a.action)}</td><td title="${esc(a.detail)}">${esc(describeAudit(a.action, a.detail))}</td></tr>`).join("")}</table></div></div>
     <div class="card"><h3>Your changes to accounts</h3><div class="tablewrap"><table><tr><th>Account</th><th>Field</th><th>Value</th><th>When</th><th>Who</th><th>Reason</th></tr>
       ${d.edits.map(e => `<tr><td class="small">${esc(e.record_id)}</td><td>${esc(e.field)}</td><td>${esc(e.value)}</td><td class="small">${esc(e.changed_utc)}</td><td>${esc(e.changed_by)}</td><td>${esc(e.reason)}</td></tr>`).join("") || '<tr><td colspan="6" class="muted">None</td></tr>'}</table></div></div>`;
-  // Fetched by the page itself, then saved: works the same with a self-signed certificate.
-  document.querySelectorAll("[data-export]").forEach(a => a.onclick = async (e) => {
-    e.preventDefault();
-    const r = await fetch(`/api/export/${a.dataset.export}.csv`, { headers: { "X-IMW": "1" } });
-    if (r.status === 423) return showLogin("Locked after inactivity. Sign in again to continue.");
-    if (!r.ok) return alert("Export failed: " + r.statusText);
-    const name = (r.headers.get("Content-Disposition") || "").match(/filename="([^"]+)"/);
-    const url = URL.createObjectURL(await r.blob());
-    const link = Object.assign(document.createElement("a"), { href: url, download: name ? name[1] : a.dataset.export + ".csv" });
-    document.body.appendChild(link); link.click(); link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
-  });
 };
+
+// CSV downloads (activity log, account changes, Safe naming convention): fetched by the page
+// itself, then saved, which works the same with a self-signed certificate.
+document.addEventListener("click", async (e) => {
+  const a = e.target.closest && e.target.closest("[data-export]");
+  if (!a) return;
+  e.preventDefault();
+  const r = await fetch(`/api/export/${a.dataset.export}.csv`, { headers: { "X-IMW": "1" } });
+  if (r.status === 423) return showLogin("Locked after inactivity. Sign in again to continue.");
+  if (!r.ok) return alert("Export failed: " + r.statusText);
+  const name = (r.headers.get("Content-Disposition") || "").match(/filename="([^"]+)"/);
+  const url = URL.createObjectURL(await r.blob());
+  const link = Object.assign(document.createElement("a"), { href: url, download: name ? name[1] : a.dataset.export + ".csv" });
+  document.body.appendChild(link); link.click(); link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+});
 
 // Links and buttons in generated markup use data-* attributes instead of inline onclick
 // handlers, so the page's Content-Security-Policy can refuse every inline script.

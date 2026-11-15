@@ -239,7 +239,9 @@ class SecretsStayOutOfReviewFiles(Base):
         cfg = self.tmp / "cfg.json"
         cfg.write_text('{"default_platform": "WinServerLocal"}', encoding="utf-8")
         out = self.convert(src, config=cfg, extra=extra)
-        return "".join(f.read_text(encoding="utf-8") for f in (out / "review").glob("*.csv")), out
+        # SafeNamingConvention.csv is the naming rules in words ("a folder name or word"...), not record data.
+        return "".join(f.read_text(encoding="utf-8") for f in (out / "review").glob("*.csv")
+                       if f.name != "SafeNamingConvention.csv"), out
 
     def test_secret_like_columns(self):
         src = self.tmp / "aws.csv"

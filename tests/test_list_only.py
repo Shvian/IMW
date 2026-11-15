@@ -13,7 +13,7 @@ from imw.config import STANDARD_MEMBER_SET, config_from_dict
 from imw.model import Grant, SourceRecord
 from imw.naming import address_domain
 from imw.transform import STANDARD_NOTE, build_plan
-from imw.writers import groups_to_create, write_review
+from imw.writers import convention_rows, groups_to_create, write_convention, write_review
 
 LIST = SAMPLES / "accounts_list_only.csv"
 
@@ -166,6 +166,28 @@ class StandardMembers(Base):
                                                        self.tmp / "none")])
 
 
+class NamingConventionFile(Base):
+    def test_rows_in_plain_words(self):
+        cfg = config_from_dict({"standard_members": {"members": STANDARD_MEMBER_SET},
+                                "safe_convention": {"template_no_folders": "{env}-{site}-{tech}",
+                                                    "abbreviations": {"Storefront": "SF"},
+                                                    "layers": {"site": {"label": "Site", "default": "X", "rules": [
+                                                        {"field": "column:Site", "pattern": "^Boston$", "code": "BOS"}]}}}})
+        plan = build_plan(records(cfg), cfg)
+        path = write_convention(plan, cfg, self.tmp)
+        rows = read_csv(path)
+        got = {(r["Section"], r["Item"], r["Code_Or_Value"], r["Applies_When"]) for r in rows}
+        self.assertIn(("Pattern", "Safes for accounts without folders", "{env}-{site}-{tech}", "the account has no folder"), got)
+        self.assertIn(("Placeholder", "{site}", "BOS", "the Site column is Boston"), got)
+        self.assertIn(("Placeholder", "{site}", "X", "no row above matches"), got)
+        self.assertIn(("Placeholder", "{tech}", "DOM", "the platform ID is WinDomain"), got)
+        self.assertIn(("Abbreviation", "Storefront", "SF", "a folder name or word"), got)
+        self.assertIn(("Limit", "Maximum length", "28", "always"), got)
+        self.assertIn(("Member group", "{safe}-Owners", "Full", "Safes with no members from the source"), got)
+        self.assertTrue(any(r["Section"] == "Example" and r["Applies_When"] == "accounts without folders" for r in rows))
+        self.assertEqual(sum(1 for r in convention_rows(plan, cfg) if r[0] == "Abbreviation" and r[1] == "Storefront"), 1)
+
+
 class ListOnlyUi(test_ui.UiServer):
     def setUp(self):
         super().setUp()
@@ -208,6 +230,10 @@ class ListOnlyUi(test_ui.UiServer):
         st, out = self.req("POST", "/api/extract", {"name": "t1"})
         self.assertEqual(st, 200, out)
         self.assertIn("review/MemberGroups_To_Create.csv", out["files"])
+        self.assertIn("review/SafeNamingConvention.csv", out["files"])
+        st, text = self.req("GET", "/api/export/convention.csv")
+        self.assertEqual(st, 200)
+        self.assertIn("{safe}-Owners", text.decode("utf-8-sig"))
 
 
 # Only this class's own tests: the server tests it builds on run in test_ui.

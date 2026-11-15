@@ -12,7 +12,7 @@ from .config import load_config, write_default_config
 from .protect import ProtectError
 from .store import REPORTS, Store, StoreError, print_table, run_extract
 from .transform import sanitize_record, Permissions, build_plan, load_overrides
-from .writers import write_manifest, write_review, write_upload
+from .writers import write_convention, write_manifest, write_review, write_upload
 
 log = logging.getLogger("imw")
 
@@ -289,7 +289,7 @@ def cmd_convert(args):
         return 2
     plan = build_plan(records, cfg, perms, overrides)
 
-    files = write_review(plan, out_dir)
+    files = write_review(plan, out_dir) + [write_convention(plan, cfg, out_dir)]
     upload_files, counts = write_upload(plan, cfg, out_dir, args.include_secrets)
     files += upload_files
     counts.update(records=len(plan.accounts))

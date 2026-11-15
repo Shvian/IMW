@@ -30,7 +30,7 @@ from .model import Grant, SourceRecord
 from .owner import OwnerError, current_identity, restrict
 from .protect import ProtectError, get_protector, new_salt
 from .transform import SAFE_OVERRIDE_KEYS, _changed, build_plan, rebuild_totals, safe_settings, sanitize_record
-from .writers import write_manifest, write_review, write_upload
+from .writers import write_convention, write_manifest, write_review, write_upload
 
 log = logging.getLogger("imw.store")
 SCHEMA_VERSION = "1"
@@ -649,7 +649,7 @@ def run_extract(store, out_dir, where=None, include_secrets=False, params=(), la
     plan, cfg = extract_plan(store, where, include_secrets, params)
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    files = write_review(plan, out_dir)
+    files = write_review(plan, out_dir) + [write_convention(plan, cfg, out_dir)]
     upload_files, counts = write_upload(plan, cfg, out_dir, include_secrets)
     files += upload_files
     counts.update(records=len(plan.accounts), filter=label or where or "",
