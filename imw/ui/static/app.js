@@ -272,7 +272,7 @@ const TIP_ID = {
 };
 const MEMBER_TYPES = ["Group", "User", "Role"];
 const SM_TIP = {
-  name: "The member's name on each Safe. {safe} becomes the Safe's final name (after splitting, cleanup and your renames).\nExamples: {safe}-Owners → P-BOS-SVR-WIN-LA-Owners · PAM-{safe}-Users · CORP\\{safe}-Approvers (E. Member names then converts the domain) · PAM-Vault-Admins (no {safe}: the same member on every Safe)",
+  name: "The member's name on each Safe. {safe} becomes the Safe's final name (after splitting, cleanup and your renames).\nExamples: {safe}-Owners → P-BOS-SVR-WIN-LA-Owners · PAM-{safe}-Users · CORP\\{safe}-Approvers (C. Safe members then converts the domain) · PAM-Vault-Admins (no {safe}: the same member on every Safe)",
   member_type: "Group = a directory or Privilege Cloud group (the usual choice); Role = a CyberArk Identity role; User = one person's account.",
   role: "Permission preset or custom role this member gets on every Safe. At least one row should be Full, so someone can manage each Safe and its members.",
   search_in: "Optional searchIn for these members. Leave empty so Privilege Cloud searches every directory. Fill it only when the name exists in more than one directory: the directory's ID (GUID) from Identity, or Vault.",
@@ -504,7 +504,7 @@ const PICK_FIELDS = [["name", "Account name", "The account's display name, e.g. 
   ["address", "Address", "Host name, IP address or URL the account is for, e.g. TargetHost or Server."],
   ["username", "Username", "The account's user name, e.g. SAMAccountName or Login."],
   ["folder", "Folder path", "Folder the account sits in; Safes are named from it, e.g. \\IT\\Windows."],
-  ["type", "Record type", "A type or template column; the platform is chosen from it (step 2 C. Platforms)."],
+  ["type", "Record type", "A type or template column; the platform is chosen from it (step 2 D. Platforms)."],
   ["password", "Password", "The column holding the password. Never shown in the review files."],
   ["private_key", "SSH key", "A column holding a private SSH key, if any."],
   ["access", "Access groups", "Who has access, e.g. CORP\\DBA-Team=Owner; CORP\\Ops=View."],
@@ -772,8 +772,8 @@ function updateBlockCount(id) {
 }
 let onTableCount = null;   // a page can listen for row counts changing (the Safes page's placeholder summaries)
 const normName = (t) => String(t).toLowerCase().split(/[\s\-_/\\:;,.()\[\]{}"'&+]+/).filter(Boolean).join(" ");
-const RULE_PAGES = [["rules-safes", "A. Safes"], ["rules-members", "B. Safe permissions"], ["rules-platforms", "C. Platforms"],
-  ["rules-accounts", "D. Accounts"], ["rules-dir", "E. Member names"], ["rules-json", "Advanced: settings file (JSON)"]];
+const RULE_PAGES = [["rules-safes", "A. Safes"], ["rules-members", "B. Safe permissions"], ["rules-dir", "C. Safe members"],
+  ["rules-platforms", "D. Platforms"], ["rules-accounts", "E. Accounts"], ["rules-json", "Advanced: settings file (JSON)"]];
 
 // One settings page: its own cards and its own Save & apply, which saves only its keys.
 async function rulesPage(page, intro, render) {
@@ -894,7 +894,7 @@ function wirePreviewDock(view) {
 const previewApi = (kind) => (patch) => api("/api/rules/preview", patch.__full ? { kind, config: patch.__full } : { kind, patch });
 const countsSummary = (m) => `${m.accounts} accounts in ${m.safes} Safes`;
 
-/* A. Directory sources */
+/* C. Safe members: member names, domain conversion and directory sources */
 PAGES["rules-dir"] = () => rulesPage("rules-dir",
   "How the users, groups and roles that have access in your source export become Safe members in Privilege Cloud. Each source is a rule: which members it takes, and how their names are converted to match Privilege Cloud.",
   ({ config: cfg }) => {
@@ -1263,7 +1263,7 @@ PAGES["rules-members"] = () => rulesPage("rules-members",
       <div class="card" id="std-card"><h3>Standard member groups for each Safe <span class="muted small">(for a plain accounts list with no permissions; empty unless you add rows)</span></h3>
         <p class="small">The same set of members on every Safe, each named after its Safe: <code>{safe}-Owners</code> on the Safe <code>P-BOS-SVR-WIN-LA</code> is the group
           <code>P-BOS-SVR-WIN-LA-Owners</code>. A row without <code>{safe}</code> (for example <code>PAM-Vault-Admins</code>) adds that one member to every Safe.
-          Names then go through <b>E. Member names</b> (domain conversion and directory sources) like any other member. The groups must exist in your directory
+          Names then go through <b>C. Safe members</b> (domain conversion and directory sources) like any other member. The groups must exist in your directory
           before the upload: <b>4. Create upload files</b> writes the list as <code>review/MemberGroups_To_Create.csv</code>.</p>
         <div class="row"><label class="inline">Add them to <select id="std-apply">${[["no_source_members", "Safes that get no members from the source (recommended)"],
             ["all", "every Safe, next to the source's members"], ["off", "no Safe (keep the rows, add nothing)"]].map(([v, l]) =>
@@ -1353,7 +1353,7 @@ PAGES["rules-members"] = () => rulesPage("rules-members",
     };
   });
 
-/* C. Platforms */
+/* D. Platforms */
 PAGES["rules-platforms"] = () => rulesPage("rules-platforms",
   "Which Privilege Cloud platform each account uses. The platform decides how Privilege Cloud connects to the account and changes its password.",
   ({ config: cfg, hints }) => {
@@ -1405,7 +1405,7 @@ PAGES["rules-platforms"] = () => rulesPage("rules-platforms",
     };
   });
 
-/* D. Accounts */
+/* E. Accounts */
 PAGES["rules-accounts"] = () => rulesPage("rules-accounts",
   "How each account is named and which extra source columns become account properties.",
   ({ config: cfg }) => {
