@@ -657,6 +657,9 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
         if getattr(p, "by_convention", False) and len(folders) > 1:
             p.safe_notes.append(f"Safe shared by {len(folders)} source folders; check least privilege")
 
+    if cfg.get("safe_split_over_max"):
+        split_large_safes(plans, cfg)
+
     # Clean Safe names and resolve collisions across the whole run.
     cleaned = {}
     for p in plans:
@@ -705,6 +708,44 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
     flag_safes_without_full_member(safes, members, cfg)
     return Plan(plans, safes, members,
                 list(member_edits or []), dict(member_overrides or {}), dict(safe_overrides))
+
+
+SPLIT_NOT_FOR = ("source", "override")     # a Safe the source or you named is never split
+
+
+def split_large_safes(plans, cfg):
+    """Spread the accounts of a Safe over the account limit over numbered Safes (NAME-01,
+    NAME-02...), of about the same size. Accounts are sorted by address, then username, so
+    one server's accounts stay together. Only accounts that migrate count towards the limit;
+    the others go along with their neighbours. Adding accounts later can move the boundaries."""
+    limit = int(cfg.get("safe_max_accounts") or 0)
+    if limit <= 0:
+        return
+    sep = (cfg.get("safe_convention") or {}).get("separator", "-") or "-"
+    max_len = cfg["safe_name"]["max_length"]
+    groups = OrderedDict()
+    for p in plans:
+        if p.safe_source not in SPLIT_NOT_FOR:
+            groups.setdefault(p.proposed_safe, []).append(p)
+    for base, items in groups.items():
+        migrating = sum(1 for p in items if p.migrate == "Y")
+        if migrating <= limit:
+            continue
+        parts = -(-migrating // limit)
+        per = -(-migrating // parts)
+        items.sort(key=lambda p: (p.rec.address.strip().lower(), p.rec.username.strip().lower(), p.rec.record_id))
+        digits = max(2, len(str(parts)))
+        part, filled = 1, 0
+        for p in items:
+            if p.migrate == "Y":
+                if filled == per and part < parts:
+                    part, filled = part + 1, 0
+                filled += 1
+            suffix = f"{sep}{part:0{digits}d}"
+            p.proposed_safe = base[: max_len - len(suffix)].rstrip(" " + sep) + suffix
+            p.safe_notes.append(f"Safe split: '{base}' would hold {migrating} accounts, over the {limit} "
+                                f"per Safe, so its accounts are spread over {parts} Safes by address "
+                                f"(part {part} of {parts})")
 
 
 DUPLICATE_NOTE = "possible duplicate"
@@ -971,11 +1012,14 @@ def _safes(plans, cfg=None, safe_overrides=None):
         # this Safe itself applies (the renamed Safes' other settings don't follow them).
         if name.lower() in {n.lower() for n in s["rule_names"]}:
             s["override"] = safe_overrides.get(name.lower())
+    standard = bool(standard_member_rows(cfg or {}))     # those Safes get the standard members
     for s in safes.values():
         n = s.pop("no_access", 0)
-        if n:
-            s["issues"].add(f"{n} of its accounts have no access groups in the source"
-                            if n < s["accounts"] else "no access groups in the source for any of its accounts")
+        if n and n < s["accounts"]:
+            s["issues"].add(f"{n} of its accounts have no access groups in the source")
+        elif n and not standard:
+            s["issues"].add("no access groups in the source for any of its accounts; "
+                            "Standard member groups (Mapping rules B) can give it members")
     if limit:
         for s in safes.values():
             if s["accounts"] > limit:
@@ -1033,6 +1077,13 @@ def _members(plans, cfg, edits=None, overrides=None):
         m["rule_name"] = m["member_name"]
         m["sources"] = [m["source_name"]]
         m["notes"] = []
+    _add_standard_members(members, plans, cfg)
+    for m in members.values():
+        if m.get("standard"):
+            m["member_name"], search_in, src = member_target(m["source_name"], cfg, m["member_type"])
+            m["search_in"] = m["fixed_search_in"] if m.get("fixed_search_in") else search_in
+            m["directory_source"] = src or STANDARD_SOURCE
+            m["rule_name"] = m["member_name"]
     apply_member_overrides(members, overrides)
     members = _merge_members(members, cfg)
     for m in members.values():
@@ -1040,14 +1091,77 @@ def _members(plans, cfg, edits=None, overrides=None):
         if len(m["seen"]) > 1:
             notes.append("mixed source permissions " + "/".join(sorted(m["seen"])) +
                          "; strongest used, Safe-level access widens it")
-        if not m["role"]:
+        if not m["role"] and m.get("standard"):
+            notes.append("no role chosen for this standard member group")
+        elif not m["role"]:
             notes.append(f"no role for permission '{m['permission']}'; add it to permission_map")
         elif m["role"] not in all_roles(cfg):
             notes.append(f"role '{m['role']}' is not a preset or custom role")
+        if m.get("standard"):
+            notes.extend(standard_member_notes(m["member_name"], m["member_type"]))
         m["notes"] = notes + m["notes"]
         m.pop("ids", None)
     apply_member_edits(members, plans, edits)
     return members
+
+
+STANDARD_SOURCE = "standard member groups"
+STANDARD_NOTE = {"Group": "standard member group: create the group in your directory before the upload",
+                 "Role": "standard member group: create the role in CyberArk Identity before the upload"}
+STANDARD_PLACEHOLDERS = re.compile(r"\{(\w*)\}")
+# Characters Active Directory does not allow in a group's pre-Windows 2000 name.
+AD_GROUP_INVALID = re.compile(r'["/\[\]:;|=,+*?<>]')
+AD_GROUP_MAX = 64
+
+
+def standard_member_rows(cfg):
+    std = cfg.get("standard_members") or {}
+    if (std.get("apply_to") or "no_source_members") == "off":
+        return []
+    return [r for r in std.get("members") or [] if clean_line(r.get("name"))]
+
+
+def expand_member_template(template, safe):
+    return clean_line(str(template).replace("{safe}", safe))
+
+
+def standard_member_notes(name, member_type):
+    notes = [STANDARD_NOTE[member_type]] if member_type in STANDARD_NOTE else []
+    short = name.rsplit("\\", 1)[-1].split("@", 1)[0]
+    if member_type == "Group":
+        bad = sorted(set(AD_GROUP_INVALID.findall(short)))
+        if bad:
+            notes.append("CHECK: Active Directory does not allow " + " ".join(bad) + " in group names")
+        if len(short) > AD_GROUP_MAX:
+            notes.append(f"CHECK: {len(short)} characters; Active Directory group names are at most {AD_GROUP_MAX}")
+    return notes
+
+
+def _add_standard_members(members, plans, cfg):
+    """The standard member groups (standard_members) for each Safe that gets accounts."""
+    rows = standard_member_rows(cfg)
+    if not rows:
+        return
+    every = (cfg.get("standard_members") or {}).get("apply_to") == "all"
+    from_source = {safe.lower() for safe, _ in members}
+    by_safe = OrderedDict()
+    for p in plans:
+        if p.uploadable:
+            by_safe.setdefault(p.safe, set()).add(id(p))
+    for safe, ids in by_safe.items():
+        if not every and safe.lower() in from_source:
+            continue
+        for r in rows:
+            name = expand_member_template(r["name"], safe)
+            key = (safe, "std:" + name.lower())
+            if key in members:
+                continue
+            mtype = normalize_member_type(r.get("member_type"), "Group")
+            role = resolve_role(r.get("role"), cfg) or clean_line(r.get("role"))
+            members[key] = {"source_name": name, "type": mtype, "member_type": mtype, "role": role,
+                            "permission": "", "accounts": len(ids), "seen": set(), "ids": set(ids),
+                            "standard": True, "template": r["name"], "sources": [name], "notes": [],
+                            "fixed_search_in": clean_line(r.get("search_in"))}
 
 
 def _merge_members(members, cfg):
@@ -1062,6 +1176,8 @@ def _merge_members(members, cfg):
         if cur is None:
             out[key] = m
             continue
+        # Only a member none of the source's members already is needs creating.
+        cur["standard"] = bool(cur.get("standard") and m.get("standard"))
         cur["sources"].extend(m["sources"])
         cur["source_name"] = " | ".join(cur["sources"])
         new_ids = m["ids"] - cur["ids"]

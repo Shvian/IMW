@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import platform as _platform
+from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -148,7 +149,34 @@ def write_review(plan, out_dir):
         for (safe, _), m in plan.members.items():
             w.writerow([safe, m["source_name"], m["member_name"], m["search_in"], m["member_type"],
                         m["permission"], m["role"] or "UNMAPPED", m["accounts"], "; ".join(m["notes"])])
-    return [accounts, safes, members]
+    files = [accounts, safes, members]
+    create = groups_to_create(plan)
+    if create:
+        path = out / "MemberGroups_To_Create.csv"
+        with _open(path) as fh:
+            w = csvsafe.SafeWriter(csv.writer(fh))
+            w.writerow(["Member_Name", "Member_Type", "Search_In", "Safes", "Roles", "Safe_Names", "Notes"])
+            for g in create:
+                w.writerow([g["member_name"], g["member_type"], g["search_in"], len(g["safes"]),
+                            " | ".join(sorted(g["roles"])), " | ".join(g["safes"]), "; ".join(g["notes"])])
+        files.append(path)
+    return files
+
+
+def groups_to_create(plan):
+    """The standard member groups and roles (standard_members) to create in the directory
+    before the upload: one row per name, with the Safes it goes on. Users are left out."""
+    out = OrderedDict()
+    for (safe, _), m in plan.members.items():
+        if not m.get("standard") or m["member_type"] == "User":
+            continue
+        g = out.setdefault((m["member_name"].lower(), m["member_type"]), {
+            "member_name": m["member_name"], "member_type": m["member_type"], "search_in": m["search_in"],
+            "safes": [], "roles": set(), "notes": []})
+        g["safes"].append(safe)
+        g["roles"].add(m["role"] or "UNMAPPED")
+        g["notes"].extend(n for n in m["notes"] if n.startswith("CHECK") and n not in g["notes"])
+    return sorted(out.values(), key=lambda g: g["member_name"].lower())
 
 
 # --------------------------------------------------------------------------- #

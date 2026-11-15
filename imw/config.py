@@ -34,6 +34,13 @@ PERMISSION_PRESETS = {
     "Full": _perms(*[p for p in ALL_PERMISSIONS if p != "requestsAuthorizationLevel2"]),
 }
 
+# The suggested standard member groups (Mapping rules B: "Use the suggested set").
+STANDARD_MEMBER_SET = [
+    {"name": "{safe}-Owners", "member_type": "Group", "role": "Full", "search_in": ""},
+    {"name": "{safe}-Users", "member_type": "Group", "role": "Connect only", "search_in": ""},
+    {"name": "{safe}-Approvers", "member_type": "Group", "role": "Approver", "search_in": ""},
+]
+
 # Role names used before the presets existed -> nearest preset.
 LEGACY_ROLES = {"owner": "Full", "editor": "Accounts manager", "user": "Read only", "viewer": "List only"}
 
@@ -117,6 +124,17 @@ DEFAULT_CONFIG = {
     },
     # Recommended maximum accounts per Safe (CyberArk: 3,000-5,000; hard limit 20,000 objects).
     "safe_max_accounts": 3000,
+    # False: a Safe over safe_max_accounts is only flagged. True: its accounts are spread over
+    # numbered Safes (NAME-01, NAME-02...), sorted by address so one server's accounts stay together.
+    "safe_split_over_max": False,
+    # Standard member groups: the same set of members added to each Safe, named from a pattern
+    # with {safe} (the Safe's final name), e.g. "{safe}-Owners". For sources with no permissions
+    # (a plain accounts list), so every Safe still gets owners, users and approvers.
+    #   apply_to: "no_source_members" (only Safes that get no members from the source),
+    #             "all" (every Safe, next to the source's members), "off"
+    #   members: [{"name": "{safe}-Owners", "member_type": "Group", "role": "Full", "search_in": ""}]
+    # A row without {safe} (e.g. "PAM-Vault-Admins") adds that one member to every Safe.
+    "standard_members": {"apply_to": "no_source_members", "members": []},
     # Platform rules are checked first, in order. "field" is one of: type, folder,
     # name, address, username, or a source column name. "pattern" is a regex.
     "platform_rules": [],

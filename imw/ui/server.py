@@ -38,13 +38,13 @@ from urllib.parse import parse_qs, urlparse
 
 from .. import __version__, csvsafe
 from ..adapters import ADAPTERS, AdapterError, detect_adapter, get_adapter
-from ..config import (ALL_PERMISSIONS, DEFAULT_CONFIG, PERMISSION_PRESETS, config_diff,
+from ..config import (ALL_PERMISSIONS, DEFAULT_CONFIG, PERMISSION_PRESETS, STANDARD_MEMBER_SET, config_diff,
                       all_roles, config_from_dict, load_config, resolve_role)
 from ..model import SourceRecord
-from ..naming import DEFAULT_PLATFORM_CODES, Namer
+from ..naming import DEFAULT_PLATFORM_CODES, Namer, address_domain
 from ..protect import ProtectError
 from ..store import Store, StoreError, run_extract, sha256_file
-from ..transform import (PERM_GROUP_COLUMNS, PERM_ROLE_COLUMNS, PERM_USER_COLUMNS, Permissions,
+from ..transform import (PERM_GROUP_COLUMNS, PERM_ROLE_COLUMNS, PERM_USER_COLUMNS, STANDARD_PLACEHOLDERS, Permissions,
                          apply_member_override, clean_line, member_target,
                          normalize_member_type, safe_settings, sanitize_safe_name)
 from .auth import get_authenticator
@@ -211,6 +211,24 @@ def check_settings(cfg):
         raise UiError("Safes keep either a number of versions or a number of days, not both.")
     for rule in cfg.get("platform_rules") or []:
         rx(rule.get("pattern"), "Platform rule")
+    std = cfg.get("standard_members") or {}
+    if (std.get("apply_to") or "no_source_members") not in ("no_source_members", "all", "off"):
+        raise UiError("Standard member groups: 'add to' must be no_source_members, all or off.")
+    seen = set()
+    for row in std.get("members") or []:
+        name = clean_line(row.get("name"))
+        if not name:
+            raise UiError("Every standard member group row needs a name pattern, for example {safe}-Users.")
+        bad = [p for p in STANDARD_PLACEHOLDERS.findall(name) if p != "safe"]
+        if bad or name.count("{") != name.count("}"):
+            raise UiError(f"Standard member group '{name}': the only placeholder is {{safe}}.")
+        if (row.get("member_type") or "Group").strip().lower() not in ("user", "group", "role"):
+            raise UiError(f"Standard member group '{name}': the member type must be User, Group or Role.")
+        if not resolve_role(row.get("role"), cfg):
+            raise UiError(f"Standard member group '{name}': pick a role (a preset or one of your custom roles).")
+        if name.lower() in seen:
+            raise UiError(f"The standard member group '{name}' is listed twice.")
+        seen.add(name.lower())
 
 
 def looks_like_permissions(path):
@@ -442,11 +460,16 @@ class App:
                 used_platforms = [r[0] for r in st.db.execute(
                     "SELECT DISTINCT platform_id FROM plan_accounts WHERE platform_id <> ''")]
                 hints["columns"] = self._source_columns(st)
+                hints["records"] = st.db.execute("SELECT COUNT(*) FROM records").fetchone()[0]
+                hints["without_folder"] = st.db.execute(
+                    "SELECT COUNT(*) FROM records WHERE folder_json IN ('', '[]')").fetchone()[0]
+                hints["with_grants"] = st.db.execute("SELECT COUNT(DISTINCT record_id) FROM grants").fetchone()[0]
             finally:
                 st.close()
         hints["platforms"] = self._platform_ids(cfg, used_platforms)
         return {"config": cfg, "defaults": DEFAULT_CONFIG, "hints": hints, "saved": self.config_path.exists(),
-                "presets": PERMISSION_PRESETS, "permissions": ALL_PERMISSIONS}
+                "presets": PERMISSION_PRESETS, "permissions": ALL_PERMISSIONS,
+                "standard_member_set": STANDARD_MEMBER_SET}
 
     @staticmethod
     def _source_columns(st):
@@ -523,6 +546,60 @@ class App:
         finally:
             st.close()
         return {"samples": samples, "unknown": unknown, "folder_codes": folder_codes}
+
+    VALUE_FIELDS = ("address_domain", "type", "platform")
+    MAX_LAYER_VALUES = 300
+
+    def api_rules_values(self, body):
+        """The distinct values of one account detail in the loaded records, with how many
+        accounts have each and a suggested 1-4 letter code, so a Safe name placeholder can be
+        built from them (Mapping rules A: "Build Safe names from account details").
+        field: column:<source column>, address_domain, type or platform."""
+        field = str(body.get("field") or "").strip()
+        if not (field.startswith("column:") and field[7:].strip()) and field not in self.VALUE_FIELDS:
+            raise UiError("Pick a source column or account detail first.")
+        user = body.get("config")
+        cfg = config_from_dict(user) if isinstance(user, dict) else self.config()
+        counts, empty = {}, 0
+        if self.db_path.exists():
+            st = self.store()
+            try:
+                rows = st.db.execute("SELECT r.address, r.type, r.username, r.extra_json, p.platform_id "
+                                     "FROM records r LEFT JOIN plan_accounts p USING (record_id)").fetchall()
+            finally:
+                st.close()
+            want = field[7:].strip().lower() if field.startswith("column:") else ""
+            for r in rows:
+                if want:
+                    extra = json.loads(r["extra_json"] or "{}")
+                    v = next((str(x) for k, x in extra.items() if k.lower() == want), "")
+                elif field == "address_domain":
+                    v = address_domain(r["address"])
+                elif field == "platform":
+                    v = r["platform_id"] or ""
+                else:
+                    v = r["type"] or ""
+                v = clean_line(v)
+                if not v:
+                    empty += 1
+                    continue
+                key = v.lower()
+                c = counts.setdefault(key, [v, 0])
+                c[1] += 1
+        namer = Namer(cfg)
+        values, by_code = [], {}
+        for v, n in sorted(counts.values(), key=lambda x: (-x[1], x[0].lower())):
+            pairs = namer.level_codes(v.split(".")[0] if field == "address_domain" else v)
+            codes = [c for _, c in pairs if c]
+            code = codes[0] if len(codes) == 1 else "".join(c[0] for c in codes)[:4]
+            row = {"value": v, "accounts": n, "code": code.upper(), "clash": ""}
+            other = by_code.get(row["code"])
+            if other:
+                row["clash"] = other
+            by_code.setdefault(row["code"], v)
+            values.append(row)
+        return {"field": field, "values": values[: self.MAX_LAYER_VALUES], "distinct": len(values),
+                "empty": empty, "too_many": len(values) > self.MAX_LAYER_VALUES}
 
     PREVIEW_KINDS = ("safes", "members", "platforms", "accounts")
 
@@ -622,11 +699,14 @@ class App:
             old = None
             for src in sources:
                 old = old or saved["members"].get((safe.lower(), (src or "").lower()))
-            row = {"safe": safe, "source": " | ".join(sources), "member_name": m["member_name"],
+            shown = " | ".join(sources)
+            if m.get("standard"):
+                shown = f"(standard member group {m.get('template', '')})"
+            row = {"safe": safe, "source": shown, "standard": bool(m.get("standard")), "member_name": m["member_name"],
                    "member_type": m["member_type"], "search_in": m["search_in"],
                    "permission": m["permission"], "role": m["role"] or "UNMAPPED", "accounts": m["accounts"],
                    "directory_source": m.get("directory_source", ""), "notes": "; ".join(m["notes"])}
-            row["changed"] = ["new"] if old is None and saved["members"] else [
+            row["changed"] = ["new"] if old is None and (saved["members"] or m.get("standard")) else [
                 k for k, col in (("member_name", "member_name"), ("role", "role"), ("search_in", "search_in"),
                                  ("member_type", "member_type")) if old and (old.get(col) or "") != (row[k] or "")]
             rows.append(row)
@@ -1199,7 +1279,7 @@ class App:
         ("POST", "/api/record"): "api_record", ("POST", "/api/edit"): "api_edit",
         ("GET", "/api/safes"): "api_safes", ("POST", "/api/extract"): "api_extract",
         ("POST", "/api/output/delete"): "api_output_delete", ("GET", "/api/audit"): "api_audit",
-        ("POST", "/api/naming/preview"): "api_naming_preview", ("POST", "/api/safes/preview"): "api_safes_preview", ("POST", "/api/rules/preview"): "api_rules_preview",
+        ("POST", "/api/naming/preview"): "api_naming_preview", ("POST", "/api/safes/preview"): "api_safes_preview", ("POST", "/api/rules/preview"): "api_rules_preview", ("POST", "/api/rules/values"): "api_rules_values",
         ("POST", "/api/approve"): "api_approve", ("POST", "/api/open"): "api_open_folder",
         ("POST", "/api/lock"): "api_lock", ("POST", "/api/end"): "api_end", ("POST", "/api/ping"): "api_ping",
         ("POST", "/api/members/preview"): "api_members_preview", ("POST", "/api/members/edit"): "api_members_edit",
