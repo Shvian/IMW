@@ -246,7 +246,7 @@ public static class Cli
         {
             if (!force)
             {
-                Log.Error($"{outDir} is not empty. Use another --output-dir or pass --force to replace it.");
+                Log.Error($"{(OperatingSystem.IsWindows() ? outDir.Replace('/', '\\') : outDir)} is not empty. Use another --output-dir or pass --force to replace it.");
                 return null;
             }
             foreach (var sub in new[] { "review", "upload" })

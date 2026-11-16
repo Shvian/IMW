@@ -212,6 +212,7 @@ def main():
     if work.exists():
         shutil.rmtree(work)
     work.mkdir(parents=True)
+    work = work.resolve()      # the long form (C:\Users\runneradmin, not RUNNER~1), as both programs print it
     pack = None
     if not args.no_pack:
         pack = work / "pack"

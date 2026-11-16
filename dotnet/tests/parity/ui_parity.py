@@ -317,7 +317,7 @@ def main(argv=None):
     args = ap.parse_args(argv)
     imw = Path(args.imw)
     dotnet_cmd = ["dotnet", str(imw)] if imw.suffix == ".dll" else [str(imw)]
-    work = Path(tempfile.mkdtemp(prefix="imw-ui-parity-"))
+    work = Path(tempfile.mkdtemp(prefix="imw-ui-parity-")).resolve()
     py = net = None
     failures = 0
     try:
