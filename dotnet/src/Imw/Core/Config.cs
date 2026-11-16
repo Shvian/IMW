@@ -45,12 +45,12 @@ public static class Config
         ["owner"] = "Full", ["editor"] = "Accounts manager", ["user"] = "Read only", ["viewer"] = "List only",
     };
 
-    static JObj V1PermissionMap() => Json.O(
+    internal static JObj V1PermissionMap() => Json.O(
         ("Owner", "Owner"), ("Full", "Owner"), ("Admin", "Owner"), ("Manage", "Owner"),
         ("Edit", "Editor"), ("Write", "Editor"), ("Modify", "Editor"),
         ("View", "User"), ("Use", "User"), ("Read", "User"), ("Connect", "User"), ("List", "Viewer"));
 
-    static JObj V1RolePermissions() => Json.O(
+    internal static JObj V1RolePermissions() => Json.O(
         ("Owner", Perms(AllPermissions.Where(p => !p.StartsWith("requestsAuthorization")).ToArray()).Cast<object>().ToList()),
         ("Editor", Perms("useAccounts", "retrieveAccounts", "listAccounts", "addAccounts", "updateAccountContent",
             "updateAccountProperties", "initiateCPMAccountManagementOperations", "specifyNextAccountContent",

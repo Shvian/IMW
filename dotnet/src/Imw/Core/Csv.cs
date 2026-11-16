@@ -28,7 +28,7 @@ public sealed record Dialect(char Delimiter = ',', char? QuoteChar = '"', bool D
 /// </summary>
 public static class Csv
 {
-    public const int FieldLimit = 64 * 1024 * 1024;
+    public static int FieldLimit = 64 * 1024 * 1024;     // tests lower it
 
     static Csv()
     {

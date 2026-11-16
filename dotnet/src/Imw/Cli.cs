@@ -508,11 +508,7 @@ public static class Cli
         return 0;
     }
 
-    public static Func<Args, int> UiCommand = _ =>
-    {
-        Console.Error.WriteLine("ERROR: the Workbench UI is not available in this build");
-        return 2;
-    };
+    public static Func<Args, int> UiCommand = Ui.UiServer.Command;
 
     static List<SubCommand> Commands()
     {
