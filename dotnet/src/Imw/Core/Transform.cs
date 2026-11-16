@@ -77,6 +77,16 @@ public sealed class Plan
     public List<JObj> MemberEdits = new();
     public Dictionary<string, JObj> MemberOverrides = new();
     public Dictionary<string, JObj> SafeOverrides = new();
+    // Users who may get their access through a group (see Permissions.Users): one row per folder,
+    // Safe and user, with your decision ("" = none yet, include, exclude).
+    public List<UndecidedUser> Undecided = new();
+    public References Refs;
+}
+
+public sealed class UndecidedUser
+{
+    public string Folder = "", Safe = "", Member = "", MemberName = "", Permission = "", Groups = "", Decision = "", Note = "";
+    public int Accounts;
 }
 
 /// <summary>
@@ -115,6 +125,10 @@ public sealed class Permissions
     public readonly OrderedMap<string, List<Grant>> ById = new(StringComparer.Ordinal);
     public readonly OrderedMap<(string, string), List<Grant>> ByName = new();
     public readonly OrderedMap<string, List<Grant>> ByFolder = new(StringComparer.Ordinal);
+    // Users from a report of effective access per folder (no group column), kept apart so each
+    // can be checked against the groups on the same folder (see Users).
+    public readonly OrderedMap<string, List<Grant>> UsersByFolder = new(StringComparer.Ordinal);
+    public bool HasGroupReport;
     public readonly bool Loaded;
     public readonly List<string> Paths;
 
@@ -155,9 +169,11 @@ public sealed class Permissions
             var permCols = RoleColumns.Where(n => cols.ContainsKey(Py.Lower(n))).Select(n => cols[Py.Lower(n)]).ToList();
             var typeCol = Pick(TypeColumns);
             var domainCol = Pick(DomainColumns);
-            if (userCol != null && groupCol == null)
-                Log.Warning($"{path} lists permissions per user, not per group: each user becomes a Safe member. " +
-                            "Delinea's 'What folder permissions exist for groups?' report keeps the groups.");
+            var userReport = userCol != null && groupCol == null;
+            if (groupCol != null) HasGroupReport = true;
+            if (userReport)
+                Log.Warning($"{path} lists each user's access, including access through a group: a user becomes a " +
+                            "Safe member only where no group on the folder explains it; the others wait for your decision.");
 
             string V(Csv.OrderedRow row, string c) => c == null ? "" : Py.Strip(row[c] ?? "");
 
@@ -193,6 +209,7 @@ public sealed class Permissions
                 var folder = Py.Lower(string.Join("\\", SourceRecord.SplitFolder(Col(row, FolderColumns), "auto")));
                 if (rid.Length > 0) Add(ById.GetOrAdd(rid, () => new()), g);
                 else if (name.Length > 0) Add(ByName.GetOrAdd((folder, Py.Lower(name)), () => new()), g);
+                else if (userReport) Add(UsersByFolder.GetOrAdd(folder, () => new()), g);
                 else Add(ByFolder.GetOrAdd(folder, () => new()), g);
             }
             return 0;
@@ -200,16 +217,59 @@ public sealed class Permissions
     }
 
     public void LogSummary() =>
-        Log.Info($"permissions: {ById.Count + ByName.Count} record-level, {ByFolder.Count} folder-level entries");
+        Log.Info($"permissions: {ById.Count + ByName.Count} record-level, " +
+                 $"{ByFolder.Keys.Union(UsersByFolder.Keys, StringComparer.Ordinal).Count()} folder-level entries");
+
+    /// <summary>0 = strongest (Owner); unknown wording ranks weakest.</summary>
+    public static int PermissionRank(string text)
+    {
+        int i = Array.IndexOf(PermissionOrder, Py.Lower(Py.Strip(text ?? "")));
+        return i < 0 ? PermissionOrder.Length : i;
+    }
+
+    static string Nearest(OrderedMap<string, List<Grant>> index, IList<string> folder)
+    {
+        for (int i = folder.Count; i >= 0; i--)
+        {
+            var cand = string.Join("\\", folder.Take(i));
+            if (index.ContainsKey(cand)) return cand;
+        }
+        return null;
+    }
 
     public (List<Grant>, string) Resolve(SourceRecord rec)
     {
         if (ById.TryGetValue(rec.SourceId, out var g)) return (g, "record");
         var folder = rec.Folder.Select(Py.Lower).ToList();
         if (ByName.TryGetValue((string.Join("\\", folder), Py.Lower(rec.Name)), out g)) return (g, "record");
-        for (int i = folder.Count; i >= 0; i--)
-            if (ByFolder.TryGetValue(string.Join("\\", folder.Take(i)), out g)) return (g, "folder");
+        var at = Nearest(ByFolder, folder);
+        var groups = at != null ? new List<Grant>(ByFolder[at]) : new List<Grant>();
+        var users = Users(folder);
+        if (groups.Count > 0 || users.Count > 0) return (groups.Concat(users).ToList(), "folder");
         return (new List<Grant>(), "none");
+    }
+
+    /// <summary>Users from an effective-access report for this folder, each marked direct (no group on
+    /// the folder gives that much access) or undecided (with the groups that might explain it).</summary>
+    List<Grant> Users(IList<string> folder)
+    {
+        var at = Nearest(UsersByFolder, folder);
+        var outList = new List<Grant>();
+        if (at == null) return outList;
+        // The groups that reach this folder: the nearest folder the group report lists.
+        var gAt = Nearest(ByFolder, at.Length > 0 ? at.Split('\\') : Array.Empty<string>());
+        var onFolder = gAt != null ? ByFolder[gAt] : new List<Grant>();
+        foreach (var u in UsersByFolder[at])
+        {
+            var rank = PermissionRank(u.Permission);
+            var covering = onFolder.Where(x => PermissionRank(x.Permission) <= rank).Select(x => x.Member).ToList();
+            string basis, hint;
+            if (!HasGroupReport) (basis, hint) = ("undecided", "");
+            else if (covering.Count > 0) (basis, hint) = ("undecided", string.Join(", ", covering));
+            else (basis, hint) = ("direct", "");
+            outList.Add(new Grant(u.Member, u.Permission, u.MemberType, basis, hint));
+        }
+        return outList;
     }
 }
 
@@ -635,7 +695,8 @@ public static class Transform
     public static Plan RebuildTotals(Plan plan, JObj cfg)
     {
         plan.Safes = BuildSafes(plan.Accounts, cfg, plan.SafeOverrides);
-        plan.Members = BuildMembers(plan.Accounts, cfg, plan.MemberEdits, plan.MemberOverrides);
+        plan.Undecided = new List<UndecidedUser>();
+        plan.Members = BuildMembers(plan.Accounts, cfg, plan.MemberEdits, plan.MemberOverrides, plan.Refs, plan.Undecided);
         FlagSafesWithoutFullMember(plan.Safes, plan.Members, cfg);
         return plan;
     }
@@ -647,7 +708,7 @@ public static class Transform
     public static Plan BuildPlan(IEnumerable<SourceRecord> records, JObj cfg, Permissions perms = null,
         Dictionary<string, Dictionary<string, string>> overrides = null, bool @explicit = false,
         List<JObj> memberEdits = null, Dictionary<string, JObj> memberOverrides = null,
-        Dictionary<string, JObj> safeOverrides = null)
+        Dictionary<string, JObj> safeOverrides = null, References refs = null)
     {
         safeOverrides ??= new Dictionary<string, JObj>(StringComparer.Ordinal);
         Func<string, string, bool> changed = @explicit ? ExplicitChanged : Changed;
@@ -668,6 +729,13 @@ public static class Transform
             p.Warnings.AddRange(rec.Notes.Where(n => !n.StartsWith(SourceRecord.ErrorNote, StringComparison.Ordinal)));
             p.Errors.AddRange(rec.Notes.Where(n => n.StartsWith(SourceRecord.ErrorNote, StringComparison.Ordinal))
                                        .Select(n => n.Substring(SourceRecord.ErrorNote.Length)));
+            // A secrets export without a template column: the template list gives it.
+            if (refs != null && string.IsNullOrEmpty(rec.Type))
+            {
+                var (tmpl, why) = refs.TemplateFor(rec.Name, rec.Folder);
+                rec.Type = tmpl;
+                if (why.Length > 0) p.Warnings.Add(why);
+            }
             // Access (looked up by the source's own id, before a duplicate id is suffixed)
             if (rec.Grants != null)
             {
@@ -851,11 +919,12 @@ public static class Transform
                                 "already has: their accounts are now in one Safe");
 
         var safes = BuildSafes(plans, cfg, safeOverrides);
-        var members = BuildMembers(plans, cfg, memberEdits, memberOverrides);
+        var undecided = new List<UndecidedUser>();
+        var members = BuildMembers(plans, cfg, memberEdits, memberOverrides, refs, undecided);
         FlagSafesWithoutFullMember(safes, members, cfg);
         return new Plan
         {
-            Accounts = plans, Safes = safes, Members = members,
+            Accounts = plans, Safes = safes, Members = members, Undecided = undecided, Refs = refs,
             MemberEdits = (memberEdits ?? new List<JObj>()).ToList(),
             MemberOverrides = new Dictionary<string, JObj>(memberOverrides ?? new Dictionary<string, JObj>(), StringComparer.Ordinal),
             SafeOverrides = new Dictionary<string, JObj>(safeOverrides, StringComparer.Ordinal),
@@ -1275,20 +1344,69 @@ public static class Transform
     /// <summary>Strongest role per (Safe, member) over the accounts that migrate. The rules give each source
     /// member its target name, your member changes rename it everywhere, rows that now share a target name on
     /// one Safe merge, and last your per-Safe edits apply.</summary>
+    /// <summary>A user's memberName, searchIn and source: the users list turns a full name into the UPN, which
+    /// is the name Privilege Cloud needs, so the member rules only give its searchIn. Also a note when the name
+    /// can't be turned.</summary>
+    public static (string Name, string SearchIn, string Source, string Note) UserTarget(string name, JObj cfg, References refs)
+    {
+        var (upn, note) = refs != null ? refs.UpnFor(name) : (null, "");
+        if (!string.IsNullOrEmpty(upn))
+        {
+            var (_, si, _) = MemberTarget(upn, cfg, "User");
+            return (upn, si, "users list", "");
+        }
+        if (note.Length > 0 && (name.Contains('\\') || name.Contains('@'))) note = "";  // a domain or UPN name
+        var (n, searchIn, src) = MemberTarget(name, cfg, "User");
+        return (n, searchIn, src, note);
+    }
+
+    /// <summary>MemberTarget, with the users list for users (full name -> UPN).</summary>
+    public static (string Name, string SearchIn, string Source) TargetFor(string name, JObj cfg, string memberType, References refs = null)
+    {
+        if (NormalizeMemberType(memberType, "") == "User")
+        {
+            var (n, si, src, _) = UserTarget(name, cfg, refs);
+            return (n, si, src);
+        }
+        return MemberTarget(name, cfg, memberType);
+    }
+
     public static OrderedMap<(string, string), MemberInfo> BuildMembers(List<AccountPlan> plans, JObj cfg,
-        List<JObj> edits = null, Dictionary<string, JObj> overrides = null)
+        List<JObj> edits = null, Dictionary<string, JObj> overrides = null, References refs = null,
+        List<UndecidedUser> undecided = null)
     {
         var members = new OrderedMap<(string, string), MemberInfo>();
+        var held = new OrderedMap<(string, string, string), UndecidedUser>();
+        var why = new Dictionary<MemberInfo, List<string>>(ReferenceEqualityComparer.Instance);
         foreach (var p in plans)
         {
             if (!p.Uploadable) continue;
             foreach (var g in p.Grants)
             {
+                var reason = "";
+                if (g.Basis == "undecided")
+                {
+                    var decision = refs != null ? refs.Decision(p.Rec.Folder, g.Member) : "";
+                    var h = held.GetOrAdd((Py.Lower(p.Rec.FolderPath), p.Safe, Py.Lower(g.Member)), () => new UndecidedUser
+                    {
+                        Folder = p.Rec.FolderPath, Safe = p.Safe, Member = g.Member, Permission = g.Permission,
+                        Groups = g.Hint, Decision = decision,
+                    });
+                    h.Accounts++;
+                    if (decision != "include") continue;
+                    reason = "included by you" + (g.Hint.Length > 0 ? $"; it may also get this access through {g.Hint}" : "");
+                }
+                else if (g.Basis == "direct") reason = "direct access: no group on the folder gives this much access";
                 var role = RoleFor(g.Permission, cfg);
                 var m = members.GetOrAdd((p.Safe, Py.Lower(g.Member)), () => new MemberInfo
                     { SourceName = g.Member, Type = g.MemberType, Role = role, Permission = g.Permission });
                 if (m.Ids.Add(p)) m.Accounts++;
                 m.Seen.Add(string.IsNullOrEmpty(g.Permission) ? "(blank)" : g.Permission);
+                if (reason.Length > 0)
+                {
+                    var lst = why.TryGetValue(m, out var l) ? l : why[m] = new List<string>();
+                    if (!lst.Contains(reason)) lst.Add(reason);
+                }
                 if (RoleRank(role, cfg) > RoleRank(m.Role, cfg)) (m.Role, m.Permission) = (role, g.Permission);
             }
         }
@@ -1296,10 +1414,16 @@ public static class Transform
         foreach (var m in members.Values)
         {
             m.MemberType = NormalizeMemberType(m.Type, defaultType);
-            (m.MemberName, m.SearchIn, m.DirectorySource) = MemberTarget(m.SourceName, cfg, m.MemberType);
+            m.Notes = why.TryGetValue(m, out var w) ? w.ToList() : new List<string>();
+            if (m.MemberType == "User")
+            {
+                var (n, si, src, note) = UserTarget(m.SourceName, cfg, refs);
+                (m.MemberName, m.SearchIn, m.DirectorySource) = (n, si, src);
+                if (note.Length > 0) m.Notes.Add(note);
+            }
+            else (m.MemberName, m.SearchIn, m.DirectorySource) = MemberTarget(m.SourceName, cfg, m.MemberType);
             m.RuleName = m.MemberName;
             m.Sources = new List<string> { m.SourceName };
-            m.Notes = new List<string>();
         }
         AddStandardMembers(members, plans, cfg);
         foreach (var m in members.Values)
@@ -1327,6 +1451,13 @@ public static class Transform
             m.Notes = notes.Concat(m.Notes).ToList();
         }
         ApplyMemberEdits(members, plans, edits);
+        if (undecided != null)
+            foreach (var h in held.Values)
+            {
+                var (n, _, _, note) = UserTarget(h.Member, cfg, refs);
+                (h.MemberName, h.Note) = (n, note);
+                undecided.Add(h);
+            }
         return members;
     }
 

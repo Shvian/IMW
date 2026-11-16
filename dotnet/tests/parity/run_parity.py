@@ -24,6 +24,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 SAMPLES = ROOT / "samples"
+REPORTS = SAMPLES / "delinea_reports"
 
 
 def dotnet_cmd(imw):
@@ -99,6 +100,12 @@ def scenarios(pack):
         ("excel by group", ["-i", str(SAMPLES/"accounts_by_group.xlsx"), "-c", str(SAMPLES/"config_excel.json")]),
         ("inventory csv", ["-i", f"table={SAMPLES/'accounts_inventory.csv'}", "-c", str(SAMPLES/"config_generic.json")]),
         ("list only csv, defaults", ["-i", str(SAMPLES/"accounts_list_only.csv")]),
+        ("delinea reports (real layouts)", ["-i", str(REPORTS/"secrets-export.csv"), "-i", str(REPORTS/"allsecrets.csv"),
+                                            "-i", str(REPORTS/"lagroups.csv"), "--reference", str(REPORTS/"lauserslist.csv"),
+                                            "-p", str(REPORTS/"whatfolderpermissionsexistforgroups.csv"),
+                                            "-p", str(REPORTS/"whatfolderscanalluserssee.csv")]),
+        ("delinea reports, users report only", ["-i", str(REPORTS/"secrets-export.csv"), "--reference", str(REPORTS/"allsecrets.csv"),
+                                                "-p", str(REPORTS/"whatfolderscanalluserssee.csv")]),
         ("everything at once", ["-i", str(SAMPLES/"delinea_export.csv"), "-i", str(SAMPLES/"keepass_export.xml"),
                                 "-i", str(SAMPLES/"accounts_inventory.csv"), "-c", str(SAMPLES/"config_generic.json"),
                                 "--include-secrets"]),
@@ -122,7 +129,10 @@ def store_flow(work, py, net, pack):
     """ingest / map / set / query / extract against one database each."""
     problems = []
     inputs = ["-i", str(SAMPLES/"delinea_export.csv"), "-p", str(SAMPLES/"delinea_permissions.csv"),
-              "-i", str(SAMPLES/"keepass_export.xml")]
+              "-i", str(SAMPLES/"keepass_export.xml"),
+              "-i", str(REPORTS/"secrets-export.csv"), "-i", str(REPORTS/"allsecrets.csv"),
+              "--reference", str(REPORTS/"lauserslist.csv"),
+              "-p", str(REPORTS/"whatfolderpermissionsexistforgroups.csv"), "-p", str(REPORTS/"whatfolderscanalluserssee.csv")]
     if pack:
         inputs += ["-i", str(pack/"inbox"/"it_inventory.xlsx")]
     steps = [

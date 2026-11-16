@@ -533,6 +533,7 @@ class Plan:
     # Users who may get their access through a group (see Permissions._users): one row per
     # folder, Safe and user, with your decision ("" = none yet, include, exclude).
     undecided: list = field(default_factory=list)
+    refs: object = None
 
 
 def load_overrides(path, encoding="utf-8-sig"):
@@ -568,7 +569,8 @@ def _changed(edited, computed):
 def rebuild_totals(plan, cfg):
     """Recompute Safe and member totals after in_scope or migrate changed."""
     plan.safes = _safes(plan.accounts, cfg, plan.safe_overrides)
-    plan.members = _members(plan.accounts, cfg, plan.member_edits, plan.member_overrides)
+    plan.undecided = []
+    plan.members = _members(plan.accounts, cfg, plan.member_edits, plan.member_overrides, plan.refs, plan.undecided)
     flag_safes_without_full_member(plan.safes, plan.members, cfg)
     return plan
 
@@ -765,7 +767,7 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
     members = _members(plans, cfg, member_edits, member_overrides, refs, undecided)
     flag_safes_without_full_member(safes, members, cfg)
     return Plan(plans, safes, members,
-                list(member_edits or []), dict(member_overrides or {}), dict(safe_overrides), undecided)
+                list(member_edits or []), dict(member_overrides or {}), dict(safe_overrides), undecided, refs)
 
 
 SPLIT_NOT_FOR = ("source", "override")     # a Safe the source or you named is never split

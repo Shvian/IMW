@@ -36,7 +36,8 @@ CREATE TABLE IF NOT EXISTS records (
   source_ref TEXT, name TEXT, folder TEXT, folder_json TEXT, type TEXT, address TEXT,
   username TEXT, secret_type TEXT, has_secret INTEGER, secret_enc TEXT, has_grants INTEGER,
   access_source TEXT, target_safe TEXT, target_platform TEXT, extra_json TEXT, notes_json TEXT);
-CREATE TABLE IF NOT EXISTS grants (record_id TEXT, member TEXT, permission TEXT, member_type TEXT);
+CREATE TABLE IF NOT EXISTS grants (record_id TEXT, member TEXT, permission TEXT, member_type TEXT,
+  basis TEXT DEFAULT '', hint TEXT DEFAULT '');
 CREATE INDEX IF NOT EXISTS grants_record ON grants(record_id);
 CREATE TABLE IF NOT EXISTS edits (
   record_id TEXT, field TEXT, value TEXT, changed_utc TEXT, changed_by TEXT, reason TEXT,
@@ -65,6 +66,14 @@ CREATE TABLE IF NOT EXISTS safe_overrides (
   safe_key TEXT PRIMARY KEY, settings_json TEXT, changed_utc TEXT, changed_by TEXT, reason TEXT);
 CREATE TABLE IF NOT EXISTS approvals (
   record_id TEXT PRIMARY KEY, fingerprint TEXT, approved_utc TEXT, approved_by TEXT, reason TEXT);
+CREATE TABLE IF NOT EXISTS ref_templates (input_id INTEGER, name TEXT, folder TEXT, template TEXT);
+CREATE TABLE IF NOT EXISTS ref_users (input_id INTEGER, display_name TEXT, username TEXT, email TEXT);
+CREATE TABLE IF NOT EXISTS member_decisions (
+  folder TEXT, member TEXT, decision TEXT, changed_utc TEXT, changed_by TEXT, reason TEXT,
+  PRIMARY KEY (folder, member));
+CREATE TABLE IF NOT EXISTS plan_undecided (
+  folder TEXT, safe_name TEXT, member TEXT, member_name TEXT, permission TEXT, groups TEXT,
+  accounts INTEGER, decision TEXT, notes TEXT);
 CREATE TABLE IF NOT EXISTS audit (
   id INTEGER PRIMARY KEY, ts TEXT, user TEXT, host TEXT, action TEXT, detail TEXT);
 CREATE VIEW IF NOT EXISTS accounts AS SELECT * FROM plan_accounts;
@@ -142,6 +151,9 @@ CREATE VIEW IF NOT EXISTS accounts AS SELECT * FROM plan_accounts;
         Db.ExecuteScript(Schema);
         if (!Db.Query("PRAGMA table_info(plan_accounts)").Select(r => r[1] as string).Contains("approved"))
             Db.Execute("ALTER TABLE plan_accounts ADD COLUMN approved TEXT DEFAULT ''");
+        var grantCols = Db.Query("PRAGMA table_info(grants)").Select(r => r[1] as string).ToList();
+        foreach (var column in new[] { "basis", "hint" })
+            if (!grantCols.Contains(column)) Db.Execute($"ALTER TABLE grants ADD COLUMN {column} TEXT DEFAULT ''");
         if (isNew)
         {
             SetMeta("schema_version", SchemaVersion);
@@ -269,13 +281,68 @@ CREATE VIEW IF NOT EXISTS accounts AS SELECT * FROM plan_accounts;
                 rec.Grants == null ? 0L : 1L, string.IsNullOrEmpty(rec.AccessSource) ? "none" : rec.AccessSource, rec.TargetSafe,
                 rec.TargetPlatform, Json.Dumps(rec.Extra.ToJObj()), Json.Dumps(rec.Notes.Cast<object>().ToList()));
             foreach (var g in rec.Grants ?? new List<Grant>())
-                Db.Execute("INSERT INTO grants VALUES (?,?,?,?)", rid, g.Member, g.Permission, g.MemberType);
+                Db.Execute("INSERT INTO grants(record_id, member, permission, member_type, basis, hint) VALUES (?,?,?,?,?,?)",
+                           rid, g.Member, g.Permission, g.MemberType, g.Basis, g.Hint);
             rec.Secret = "";   // drop the plaintext as soon as it is stored
         }
         Audit("ingest", Json.O(("source", source), ("path", path), ("records", (long)records.Count), ("replaced", (long)replaced),
             ("sanitized", (long)LastSanitized), ("permissions", string.Join(" | ", permsPaths)), ("secrets_stored", storeSecrets)));
         Db.Commit();
         return (records.Count, replaced);
+    }
+
+    /// <summary>A reference file (Reference.cs): templates by secret name, or the users list. Loading a file
+    /// with the same name and kind again replaces what it gave before.</summary>
+    public int IngestReference(string kind, string path, List<(string, string, string)> rows)
+    {
+        var name = Py.Lower(Path.GetFileName(path));
+        foreach (var old in Db.Query("SELECT id, path FROM inputs WHERE source = ?", kind))
+        {
+            var op = Str(old["path"]) ?? "";
+            if (Py.Lower(Path.GetFileName(op)) == name || Py.Lower(Path.GetFileName(op.Replace('\\', '/'))) == name)
+                foreach (var table in new[] { "ref_templates", "ref_users" })
+                    Db.Execute($"DELETE FROM {table} WHERE input_id = ?", old["id"]);
+        }
+        Db.Execute("INSERT INTO inputs(source, path, sha256, records, loaded_utc, loaded_by) VALUES (?,?,?,?,?,?)",
+                   kind, Path.GetFullPath(path), Sha256File(path), (long)rows.Count, Now(), User());
+        long inputId = Db.LastInsertRowId;
+        var tbl = kind == "templates" ? "ref_templates" : kind == "users" ? "ref_users" : throw new StoreError($"unknown reference '{kind}'");
+        foreach (var (a, b, c) in rows) Db.Execute($"INSERT INTO {tbl} VALUES (?,?,?,?)", inputId, a, b, c);
+        Audit("ingest", Json.O(("source", kind), ("path", path), ("records", (long)rows.Count)));
+        Db.Commit();
+        return rows.Count;
+    }
+
+    public References References()
+    {
+        var templates = Db.Query("SELECT name, folder, template FROM ref_templates ORDER BY input_id, rowid")
+                          .Select(r => (Str(r[0]), Str(r[1]), Str(r[2]))).ToList();
+        var users = Db.Query("SELECT display_name, username, email FROM ref_users ORDER BY input_id, rowid")
+                      .Select(r => (Str(r[0]), Str(r[1]), Str(r[2]))).ToList();
+        var decisions = new Dictionary<(string, string), string>();
+        foreach (var r in Db.Query("SELECT folder, member, decision FROM member_decisions"))
+            decisions[(Str(r["folder"]), Str(r["member"]))] = Str(r["decision"]);
+        return new References(templates, users, decisions);
+    }
+
+    /// <summary>Include or exclude users who may get their access through a group, per folder; decision ""
+    /// takes the decision back.</summary>
+    public int SetDecisions(IEnumerable<(string Folder, string Member)> items, string decision, string reason = "")
+    {
+        if (decision is not ("include" or "exclude" or "")) throw new StoreError($"unknown decision '{decision}'");
+        int done = 0;
+        foreach (var (folder, member) in items)
+        {
+            var key = (Reference.FolderKey(folder ?? ""), Py.Lower(Py.Strip(member ?? "")));
+            if (key.Item2.Length == 0) continue;
+            Db.Execute("DELETE FROM member_decisions WHERE folder = ? AND member = ?", key.Item1, key.Item2);
+            if (decision.Length > 0)
+                Db.Execute("INSERT INTO member_decisions VALUES (?,?,?,?,?,?)", key.Item1, key.Item2, decision, Now(), User(), reason);
+            done++;
+        }
+        Audit("decide", Json.O(("decision", decision.Length > 0 ? decision : "undo"), ("users", (long)done), ("reason", reason)));
+        Db.Commit();
+        return done;
     }
 
     // -- load -------------------------------------------------------------
@@ -289,7 +356,7 @@ CREATE VIEW IF NOT EXISTS accounts AS SELECT * FROM plan_accounts;
         {
             var rid = Str(g["record_id"]);
             if (!grants.TryGetValue(rid, out var l)) grants[rid] = l = new List<Grant>();
-            l.Add(new Grant(Str(g["member"]), Str(g["permission"]), Str(g["member_type"])));
+            l.Add(new Grant(Str(g["member"]), Str(g["permission"]), Str(g["member_type"]), Str(g["basis"]) ?? "", Str(g["hint"]) ?? ""));
         }
         var out_ = new List<SourceRecord>();
         foreach (var r in Db.Query("SELECT * FROM records ORDER BY input_id, rowid"))
@@ -463,7 +530,8 @@ CREATE VIEW IF NOT EXISTS accounts AS SELECT * FROM plan_accounts;
 
     public Plan Plan(JObj cfg, bool withSecrets = false) =>
         Transform.BuildPlan(LoadRecords(withSecrets), cfg, null, Overrides(), @explicit: true,
-                            memberEdits: MemberEdits(), memberOverrides: MemberOverrides(), safeOverrides: SafeOverrides());
+                            memberEdits: MemberEdits(), memberOverrides: MemberOverrides(), safeOverrides: SafeOverrides(),
+                            refs: References());
 
     static string YesNo(object v) =>
         v == null || (v is string s && s.Length == 0) ? "" : (Py.Lower(Py.Str(v)) is "true" or "1" or "yes" ? "Yes" : "No");
@@ -474,6 +542,10 @@ CREATE VIEW IF NOT EXISTS accounts AS SELECT * FROM plan_accounts;
         Db.Execute("DELETE FROM plan_accounts");
         Db.Execute("DELETE FROM plan_safes");
         Db.Execute("DELETE FROM plan_members");
+        Db.Execute("DELETE FROM plan_undecided");
+        foreach (var h in plan.Undecided)
+            Db.Execute("INSERT INTO plan_undecided VALUES (?,?,?,?,?,?,?,?,?)",
+                       h.Folder, h.Safe, h.Member, h.MemberName, h.Permission, h.Groups, (long)h.Accounts, h.Decision, h.Note);
         foreach (var p in plan.Accounts)
         {
             var r = p.Rec;

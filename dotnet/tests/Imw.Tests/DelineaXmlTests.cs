@@ -196,7 +196,7 @@ public class DelineaReports : TestBase
     {
         var p = Write("users.csv", "Folder,User Name,Domain,Permissions\n\\Infra,jsmith,CORP,\"View, Edit\"\n");
         Assert.True(UiApp.LooksLikePermissions(p));
-        var g = new Permissions(new[] { p }).ByFolder["infra"][0];
+        var g = new Permissions(new[] { p }).UsersByFolder["infra"][0];
         Assert.Equal(("CORP\\jsmith", "Edit", "User"), (g.Member, g.Permission, g.MemberType));
     }
 

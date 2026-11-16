@@ -189,7 +189,46 @@ public static class Cli
         return (null, spec);
     }
 
-    /// <summary>[(adapter name, path, records)] or null after logging an error.</summary>
+    /// <summary>[(kind, path, rows)] from --reference and from any --input that is a reference file (a template
+    /// list or users list, see Reference.cs); null after logging an error.</summary>
+    public static List<(string Kind, string Path, List<(string, string, string)> Rows)> ReadReferences(Args a)
+    {
+        var outList = new List<(string, string, List<(string, string, string)>)>();
+        var enc = a.S("encoding");
+        var specs = (a.L("reference") ?? new List<string>()).ToList();
+        specs.AddRange(a.L("input").Where(sp => ParseInput(sp).Item1 == null && a.S("source") == null
+                                                && File.Exists(sp) && Reference.Kind(sp, enc).Length > 0));
+        foreach (var path in specs)
+        {
+            if (!File.Exists(path))
+            {
+                Log.Error($"reference file not found: {path}");
+                return null;
+            }
+            var kind = Reference.Kind(path, enc);
+            if (!Reference.UsedKinds.Contains(kind))
+            {
+                Log.Warning($"{path}: {(Reference.Kinds.TryGetValue(kind, out var lbl) ? lbl : "not a template list or users list")}; skipped");
+                continue;
+            }
+            List<(string, string, string)> rows;
+            try { rows = kind == "templates" ? Reference.ReadTemplates(path, enc) : Reference.ReadUsers(path, enc); }
+            catch (Exception exc) when (exc is ValueError or IOException or UnauthorizedAccessException)
+            {
+                Log.Error(exc.Message);
+                return null;
+            }
+            Log.Info($"{path}: {rows.Count} rows read as {Py.Lower(Reference.Kinds[kind])}");
+            outList.Add((kind, path, rows));
+        }
+        return outList;
+    }
+
+    public static References ReferencesFrom(List<(string Kind, string Path, List<(string, string, string)> Rows)> loaded) =>
+        new(loaded.Where(l => l.Kind == "templates").SelectMany(l => l.Rows), loaded.Where(l => l.Kind == "users").SelectMany(l => l.Rows));
+
+    /// <summary>[(adapter name, path, records)] or null after logging an error. Reference files given with
+    /// --input are left to ReadReferences.</summary>
     public static List<(string Name, string Path, List<SourceRecord> Records)> ReadInputs(List<string> specs, string source, string encoding, JObj cfg)
     {
         var out_ = new List<(string, string, List<SourceRecord>)>();
@@ -201,6 +240,7 @@ public static class Cli
                 Log.Error($"input not found: {path}");
                 return null;
             }
+            if (name == null && source == null && Reference.Kind(path, encoding).Length > 0) continue;
             Adapter adapter;
             List<SourceRecord> got;
             try
@@ -286,7 +326,8 @@ public static class Cli
         catch (StoreError exc) { Log.Error(exc.Message); return 2; }
         using var _ = store;
         var loaded = ReadInputs(a.L("input"), a.S("source"), a.S("encoding"), cfg);
-        if (loaded == null) return 2;
+        var refs = ReadReferences(a);
+        if (loaded == null || refs == null) return 2;
         Permissions perms;
         try { perms = LoadPerms(a); }
         catch (Exception exc) when (exc is ValueError or IOException or UnauthorizedAccessException)
@@ -296,6 +337,11 @@ public static class Cli
         }
         try
         {
+            foreach (var (kind, path, rows) in refs)
+            {
+                store.IngestReference(kind, path, rows);
+                Console.WriteLine($"{path}: {rows.Count} rows stored as {Py.Lower(Reference.Kinds[kind])}");
+            }
             foreach (var (name, path, records) in loaded)
             {
                 var (n, replaced) = store.Ingest(name, path, records, perms, a.L("permissions"));
@@ -470,7 +516,8 @@ public static class Cli
         var outDir = PrepareOutput(a.S("output_dir"), a.B("force"));
         if (outDir == null) return 2;
         var loaded = ReadInputs(a.L("input"), a.S("source"), a.S("encoding"), cfg);
-        if (loaded == null) return 2;
+        var refs = ReadReferences(a);
+        if (loaded == null || refs == null) return 2;
         var records = loaded.SelectMany(l => l.Records).ToList();
         var inputs = loaded.Select(l => (object)(l.Name, l.Path)).ToList();
         int cleaned = records.Count(r => Transform.SanitizeRecord(r).Count > 0);
@@ -492,7 +539,7 @@ public static class Cli
             Log.Error(exc.Message);
             return 2;
         }
-        var plan = Transform.BuildPlan(records, cfg, perms, overrides);
+        var plan = Transform.BuildPlan(records, cfg, perms, overrides, refs: ReferencesFrom(refs));
         var files = Writers.WriteReview(plan, outDir);
         files.Add(Writers.WriteConvention(plan, cfg, outDir));
         var (uploadFiles, counts) = Writers.WriteUpload(plan, cfg, outDir, a.B("include_secrets"));
@@ -516,10 +563,14 @@ public static class Cli
         const string inputHelp = "Export file. Repeat for several files. Prefix with the source to skip " +
                                  "auto-detection, e.g. keepass=vault.xml or table=accounts.xlsx";
         const string permHelp = "Permissions CSV: groups per folder or record. Repeat to merge several files";
+        const string refHelp = "Template list (secret name -> template, e.g. Delinea's allsecrets.csv) or users " +
+                               "list (full name -> UPN, e.g. lauserslist.csv). Repeat for several. Found " +
+                               "automatically when passed with --input too";
         SubCommand AddInputs(SubCommand c) => c
             .Opt("--input -i", inputHelp, append: true, required: true)
             .Opt("--source", "Source for every --input without a prefix", choices: sources)
             .Opt("--permissions -p", permHelp, append: true)
+            .Opt("--reference", refHelp, append: true)
             .Opt("--encoding", "Text encoding of CSV inputs (try cp1252)", dflt: "utf-8-sig");
         SubCommand AddDb(SubCommand c) => c.Opt("--db -d", "Local staging database file, e.g. migration.db", required: true);
 
@@ -532,6 +583,7 @@ public static class Cli
                 .Opt("--source", "Source for every --input without a prefix", choices: sources)
                 .Opt("--config -c", "Config JSON (see init-config)")
                 .Opt("--permissions -p", permHelp, append: true)
+                .Opt("--reference", refHelp, append: true)
                 .Opt("--overrides", "An edited review/Accounts_Review.csv; changed Migrate, Target_Safe, Platform_ID and Account_Name values win")
                 .Opt("--output-dir -o", dflt: "imw_output")
                 .Opt("--include-secrets", "Write secret values into upload/Accounts.csv (default: left empty)", flag: true)

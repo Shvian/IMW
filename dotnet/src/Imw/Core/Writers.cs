@@ -197,6 +197,20 @@ public static class Writers
             }
             files.Add(path);
         }
+        if (plan.Undecided.Count > 0)
+        {
+            var path = Path.Combine(out_, "Users_To_Decide.csv");
+            using (var fh = Open(path))
+            {
+                var w = new CsvSafe.SafeWriter(new Csv.Writer(fh));
+                w.WriteRow(new object[] { "Folder", "Target_Safe", "Source_Member", "Member_Name", "Source_Permission",
+                    "Groups_With_This_Access", "Accounts", "Decision", "Notes" });
+                foreach (var h in plan.Undecided)
+                    w.WriteRow(new object[] { h.Folder, h.Safe, h.Member, h.MemberName, h.Permission, h.Groups, (long)h.Accounts,
+                        h.Decision.Length > 0 ? h.Decision : "not decided", h.Note });
+            }
+            files.Add(path);
+        }
         return files;
     }
 

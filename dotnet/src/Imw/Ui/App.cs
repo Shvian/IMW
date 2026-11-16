@@ -346,7 +346,7 @@ public sealed class UiApp
     /// (the Workbench layout, or a Delinea folder-permissions report).</summary>
     public static bool LooksLikePermissions(string path)
     {
-        if (Py.Lower(Path.GetExtension(path)) != ".csv") return false;
+        if (Py.Lower(Path.GetExtension(path)) != ".csv" || Reference.Kind(path).Length > 0) return false;
         string line;
         try
         {
@@ -390,16 +390,23 @@ public sealed class UiApp
         foreach (var kv in Views) views[kv.Key] = kv.Value.Label;
         var inboxFiles = new List<object>();
         var outputs = new List<object>();
+        var kinds = new JObj();
+        foreach (var kv in Reference.Kinds)
+            kinds[kv.Key] = Json.O(("label", kv.Value), ("help", Reference.KindHelp[kv.Key]), ("used", Reference.UsedKinds.Contains(kv.Key)));
         var state = Json.O(("version", Writers.Version), ("workspace", Ws), ("inbox", Inbox), ("output", Output),
-            ("has_db", DbExists(DbPath)), ("sources", sources), ("inbox_files", inboxFiles), ("outputs", outputs), ("views", views));
+            ("has_db", DbExists(DbPath)), ("sources", sources), ("inbox_files", inboxFiles), ("outputs", outputs), ("views", views),
+            ("kinds", kinds));
         foreach (var f in Directory.EnumerateFileSystemEntries(Inbox).OrderBy(x => x, Comparer<string>.Create(PathCmp)))
         {
             if (!File.Exists(f)) continue;
             string guess;
             try { guess = Adapter.Detect(f).Name; }
             catch (AdapterError) { guess = ""; }
+            var reference = Reference.Kind(f);
+            var perm = LooksLikePermissions(f);
+            var kind = reference.Length > 0 ? reference : perm ? "permissions" : guess.Length > 0 ? "accounts" : "";
             inboxFiles.Add(Json.O(("name", Path.GetFileName(f)), ("size", new FileInfo(f).Length), ("guess", guess),
-                                  ("permissions", LooksLikePermissions(f))));
+                                  ("permissions", perm), ("kind", kind)));
         }
         foreach (var d in Directory.EnumerateFileSystemEntries(Output).OrderBy(x => x, Comparer<string>.Create(PathCmp)).Reverse())
         {
@@ -433,6 +440,10 @@ public sealed class UiApp
                 state["edits"] = Count(db, "SELECT COUNT(DISTINCT record_id) FROM edits");
                 state["sanitized"] = Count(db, "SELECT COUNT(*) FROM accounts WHERE " + Views["sanitized"].Sql);
                 state["member_edits"] = Count(db, "SELECT COUNT(*) FROM member_edits");
+                state["undecided"] = Count(db, "SELECT COUNT(*) FROM plan_undecided WHERE decision = ''");
+                state["undecided_all"] = Count(db, "SELECT COUNT(*) FROM plan_undecided");
+                state["references"] = Json.O(("templates", Count(db, "SELECT COUNT(*) FROM ref_templates")),
+                                             ("users", Count(db, "SELECT COUNT(*) FROM ref_users")));
                 state["stale"] = Count(db, "SELECT COUNT(*) FROM records WHERE record_id NOT IN (SELECT record_id FROM plan_accounts)") != 0;
             }
             finally { st.Close(); }
@@ -472,7 +483,8 @@ public sealed class UiApp
     public object ApiIngest(JObj body)
     {
         var files = G(body, "files") as List<object> ?? new List<object>();
-        if (files.Count == 0) throw new UiError("Pick at least one export file.");
+        var refs = G(body, "references") as List<object> ?? new List<object>();
+        if (files.Count == 0 && refs.Count == 0) throw new UiError("Pick at least one export file.");
         var cfg = LoadConfig();
         var permObj = Py.Or(G(body, "permissions"), new List<object>());
         var permNames = permObj is string ps ? new List<object> { ps } : permObj as List<object> ?? new List<object>();
@@ -487,6 +499,16 @@ public sealed class UiApp
         var st = OpenStore(create: true);
         try
         {
+            foreach (var ro in refs)
+            {
+                var f = ro as JObj ?? throw new UiError("Pick at least one export file.");
+                var path = InboxFile(f.Get("name"));
+                var kind = T(f.Get("kind")) ? Py.Str(f["kind"]) : Reference.Kind(path);
+                if (!Reference.UsedKinds.Contains(kind)) throw new UiError($"{Path.GetFileName(path)} is not a template list or users list");
+                var rows = kind == "templates" ? Reference.ReadTemplates(path) : Reference.ReadUsers(path);
+                var n = st.IngestReference(kind, path, rows);
+                results.Add(Json.O(("name", f.Get("name")), ("source", kind), ("records", (long)n), ("replaced", 0L), ("sanitized", 0L)));
+            }
             foreach (var fo in files)
             {
                 var f = fo as JObj ?? throw new UiError("Pick at least one export file.");
@@ -516,6 +538,38 @@ public sealed class UiApp
         }
         finally { st.Close(); }
         return Json.O(("results", results), ("protector", string.IsNullOrEmpty(_protectorFlag) ? "dpapi" : _protectorFlag));
+    }
+
+    /// <summary>Users from the users report who may get their access through a group (one row per folder, Safe
+    /// and user), with your decision.</summary>
+    public object ApiUndecided(JObj _)
+    {
+        if (!DbExists(DbPath)) return Json.O(("rows", new List<object>()));
+        var st = OpenStore();
+        try
+        {
+            var rows = st.Db.Query("SELECT folder, safe_name, member, member_name, permission, groups, accounts, decision, notes " +
+                                   "FROM plan_undecided ORDER BY groups, member, folder");
+            return Json.O(("rows", rows.Select(r => (object)r.ToJObj()).ToList()));
+        }
+        finally { st.Close(); }
+    }
+
+    public object ApiDecide(JObj body)
+    {
+        var items = (G(body, "items") as List<object> ?? new List<object>()).OfType<JObj>()
+            .Select(i => (Py.Str(Py.Or(i.Get("folder"), "")), Py.Str(Py.Or(i.Get("member"), "")))).ToList();
+        if (items.Count == 0) throw new UiError("Tick at least one user first.");
+        var decision = Py.Str(Py.Or(G(body, "decision"), ""));
+        var st = OpenStore();
+        try
+        {
+            var n = st.SetDecisions(items, decision, Py.Str(Py.Or(G(body, "reason"), "")));
+            st.Map(LoadConfig(), File.Exists(ConfigPath) ? ConfigPath : null);
+            return Json.O(("changed", (long)n));
+        }
+        catch (StoreError exc) { throw new UiError(exc.Message); }
+        finally { st.Close(); }
     }
 
     string InboxFile(object name)
@@ -1144,6 +1198,7 @@ public sealed class UiApp
         List<JObj> edits;
         Dictionary<string, JObj> overrides, safeOv;
         List<DbRow> grants;
+        References refs;
         try
         {
             (cols, rows) = st.Query(
@@ -1153,8 +1208,10 @@ public sealed class UiApp
             edits = st.MemberEdits();
             overrides = st.MemberOverrides();
             safeOv = st.SafeOverrides();
+            // Users waiting for your decision are listed on their own page, not here.
             grants = st.Db.Query("SELECT member, max(member_type) AS member_type, COUNT(DISTINCT record_id) AS n " +
-                                 "FROM grants GROUP BY lower(member)");
+                                 "FROM grants WHERE coalesce(basis, '') <> 'undecided' GROUP BY lower(member)");
+            refs = st.References();
         }
         finally { st.Close(); }
         var cfg = LoadConfig();
@@ -1164,13 +1221,13 @@ public sealed class UiApp
         return Json.O(("safes", rows.Select(r => (object)Zip(cols, r)).ToList()), ("members", members.Cast<object>().ToList()),
             ("member_edits", edits.Cast<object>().ToList()),
             ("safe_overrides", Py.Sorted(safeOv.Values.ToList(), (a, b) => Py.Cmp(OrE(a.Get("changed_utc")), OrE(b.Get("changed_utc")))).Cast<object>().ToList()),
-            ("people", People(members, grants, overrides, cfg)), ("roles", roles), ("directories", Strings(Py.Sorted(dirs))),
+            ("people", People(members, grants, overrides, cfg, refs)), ("roles", roles), ("directories", Strings(Py.Sorted(dirs))),
             ("known_members", Strings(Py.Sorted(members.Select(m => Py.Str(m["member_name"])).Distinct().ToList(), (a, b) => Py.Cmp(Py.Lower(a), Py.Lower(b))))));
     }
 
     /// <summary>One row per member (user, group or role), with the Safes it is on. Members from the
     /// export whose accounts are not uploaded are listed too, with no Safes.</summary>
-    static List<object> People(List<JObj> members, List<DbRow> grants, Dictionary<string, JObj> overrides, JObj cfg)
+    static List<object> People(List<JObj> members, List<DbRow> grants, Dictionary<string, JObj> overrides, JObj cfg, References refs = null)
     {
         var inExport = new Dictionary<string, object>(StringComparer.Ordinal);
         foreach (var r in grants) inExport[Py.Lower(Py.Str(r["member"]))] = r["n"];
@@ -1197,7 +1254,7 @@ public sealed class UiApp
             var key = Py.Lower(member);
             if (people.ContainsKey(key)) continue;
             var mtype = Transform.NormalizeMemberType(r["member_type"], defaultType);
-            var (name, searchIn, src) = Transform.MemberTarget(member, cfg, mtype);
+            var (name, searchIn, src) = Transform.TargetFor(member, cfg, mtype, refs);
             var m = Transform.ApplyMemberOverride(new MemberInfo
             {
                 SourceName = member, MemberName = name, MemberType = mtype, Type = mtype, SearchIn = searchIn,
@@ -1498,11 +1555,13 @@ public sealed class UiApp
         catch (Exception exc) { throw new UiError($"settings are not valid: {exc.Message}"); }
         if (!DbExists(DbPath)) return Json.O(("members", new List<object>()));
         List<DbRow> rows;
+        References refs;
         var st = OpenStore();
         try
         {
             rows = st.Db.Query("SELECT member, member_type, COUNT(DISTINCT record_id) AS n FROM grants " +
                                "GROUP BY lower(member), member_type ORDER BY 3 DESC LIMIT 300");
+            refs = st.References();
         }
         finally { st.Close(); }
         JObj before;
@@ -1513,12 +1572,12 @@ public sealed class UiApp
         {
             var member = Py.Str(r["member"]);
             var mtype = Transform.NormalizeMemberType(r["member_type"], Transform.NormalizeMemberType(cfg.Get("default_member_type")));
-            var (name, searchIn, src) = Transform.MemberTarget(member, cfg, mtype);
+            var (name, searchIn, src) = Transform.TargetFor(member, cfg, mtype, refs);
             var changed = new List<object>();
             if (before != null)
             {
                 var oldType = Transform.NormalizeMemberType(r["member_type"], Transform.NormalizeMemberType(before.Get("default_member_type")));
-                var (oldName, oldIn, _) = Transform.MemberTarget(member, before, oldType);
+                var (oldName, oldIn, _) = Transform.TargetFor(member, before, oldType, refs);
                 foreach (var (k, a, b) in new[] { ("member_name", oldName, name), ("search_in", oldIn, searchIn), ("type", oldType, mtype) })
                     if ((a ?? "") != (b ?? "")) changed.Add(k);
             }
@@ -1627,6 +1686,7 @@ public sealed class UiApp
         [("POST", "/api/naming/preview")] = ApiNamingPreview, [("POST", "/api/safes/preview")] = ApiSafesPreview,
         [("POST", "/api/rules/preview")] = ApiRulesPreview, [("POST", "/api/rules/values")] = ApiRulesValues,
         [("POST", "/api/approve")] = ApiApprove, [("POST", "/api/open")] = ApiOpenFolder,
+        [("GET", "/api/undecided")] = ApiUndecided, [("POST", "/api/decide")] = ApiDecide,
         [("POST", "/api/lock")] = ApiLock, [("POST", "/api/end")] = ApiEnd, [("POST", "/api/ping")] = ApiPing,
         [("POST", "/api/members/preview")] = ApiMembersPreview, [("POST", "/api/members/edit")] = ApiMembersEdit,
         [("POST", "/api/members/change")] = ApiMembersChange, [("POST", "/api/safes/change")] = ApiSafesChange,

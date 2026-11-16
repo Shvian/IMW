@@ -6,12 +6,19 @@ public sealed class Grant
     public string Member;
     public string Permission;          // source wording: Owner, Edit, View, Read, Full...
     public string MemberType;          // User, Group or Role; blank -> config default_member_type
+    // A user from a report of effective access ("What folders can all users see?"), which lists
+    // access a user gets through a group too: "direct" when no group explains it, "undecided"
+    // when a group on the same folder gives the same or stronger access (Hint: those groups).
+    public string Basis;
+    public string Hint;
 
-    public Grant(string member, string permission, string memberType = "")
+    public Grant(string member, string permission, string memberType = "", string basis = "", string hint = "")
     {
         Member = member;
         Permission = permission;
         MemberType = memberType ?? "";
+        Basis = basis ?? "";
+        Hint = hint ?? "";
     }
 }
 
