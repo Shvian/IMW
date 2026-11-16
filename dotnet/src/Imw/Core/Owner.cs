@@ -35,6 +35,7 @@ public static class Owner
     internal static Func<string, string[], (int, string)> RunHook;
     internal static Func<string, string> PathOwnerHook;
     internal static Action<string> ListHook;
+    internal static Func<Identity> IdentityHook;
 
     public static readonly HashSet<string> WorkspaceEntries = new(StringComparer.Ordinal)
     {
@@ -48,6 +49,7 @@ public static class Owner
     /// <summary>sid / domain / user / display of the user running this process (not from env vars).</summary>
     public static Identity CurrentIdentity()
     {
+        if (IdentityHook != null) return IdentityHook();
         if (OperatingSystem.IsWindows())
         {
             using var me = WindowsIdentity.GetCurrent();
