@@ -16,7 +16,7 @@ public static class Xlsx
     static readonly XNamespace PR = "http://schemas.openxmlformats.org/package/2006/relationships";
     static readonly Regex CellRef = new(@"^([A-Z]+)(\d+)$", RegexOptions.CultureInvariant);
     const int MaxRow = 1_048_576, MaxCol = 16_384;
-    const long MaxPartBytes = 512L * 1024 * 1024;
+    internal static long MaxPartBytes = 512L * 1024 * 1024;     // tests lower it
 
     static XElement ReadXml(ZipArchive z, string name, string path)
     {

@@ -30,6 +30,12 @@ public static class Owner
     public const string SystemSid = "S-1-5-18";
     public const string AdministratorsSid = "S-1-5-32-544";
 
+    // Test hooks (the Python tests patch the same places with mock).
+    internal static bool? ForceWindows;
+    internal static Func<string, string[], (int, string)> RunHook;
+    internal static Func<string, string> PathOwnerHook;
+    internal static Action<string> ListHook;
+
     public static readonly HashSet<string> WorkspaceEntries = new(StringComparer.Ordinal)
     {
         OwnerFile, "inbox", "output", "tls", "config.json", "migration.db", "migration.db-journal",
@@ -70,6 +76,7 @@ public static class Owner
 
     static (int, string) Run(string exe, params string[] args)
     {
+        if (RunHook != null) return RunHook(exe, args);
         var psi = new ProcessStartInfo(exe) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
         foreach (var a in args) psi.ArgumentList.Add(a);
         using var p = Process.Start(psi) ?? throw new OwnerError($"could not run {exe}");
@@ -82,7 +89,7 @@ public static class Owner
     /// <summary>Only the owner (and SYSTEM) may open path. Returns a short description of what was set.</summary>
     public static string Restrict(string path, string sid = null, bool recursive = false)
     {
-        if (OperatingSystem.IsWindows())
+        if (ForceWindows ?? OperatingSystem.IsWindows())
         {
             sid ??= CurrentIdentity().Sid;
             bool isDir = Directory.Exists(path);
@@ -121,6 +128,7 @@ public static class Owner
     /// <summary>Owner of a file or folder as recorded by the file system (Windows SID, or uid:N elsewhere).</summary>
     public static string PathOwnerSid(string path)
     {
+        if (PathOwnerHook != null) return PathOwnerHook(path);
         if (OperatingSystem.IsWindows())
         {
             try
@@ -160,6 +168,7 @@ public static class Owner
     static (JObj, HashSet<string>) ReadWorkspace(string ws, string marker)
     {
         Directory.CreateDirectory(ws);
+        ListHook?.Invoke(ws);
         JObj existing = File.Exists(marker) ? Json.ParseObj(PyFile.ReadText(marker)) : null;
         var entries = Directory.EnumerateFileSystemEntries(ws).Select(Path.GetFileName).ToHashSet(StringComparer.Ordinal);
         return (existing, entries);
