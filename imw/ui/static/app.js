@@ -231,7 +231,11 @@ const TIP_ID = {
   "conv-template": "Safe name pattern for accounts that have folders. {folder} = every folder level abbreviated, {folder_leaf} = the last one. Other placeholders: {env}, {tech}, {flavor}, {acct} and your own (under Codes used in names).\nA code already used earlier in the name is not repeated. If a name is too long, long folder names become initials first, then the top folder levels are left out.",
   "conv-flat": "Safe name pattern for accounts with no folders (flat KeePass files, spreadsheets), e.g. {env}-{tech}-{flavor}-{acct}.",
   "conv-skip": "Folder level names to leave out of Safe names, separated by commas, e.g. Root, Shared.",
-  "max-acc": "Safes with more accounts than this are flagged for a look. CyberArk recommends roughly 3000-5000 at most.",
+  "max-acc": "Safes with more accounts than this are flagged for a look, or split (see the choice next to it). CyberArk recommends roughly 3000-5000 at most.",
+  "split": "flag them: a Safe over the limit is only marked for a look.\nsplit them: its accounts are spread over numbered Safes of about the same size (P-SVR-WIN-LA-01, -02…), sorted by address so one server's accounts stay together. Safes named in the source or by you are never split. Adding accounts later can move accounts between the numbered Safes.",
+  "std-apply": "Which Safes get the standard member groups. Recommended: only Safes the source gives no members, so Safes with members from the source stay as they are. Every Safe: the standard groups are added next to the source's members.",
+  "flat-field": "Where the codes for the new part come from: a column in your loaded file, the domain part of each address, or the record type. Each distinct value gets its own code.",
+  "flat-name": "Name of the placeholder for this part, letters, digits and _ only. It goes into the pattern as {name}. Use env to add to the built-in environment part.",
   "new-layer": "Name of a new placeholder, letters, digits and _ only (e.g. region). Use it as {region} in a Safe name pattern.",
   "s-cpm": "Name of the CPM that manages the Safes' accounts, e.g. PasswordManager. Empty = no CPM.",
   "s-desc": "Safe description, up to 100 characters. {folder} = the Safe's source folder, {safe} = its name.",
@@ -267,6 +271,12 @@ const TIP_ID = {
   "o-replace": "Ticked: an output folder with the same name is replaced.",
 };
 const MEMBER_TYPES = ["Group", "User", "Role"];
+const SM_TIP = {
+  name: "The member's name on each Safe. {safe} becomes the Safe's final name (after splitting, cleanup and your renames).\nExamples: {safe}-Owners → P-BOS-SVR-WIN-LA-Owners · PAM-{safe}-Users · CORP\\{safe}-Approvers (C. Safe members then converts the domain) · PAM-Vault-Admins (no {safe}: the same member on every Safe)",
+  member_type: "Group = a directory or Privilege Cloud group (the usual choice); Role = a CyberArk Identity role; User = one person's account.",
+  role: "Permission preset or custom role this member gets on every Safe. At least one row should be Full, so someone can manage each Safe and its members.",
+  search_in: "Optional searchIn for these members. Leave empty so Privilege Cloud searches every directory. Fill it only when the name exists in more than one directory: the directory's ID (GUID) from Identity, or Vault.",
+};
 /* Plain words for the codes the rules record (shown instead of fallback:convention, platform_map and so on). */
 const SORTABLE_COLS = new Set(["target_safe", "account_name", "username", "address", "platform_id", "status", "folder", "source", "record_id"]);
 const STATUS_LABEL = { OK: "OK", REVIEW: "Needs a look", ERROR: "Error" };
@@ -384,8 +394,19 @@ PAGES.overview = async () => {
     : { n: 4, title: "Create upload files", done: false, go: "output", label: "Create them", st: "Not created yet." },
   ];
   const next = steps.find(x => !x.done) || null;
+  // A plain accounts list (no folders, no permissions): the short guided path to Safes and members.
+  const plainList = (hints.records || 0) > 0 && (hints.without_folder || 0) === hints.records && !(hints.with_grants || 0);
+  const guide = plainList ? `<div class="card" id="plain-guide"><h3>Your data is an accounts list only</h3>
+      <p class="small">None of the ${plural(hints.records, "account", "accounts")} has a folder or permissions, so the Workbench builds the Safes and their members for you. Three settings do it:</p>
+      <ol class="small">
+        <li><b>Safe names from account details</b>: add parts such as Site or Application from your columns; environment, technology and account type already come from each account.
+          <a href="#" data-go="rules-safes">2.A Safes</a></li>
+        <li><b>Safe size</b>: Safes over the account limit (3000 unless you change it) can be split into numbered Safes automatically, on the same page.</li>
+        <li><b>Members for each Safe</b>: one click adds Owners, Users and Approvers groups named after each Safe.
+          <a href="#" data-go="rules-members">2.B Safe permissions</a></li></ol>
+      <p class="muted small">Step 4 then writes the list of groups to create in your directory next to the review files.</p></div>` : "";
   m.innerHTML = `<h2>Overview</h2><p class="lead">Where the migration stands and what to do next.</p>
-    ${statusNotes()}
+    ${statusNotes()}${guide}
     <div class="card"><h3>Steps</h3><ol class="steps">
       ${steps.map(x => `<li class="${x.done ? "done" : "todo"}${x === next ? " next" : ""}"><span class="dot">${x.done ? "✓" : x.n}</span>
         <div style="flex:1"><b>${x.n}. ${esc(x.title)}</b><span class="st">${x.st}</span></div>
@@ -483,7 +504,7 @@ const PICK_FIELDS = [["name", "Account name", "The account's display name, e.g. 
   ["address", "Address", "Host name, IP address or URL the account is for, e.g. TargetHost or Server."],
   ["username", "Username", "The account's user name, e.g. SAMAccountName or Login."],
   ["folder", "Folder path", "Folder the account sits in; Safes are named from it, e.g. \\IT\\Windows."],
-  ["type", "Record type", "A type or template column; the platform is chosen from it (step 2 C. Platforms)."],
+  ["type", "Record type", "A type or template column; the platform is chosen from it (step 2 D. Platforms)."],
   ["password", "Password", "The column holding the password. Never shown in the review files."],
   ["private_key", "SSH key", "A column holding a private SSH key, if any."],
   ["access", "Access groups", "Who has access, e.g. CORP\\DBA-Team=Owner; CORP\\Ops=View."],
@@ -614,7 +635,7 @@ const PERM_GROUPS = [
     ["requestsAuthorizationLevel2", "Authorize account requests, level 2"], ["accessWithoutConfirmation", "Access Safe without confirmation"]]],
   ["Advanced", [["createFolders", "Create folders"], ["deleteFolders", "Delete folders"], ["moveAccountsAndFolders", "Move accounts and folders"]]],
 ];
-const LAYER_FIELDS = ["folder_word", "folder_level", "folder", "platform", "username", "address", "name", "type", "source",
+const LAYER_FIELDS = ["folder_word", "folder_level", "folder", "platform", "username", "address", "address_domain", "name", "type", "source",
   "env", "tech", "flavor", "acct", "column:"];
 let ROLE_NAMES = () => [];
 let TABLES = {};
@@ -751,8 +772,8 @@ function updateBlockCount(id) {
 }
 let onTableCount = null;   // a page can listen for row counts changing (the Safes page's placeholder summaries)
 const normName = (t) => String(t).toLowerCase().split(/[\s\-_/\\:;,.()\[\]{}"'&+]+/).filter(Boolean).join(" ");
-const RULE_PAGES = [["rules-safes", "A. Safes"], ["rules-members", "B. Safe permissions"], ["rules-platforms", "C. Platforms"],
-  ["rules-accounts", "D. Accounts"], ["rules-dir", "E. Member names"], ["rules-json", "Advanced: settings file (JSON)"]];
+const RULE_PAGES = [["rules-safes", "A. Safes"], ["rules-members", "B. Safe permissions"], ["rules-dir", "C. Safe members"],
+  ["rules-platforms", "D. Platforms"], ["rules-accounts", "E. Accounts"], ["rules-json", "Advanced: settings file (JSON)"]];
 
 // One settings page: its own cards and its own Save & apply, which saves only its keys.
 async function rulesPage(page, intro, render) {
@@ -873,7 +894,7 @@ function wirePreviewDock(view) {
 const previewApi = (kind) => (patch) => api("/api/rules/preview", patch.__full ? { kind, config: patch.__full } : { kind, patch });
 const countsSummary = (m) => `${m.accounts} accounts in ${m.safes} Safes`;
 
-/* A. Directory sources */
+/* C. Safe members: member names, domain conversion and directory sources */
 PAGES["rules-dir"] = () => rulesPage("rules-dir",
   "How the users, groups and roles that have access in your source export become Safe members in Privilege Cloud. Each source is a rule: which members it takes, and how their names are converted to match Privilege Cloud.",
   ({ config: cfg }) => {
@@ -973,6 +994,21 @@ PAGES["rules-safes"] = () => rulesPage("rules-safes",
         <label class="inline">If no value matches use <input type="text" class="l-default" value="${esc(layer.default || "")}" size="6" placeholder="nothing"></label>
         ${BUILTIN[name] ? "" : `<button class="btn small danger l-del">Remove {${esc(name)}}</button>`}</div>
       ${editorTable("t-layer-" + name, RULE, layer.rules || [], "+ Add value", true)}</div>`, "layer-" + name, false, "layer").replace("<details ", `<details data-layer="${esc(name)}" `);
+    // Accounts with no folders (a plain accounts list): build the Safe name from account details.
+    const flat = hints.without_folder || 0, total = hints.records || 0;
+    const FLAT_SOURCES = (hints.columns || []).filter(c => c.filled).map(c => [`column:${c.name}`, `the ${c.name} column (${c.filled} accounts have a value)`])
+      .concat([["address_domain", "the address's domain (srv01.boston.corp.example.com → boston…)"], ["type", "the record type / template"]]);
+    const flatCard = `<details class="card fold" data-block="flat" id="flat-card"${flat ? " open" : ""}><summary>Accounts without folders: build Safe names from account details
+        <span class="muted small" style="font-weight:400">· ${total ? `${flat} of ${total} loaded accounts have no folder` : "for plain accounts lists, such as a spreadsheet"}</span></summary>
+      <p class="small">With no folders, each Safe name is built from the pattern <b>with no folders</b> above, one short code per part, for example
+        <code>{env}-{site}-{tech}-{flavor}-{acct}</code> → <code>P-BOS-SVR-WIN-LA</code>. <code>{tech}</code>, <code>{flavor}</code> and <code>{acct}</code>
+        come from each account's platform and username already. Add a part from any column in your file (Environment, Site, Application…): the Workbench
+        lists its values and suggests a 1-4 letter code for each, which you can change. Fewer parts = fewer, bigger Safes; more parts = smaller Safes, closer to least privilege.</p>
+      <div class="row"><label class="inline">Take codes from <select id="flat-field">${FLAT_SOURCES.length ? "" : "<option value=\"\">(load a file first)</option>"}${FLAT_SOURCES.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("")}</select></label>
+        <label class="inline">as placeholder <input type="text" id="flat-name" size="12" placeholder="site"></label>
+        <button class="btn small" id="flat-add" title="Lists the values found there, gives each a suggested code, and adds the placeholder to the pattern for accounts with no folders. Nothing is saved until you click Save & apply.">Add to the Safe name</button></div>
+      <div id="flat-msg"></div>
+      <p class="muted small" id="flat-size"></p></details>`;
     const layersTotal = () => { const names = Object.keys(layers); const vals = names.reduce((n, k) => n + ((layers[k].rules || []).length), 0);
       return `${names.length} placeholders, ${vals} values`; };
     const html = `
@@ -985,8 +1021,12 @@ PAGES["rules-safes"] = () => rulesPage("rules-safes",
         <div class="row"><label class="inline">Pattern for accounts with folders <input type="text" id="conv-template" size="30" value="${esc(conv.template)}"></label>
           <label class="inline">with no folders <input type="text" id="conv-flat" size="30" value="${esc(conv.template_no_folders || "")}"></label></div>
         <div class="row"><label class="inline">Leave out folder levels <input type="text" id="conv-skip" size="24" value="${esc((conv.skip_folder_levels || []).join(", "))}" placeholder="e.g. Root"></label>
-          <label class="inline">Flag Safes with more than <input type="text" id="max-acc" size="6" value="${esc(cfg.safe_max_accounts)}"> accounts</label></div></div>
+          <label class="inline">Safes with more than <input type="text" id="max-acc" size="6" value="${esc(cfg.safe_max_accounts)}"> accounts:
+            <select id="split">${[["", "flag them for a look"], ["1", "split them into numbered Safes (-01, -02…)"]].map(([v, l]) => `<option value="${v}" ${(cfg.safe_split_over_max ? "1" : "") === v ? "selected" : ""}>${l}</option>`).join("")}</select></label></div></div>
+        <p class="small"><a class="btn small" href="#" data-export="convention" title="Every naming rule in plain words, as saved (patterns, placeholder codes, abbreviations, limits, standard member groups and example names), to keep naming new Safes the same way once Privilege Cloud is live. Click Save &amp; apply first to include changes on this page. The same file is written as review/SafeNamingConvention.csv with every set of upload files.">Download the naming convention (CSV)</a>
+          <span class="muted">to keep naming new Safes the same way after the migration</span></p>
         <p class="muted small">⚠ Safe names are always cut to ${cfg.safe_name.max_length} characters, and the characters <code>${esc(cfg.safe_name.invalid_chars)}</code> become "${esc(cfg.safe_name.replacement)}". The preview at the bottom of the window shows the result as you type.</p></div>
+      ${flatCard}
       <details class="card fold" data-block="codes"><summary>Codes used in names <span class="muted small" style="font-weight:400">· folder abbreviations, other words and placeholders such as {env}: most migrations leave these as they are</span></summary>
         <h4 style="margin:4px 0 6px">Folder abbreviations <span class="muted small">(taken from the folders you loaded; type a code to change one)</span></h4>
         <div id="conv-folders"><p class="muted small">${STATE.has_db ? "Loading…" : "Load some exports to see your folder names here."}</p></div>
@@ -1042,7 +1082,7 @@ PAGES["rules-safes"] = () => rulesPage("rules-safes",
       return folderAbbr;
     };
     const renderFolderCodes = (rows) => {
-      if (!rows.length) return;
+      if (!rows.length) { if (STATE.has_db) $("#conv-folders").innerHTML = '<p class="muted small">Your loaded accounts have no folders, so there is nothing to abbreviate here.</p>'; return; }
       const yours = {}; Object.entries(folderAbbr).forEach(([w, c]) => yours[normName(w)] = [w, c]);
       const open = $("#conv-folders details") ? $("#conv-folders details").open : false;
       $("#conv-folders").innerHTML = editBlock(`${rows.length} folder names, ${Object.keys(yours).length} with your own code`, `<div class="tablewrap" style="max-height:40vh"><table class="small editor"><tr><th>Folder name</th><th>Accounts</th><th>Code</th><th></th></tr>
@@ -1068,6 +1108,7 @@ PAGES["rules-safes"] = () => rulesPage("rules-safes",
         group_rules: readTable("t-gr").map(r => { const o = { safe: r.safe }; if (r.group) o.group = r.group; else if (r.group_pattern) o.group_pattern = r.group_pattern; if (r.min_role) o.min_role = r.min_role; return o; }),
         group_rules_first: $("#gr-first").checked,
         safe_max_accounts: num($("#max-acc").value.trim(), "The account limit"),
+        safe_split_over_max: $("#split").value === "1",
         safe_convention: { ...conv, template: $("#conv-template").value.trim(), template_no_folders: $("#conv-flat").value.trim(),
           skip_folder_levels: $("#conv-skip").value.split(",").map(x => x.trim()).filter(Boolean), abbreviations: abbr,
           layers: readLayers(), default_environment: "" },
@@ -1147,7 +1188,51 @@ PAGES["rules-safes"] = () => rulesPage("rules-safes",
         $("#t-gr").closest("details").addEventListener("click", () => setTimeout(capture, 0));
         capture();
         // Don't redraw the folder codes while you type in one of them.
-        this.previewed = (r) => { if (!$("#conv-folders").contains(document.activeElement)) renderFolderCodes(r.folder_codes || []); };
+        this.previewed = (r) => {
+          if (!$("#conv-folders").contains(document.activeElement)) renderFolderCodes(r.folder_codes || []);
+          // How big the Safes come out: the account limit decides whether to add a part or split.
+          const per = {}; (r.rows || []).forEach(x => { per[x.safe] = (per[x.safe] || 0) + x.accounts; });
+          const sizes = Object.values(per).sort((a, b) => b - a), limit = Number($("#max-acc").value) || 0;
+          const over = limit ? sizes.filter(n => n > limit).length : 0;
+          $("#flat-size").innerHTML = sizes.length ? `With these settings: ${r.safes} Safes; the biggest holds ${sizes[0]} accounts${limit ? `, ${over ? `<b>${over} ${over === 1 ? "is" : "are"} over the ${limit} limit</b>: add a part, or pick "split them" above` : `none over the ${limit} limit`}` : ""}.` : "";
+        };
+        // The placeholder name follows the column picked (Site → site), unless you typed your own.
+        const nameFor = (f) => f.startsWith("column:") ? f.slice(7).toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "").replace(/^(\d)/, "c$1") || "col"
+          : f === "address_domain" ? "dom" : "rtype";
+        let autoName = true;
+        const syncName = () => { if (autoName && $("#flat-field").value) $("#flat-name").value = nameFor($("#flat-field").value); };
+        $("#flat-field").addEventListener("change", syncName);
+        $("#flat-name").addEventListener("input", () => { autoName = !$("#flat-name").value.trim(); });
+        syncName();
+        $("#flat-add").onclick = async () => {
+          const field = $("#flat-field").value, name = $("#flat-name").value.trim().replace(/^\{|\}$/g, "");
+          if (!field) return msg($("#flat-msg"), "err", "Load an accounts file first.");
+          if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return msg($("#flat-msg"), "err", "Give the placeholder a name: letters, digits and _ only, for example site.");
+          if (["folder", "folder_leaf", "type", "convention", "folder_abbrev"].includes(name)) return msg($("#flat-msg"), "err", `{${name}} is built in; pick another name.`);
+          let r; try { r = await api("/api/rules/values", { field, config: { ...cfg, ...collect() } }); } catch (e) { return msg($("#flat-msg"), "err", e.message); }
+          if (!r.values.length) return msg($("#flat-msg"), "warn", "No loaded account has a value there.");
+          readLayers();
+          const rows = r.values.map(v => ({ field: field === "address_domain" ? "address_domain" : field, pattern: "^" + reEsc(v.value) + "$", code: v.code }));
+          const had = layers[name];
+          // An existing placeholder ({env}) keeps its rows below the new ones: folders still count.
+          layers[name] = { label: had ? had.label : field.startsWith("column:") ? field.slice(7) : name, default: had ? had.default : "",
+            rules: rows.concat(had ? (had.rules || []).filter(x => x.field !== rows[0].field) : []) };
+          renderLayers();
+          const flatT = $("#conv-flat"), tag = `{${name}}`;
+          if (!flatT.value.includes(tag)) {
+            const t = flatT.value.trim() || "{env}-{tech}-{flavor}-{acct}";
+            flatT.value = t.includes("{env}") ? t.replace("{env}", "{env}-" + tag) : tag + "-" + t;
+          }
+          $('[data-block="codes"]').open = true; $('[data-block="layers-all"]').open = true; const blk = $(`[data-block="layer-${name}"]`); if (blk) blk.open = true;
+          const clashes = r.values.filter(v => v.clash).map(v => `${v.value} and ${v.clash} (${v.code})`);
+          msg($("#flat-msg"), clashes.length || r.too_many ? "warn" : "ok",
+            `{${name}} ${had ? "now also takes" : "takes"} its code from ${r.distinct} ${r.distinct === 1 ? "value" : "values"}${r.empty ? `; ${r.empty} accounts have none, so the part is left out of their Safe name` : ""}. ` +
+            `The pattern for accounts with no folders is now ${flatT.value}. Check or change the codes under Codes used in names → {${name}}.` +
+            (clashes.length ? ` Same code for different values: ${clashes.slice(0, 5).join(", ")}; give one of each its own code.` : "") +
+            (r.too_many ? ` Only the first ${r.values.length} values were added: a column with this many values makes too many Safes.` : ""));
+          flatT.dispatchEvent(new Event("input", { bubbles: true }));
+          DIRTY.main = true; syncSave();
+        };
         // The pattern fields matter only when Safes are named by the convention.
         const convOn = () => { const on = $("#fallback").value === "convention"; $("#conv-fields").style.opacity = on ? 1 : .5;
           $("#conv-fields").title = on ? "" : "Used only when Safes are named after the folder structure, abbreviated"; };
@@ -1159,15 +1244,33 @@ PAGES["rules-safes"] = () => rulesPage("rules-safes",
 /* B. Permissions: Safe members */
 PAGES["rules-members"] = () => rulesPage("rules-members",
   "How source permissions turn into Privilege Cloud permission presets or your own custom roles.",
-  ({ config: cfg, presets }) => {
+  ({ config: cfg, presets, hints, standard_member_set: suggested }) => {
     const LEGACY = { owner: "Full", editor: "Accounts manager", user: "Read only", viewer: "List only" };
     let customRoles = Object.entries({ ...(cfg.role_permissions || {}), ...(cfg.custom_roles || {}) }).filter(([n]) => !presets[n])
       .map(([name, perms]) => ({ name, perms: new Set(perms) }));
     ROLE_NAMES = () => Object.keys(presets).concat(customRoles.map(r => r.name.trim()).filter(Boolean));
     const fixRole = (r) => r ? (LEGACY[String(r).toLowerCase()] && !customRoles.some(c => c.name === r) ? LEGACY[String(r).toLowerCase()] : r) : "";
     const PR = [{ key: "role", label: "Source permission word" }, { key: "to", label: "Privilege Cloud role", roles: true }];
+    const std = cfg.standard_members || {}, stdRows = std.members || [];
+    const noGrants = (hints.records || 0) > 0 && !(hints.with_grants || 0);
+    const SM = [{ key: "name", label: "Member name", ph: "{safe}-Users", tip: SM_TIP.name },
+                { key: "member_type", label: "Member type", options: MEMBER_TYPES, def: "Group", tip: SM_TIP.member_type },
+                { key: "role", label: "Role", roles: true, tip: SM_TIP.role },
+                { key: "search_in", label: "searchIn (optional)", ph: "empty = every directory", tip: SM_TIP.search_in }];
     const html = `<div class="card"><h3>Source permission → role <span class="muted small">(a member with several permissions on one Safe gets the strongest role)</span></h3>
-        ${editorTable("t-pr", PR, Object.entries(cfg.permission_map).map(([role, to]) => ({ role, to: fixRole(to) })), "+ Add row", true)}</div>
+        ${noGrants ? '<div class="msg warn">None of your loaded accounts has permissions (access groups), so this table has nothing to convert. Give the Safes members with <b>Standard member groups</b> below.</div>' : ""}
+        ${editorTable("t-pr", PR, Object.entries(cfg.permission_map).map(([role, to]) => ({ role, to: fixRole(to) })), "+ Add row", !noGrants)}</div>
+      <div class="card" id="std-card"><h3>Standard member groups for each Safe <span class="muted small">(for a plain accounts list with no permissions; empty unless you add rows)</span></h3>
+        <p class="small">The same set of members on every Safe, each named after its Safe: <code>{safe}-Owners</code> on the Safe <code>P-BOS-SVR-WIN-LA</code> is the group
+          <code>P-BOS-SVR-WIN-LA-Owners</code>. A row without <code>{safe}</code> (for example <code>PAM-Vault-Admins</code>) adds that one member to every Safe.
+          Names then go through <b>C. Safe members</b> (domain conversion and directory sources) like any other member. The groups must exist in your directory
+          before the upload: <b>4. Create upload files</b> writes the list as <code>review/MemberGroups_To_Create.csv</code>.</p>
+        <div class="row"><label class="inline">Add them to <select id="std-apply">${[["no_source_members", "Safes that get no members from the source (recommended)"],
+            ["all", "every Safe, next to the source's members"], ["off", "no Safe (keep the rows, add nothing)"]].map(([v, l]) =>
+            `<option value="${v}" ${(std.apply_to || "no_source_members") === v ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>
+          <button class="btn small" id="std-suggest" title="Adds three rows you can change: {safe}-Owners (Full), {safe}-Users (Connect only) and {safe}-Approvers (Approver). Rows you already have stay.">Use the suggested set (${esc(suggested.map(r => r.name.replace("{safe}-", "")).join(", "))})</button></div>
+        ${editorTable("t-std", SM, stdRows, "+ Add member", stdRows.length > 0 || noGrants)}
+        <p class="muted small" id="std-example"></p></div>
       <div class="card"><h3>Roles and their permissions <span class="muted small">(the five Privilege Cloud presets are fixed; add a custom role to choose every permission)</span></h3>
         ${editBlock(`5 presets, ${customRoles.length} custom ${customRoles.length === 1 ? "role" : "roles"}`, `<div class="tablewrap" style="margin-top:8px" id="roles"></div>
           <div class="row" style="margin-top:8px"><button class="btn small" id="role-add">+ New custom role</button>
@@ -1199,17 +1302,44 @@ PAGES["rules-members"] = () => rulesPage("rules-members",
         head: `<tr>${SRC_HEAD(2)}${CSV_HEAD(4, "SafeMembers.csv")}<th class="grp"></th></tr>
           <tr><th>Member in the export</th><th title="The permission the source gives (the strongest, when it has several)">Permission</th>
           <th>safeName</th><th>memberName</th><th>memberType</th><th title="The Privilege Cloud role: a preset or your custom role, from the table on this page">role</th><th>Notes</th></tr>`,
-        row: (x) => `<tr${(x.changed || []).includes("new") ? ` class="chg-row" title="New compared with what is saved"` : ""}><td>${esc(x.source)}</td><td>${esc(x.permission)}</td>
+        row: (x) => `<tr${(x.changed || []).includes("new") ? ` class="chg-row" title="New compared with what is saved"` : ""}><td>${x.standard ? `<span class="muted" title="Not in the export: added by your standard member groups">${esc(x.source)}</span>` : esc(x.source)}</td><td>${esc(x.permission)}</td>
           <td class="nowrap">${esc(x.safe)}</td><td${chg(x, "member_name")}>${esc(x.member_name)}</td><td${chg(x, "member_type")}>${esc(x.member_type)}</td>
           <td${chg(x, "role", "nowrap")}>${x.role === "UNMAPPED" ? '<span class="pill ERROR">no role</span>' : esc(x.role)}</td><td class="notes">${esc(x.notes)}</td></tr>`,
       },
       collect: () => ({
+        standard_members: { apply_to: $("#std-apply").value, members: readTable("t-std").map(r => {
+          if (!r.name) throw new Error("Every standard member group row needs a member name, for example {safe}-Users.");
+          return { name: r.name, member_type: r.member_type || "Group", role: r.role || "", search_in: r.search_in || "" }; }) },
         permission_map: Object.fromEntries(readTable("t-pr").filter(r => r.role && r.to).map(r => [r.role, r.to])),
         custom_roles: Object.fromEntries(customRoles.map(r => [r.name.trim(), PERM_GROUPS.flatMap(g => g[1].map(p => p[0])).filter(p => r.perms.has(p))])),
         role_permissions: {},
       }),
       after() {
         renderRoles();
+        // One Safe as the example: what each row's name pattern gives, and names to check.
+        const example = () => {
+          const safe = this.exampleSafe || "P-BOS-SVR-WIN-LA";
+          const rows = readTable("t-std").filter(r => r.name);
+          $("#std-example").innerHTML = !rows.length ? "" : `On the Safe <b>${esc(safe)}</b>: ` + rows.map(r => {
+            const name = r.name.split("{safe}").join(safe), short = name.split("\\").pop().split("@")[0];
+            const warn = (r.member_type || "Group") === "Group" && (short.length > 64 || /["/\[\]:;|=,+*?<>]/.test(short))
+              ? ` <span class="pill REVIEW" title="Active Directory group names are at most 64 characters, without &quot; / [ ] : ; | = , + * ? &lt; &gt;">check the name</span>` : "";
+            return `<code>${esc(name)}</code> (${esc(r.role || "no role yet")})${warn}`; }).join(", ") +
+            ($("#std-apply").value === "off" ? ' · <span class="pill REVIEW">off: added to no Safe</span>' : "");
+        };
+        ["input", "change"].forEach(ev => $("#std-card").addEventListener(ev, example));
+        $("#std-card").addEventListener("click", () => setTimeout(example, 0));
+        this.previewed = (r) => { const x = (r.rows || []).find(y => y.standard) || (r.rows || [])[0]; if (x && x.safe !== this.exampleSafe) { this.exampleSafe = x.safe; example(); } };
+        example();
+        $("#std-suggest").onclick = () => {
+          const have = new Set(readTable("t-std").map(r => (r.name || "").toLowerCase()));
+          const t = $("#t-std");
+          suggested.filter(r => !have.has(r.name.toLowerCase())).forEach(r => t.insertAdjacentHTML("beforeend", editorRow(SM, r)));
+          updateBlockCount("t-std"); $('[data-block="t-std"]').open = true;
+          if ($("#std-apply").value === "off") $("#std-apply").value = "no_source_members";
+          DIRTY.main = true; syncSave(); example();
+          t.dispatchEvent(new Event("change", { bubbles: true }));
+        };
         $("#role-add").onclick = () => {
           const from = $("#role-from").value;
           let name = "Custom role", n = 1;
@@ -1223,7 +1353,7 @@ PAGES["rules-members"] = () => rulesPage("rules-members",
     };
   });
 
-/* C. Platforms */
+/* D. Platforms */
 PAGES["rules-platforms"] = () => rulesPage("rules-platforms",
   "Which Privilege Cloud platform each account uses. The platform decides how Privilege Cloud connects to the account and changes its password.",
   ({ config: cfg, hints }) => {
@@ -1275,7 +1405,7 @@ PAGES["rules-platforms"] = () => rulesPage("rules-platforms",
     };
   });
 
-/* D. Accounts */
+/* E. Accounts */
 PAGES["rules-accounts"] = () => rulesPage("rules-accounts",
   "How each account is named and which extra source columns become account properties.",
   ({ config: cfg }) => {
@@ -2104,19 +2234,23 @@ PAGES.activity = async () => {
       ${d.audit.map(a => `<tr><td class="small nowrap">${esc(String(a.ts || "").slice(0, 19).replace("T", " "))}</td><td>${esc(a.user)}</td><td class="nowrap">${esc(ACTION_NAMES[a.action] || a.action)}</td><td title="${esc(a.detail)}">${esc(describeAudit(a.action, a.detail))}</td></tr>`).join("")}</table></div></div>
     <div class="card"><h3>Your changes to accounts</h3><div class="tablewrap"><table><tr><th>Account</th><th>Field</th><th>Value</th><th>When</th><th>Who</th><th>Reason</th></tr>
       ${d.edits.map(e => `<tr><td class="small">${esc(e.record_id)}</td><td>${esc(e.field)}</td><td>${esc(e.value)}</td><td class="small">${esc(e.changed_utc)}</td><td>${esc(e.changed_by)}</td><td>${esc(e.reason)}</td></tr>`).join("") || '<tr><td colspan="6" class="muted">None</td></tr>'}</table></div></div>`;
-  // Fetched by the page itself, then saved: works the same with a self-signed certificate.
-  document.querySelectorAll("[data-export]").forEach(a => a.onclick = async (e) => {
-    e.preventDefault();
-    const r = await fetch(`/api/export/${a.dataset.export}.csv`, { headers: { "X-IMW": "1" } });
-    if (r.status === 423) return showLogin("Locked after inactivity. Sign in again to continue.");
-    if (!r.ok) return alert("Export failed: " + r.statusText);
-    const name = (r.headers.get("Content-Disposition") || "").match(/filename="([^"]+)"/);
-    const url = URL.createObjectURL(await r.blob());
-    const link = Object.assign(document.createElement("a"), { href: url, download: name ? name[1] : a.dataset.export + ".csv" });
-    document.body.appendChild(link); link.click(); link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
-  });
 };
+
+// CSV downloads (activity log, account changes, Safe naming convention): fetched by the page
+// itself, then saved, which works the same with a self-signed certificate.
+document.addEventListener("click", async (e) => {
+  const a = e.target.closest && e.target.closest("[data-export]");
+  if (!a) return;
+  e.preventDefault();
+  const r = await fetch(`/api/export/${a.dataset.export}.csv`, { headers: { "X-IMW": "1" } });
+  if (r.status === 423) return showLogin("Locked after inactivity. Sign in again to continue.");
+  if (!r.ok) return alert("Export failed: " + r.statusText);
+  const name = (r.headers.get("Content-Disposition") || "").match(/filename="([^"]+)"/);
+  const url = URL.createObjectURL(await r.blob());
+  const link = Object.assign(document.createElement("a"), { href: url, download: name ? name[1] : a.dataset.export + ".csv" });
+  document.body.appendChild(link); link.click(); link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+});
 
 // Links and buttons in generated markup use data-* attributes instead of inline onclick
 // handlers, so the page's Content-Security-Policy can refuse every inline script.

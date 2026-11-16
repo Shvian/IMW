@@ -95,6 +95,7 @@ LAYER_FIELDS = {
     "platform": "the platform ID",
     "username": "the username",
     "address": "the address",
+    "address_domain": "the address's domain (srv01.boston.corp.example.com -> boston.corp.example.com)",
     "name": "the account name",
     "type": "the record type / template",
     "source": "the source (delinea, keepass, table)",
@@ -142,6 +143,17 @@ def default_layers():
             _rule("username", svc, "LS"),
         ] + _by_platform("acct")},
     }
+
+
+IP_ADDRESS = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$|:")
+
+
+def address_domain(address):
+    """'srv01.boston.corp.example.com' -> 'boston.corp.example.com'; '' for a short name or an IP."""
+    host = str(address or "").strip().lower().rstrip(".")
+    if not host or IP_ADDRESS.search(host) or "." not in host:
+        return ""
+    return host.split(".", 1)[1]
 
 
 def norm(text):
@@ -208,6 +220,8 @@ class Namer:
             return ["\\" + "\\".join(rec.folder) if rec.folder else ""]
         if field == "platform":
             return [platform or ""]
+        if field == "address_domain":
+            return [address_domain(rec.address)]
         if field in codes:
             return [codes[field]]
         if field.startswith("column:"):

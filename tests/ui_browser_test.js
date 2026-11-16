@@ -142,7 +142,8 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   await page.waitForSelector('#rules-msg .msg.ok');
   if ((await page.$eval('nav', e => getComputedStyle(e).position)) !== 'sticky') throw new Error('left nav does not stay in view');
 
-  if (!(await page.innerText('#rules-next')).includes('3. Review')) throw new Error('the last rules page does not lead to Review');
+  if (!(await page.innerText('#rules-next')).includes('D. Platforms')) throw new Error('C. Safe members does not lead to D. Platforms');
+  if (!(await page.innerText('h2')).includes('C. Safe members')) throw new Error('the member names page is not C. Safe members');
   await navTo('rules-safes');
   await page.waitForSelector('text=Safe from access groups');
   if (!(await page.innerText('h2')).includes('A. Safes')) throw new Error('A. Safes did not open');
@@ -245,7 +246,7 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   DISMISS = true;
   await navTo('rules-accounts');
   if (!/not saved/.test(DIALOGS[DIALOGS.length - 1] || '')) throw new Error('no unsaved-changes warning when leaving a page');
-  if (!(await page.innerText('h2')).includes('C. Platforms')) throw new Error('Cancel on the unsaved warning still left the page');
+  if (!(await page.innerText('h2')).includes('D. Platforms')) throw new Error('Cancel on the unsaved warning still left the page');
   await page.fill('#defplat', '');
   await shot(page, '02e_platforms');
   await page.click('#save');
