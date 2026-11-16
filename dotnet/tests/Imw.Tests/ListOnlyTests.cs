@@ -261,7 +261,7 @@ public class ListOnlyUi : UiTestBase
         Assert.Contains("SVR-WIN-LA-03", Rows(s2, "safes").Select(x => (string)x.Get("safe_name")));
         var (st3, outp) = Post("/api/extract", "{\"name\": \"t1\"}");
         Assert.True(st3 == 200, Json.Dumps(outp));
-        var files = outp.List("files").Cast<string>().ToList();
+        var files = outp.List("files").Cast<string>().Select(f => f.Replace('\\', '/')).ToList();   // \ on Windows, as in Python
         Assert.Contains("review/MemberGroups_To_Create.csv", files);
         Assert.Contains("review/SafeNamingConvention.csv", files);
         var (st4, text, _) = Req("GET", "/api/export/convention.csv");

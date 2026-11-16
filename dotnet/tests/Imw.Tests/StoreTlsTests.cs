@@ -155,7 +155,7 @@ public class Certificate : TestBase
             using var conn = await listener.AcceptTcpClientAsync();
             using var s = new SslStream(conn.GetStream());
             await s.AuthenticateAsServerAsync(serverCert);
-            await s.ReadAsync(new byte[1]);
+            _ = await s.ReadAsync(new byte[1]);   // waits for the client to finish; any byte count is fine
         });
         using var root = X509Certificate2.CreateFromPem(File.ReadAllText(certPath));
         using var client = new TcpClient();

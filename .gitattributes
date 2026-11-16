@@ -1,2 +1,6 @@
 *.cmd text eol=crlf
 *.bat text eol=crlf
+# Sample exports are test inputs: keep their bytes exactly as committed (no CRLF conversion on Windows checkouts).
+samples/** -text
+# The web page files are checked byte for byte by the tests.
+imw/ui/static/** text eol=lf

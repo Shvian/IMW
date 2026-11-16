@@ -10,6 +10,23 @@ public class OwnerTests : TestBase
     static readonly Identity Ian = new() { Sid = "S-1-5-21-1-1001", Domain = "CORP", User = "ian", Display = "CORP\\ian" };
     static readonly Identity Bob = new() { Sid = "S-1-5-21-1-1002", Domain = "CORP", User = "bob", Display = "CORP\\bob" };
 
+    public OwnerTests()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        // Windows can't put the made-up SIDs of Ian and Bob on a real folder (icacls refuses unknown accounts),
+        // and on an elevated build server new folders belong to Administrators: stand in for both.
+        Owner.RunHook = (_, _) => (0, "");
+        Owner.PathOwnerHook = _ => Ian.Sid;
+    }
+
+    public override void Dispose()
+    {
+        Owner.RunHook = null;
+        Owner.PathOwnerHook = null;
+        Owner.IdentityHook = null;
+        base.Dispose();
+    }
+
     static T RunAs<T>(Identity who, Func<T> fn)
     {
         Owner.IdentityHook = () => who;
@@ -40,6 +57,7 @@ public class OwnerTests : TestBase
         return cmd.ExecuteScalar();
     }
 
+    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
     static int Mode(string path) => (int)File.GetUnixFileMode(path) & 0x1FF;
 
     [Fact]
@@ -101,9 +119,7 @@ public class OwnerTests : TestBase
         var mine = OperatingSystem.IsWindows() ? Ian
             : new Identity { Sid = Owner.CurrentIdentity().Sid, Domain = Ian.Domain, User = Ian.User, Display = Ian.Display };
         Assert.Throws<OwnerError>(() => RunAs(Bob, () => Owner.ClaimWorkspace(ws)));
-        if (OperatingSystem.IsWindows()) Owner.PathOwnerHook = _ => Ian.Sid;   // the folder belongs to Ian
-        try { RunAs(mine, () => Owner.ClaimWorkspace(ws)); }
-        finally { Owner.PathOwnerHook = null; }
+        RunAs(mine, () => Owner.ClaimWorkspace(ws));          // on Windows the folder belongs to Ian (see above)
     }
 
     [Fact]

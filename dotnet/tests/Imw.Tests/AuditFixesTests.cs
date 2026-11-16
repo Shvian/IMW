@@ -412,6 +412,7 @@ public class WindowsOnly
     public void PathOwner()
     {
         if (!OperatingSystem.IsWindows()) return;
-        Assert.Equal(Owner.CurrentIdentity().Sid, Owner.PathOwnerSid(AppContext.BaseDirectory));
+        // An elevated session (a build server) makes new files owned by the Administrators group.
+        Assert.Contains(Owner.PathOwnerSid(AppContext.BaseDirectory), new[] { Owner.CurrentIdentity().Sid, Owner.AdministratorsSid });
     }
 }
