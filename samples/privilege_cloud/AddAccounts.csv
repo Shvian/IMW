@@ -1,0 +1,4 @@
+Name,SafeName,PlatformId,UserName,Address,SecretType,Secret,AutomaticManagement,ManualManagementReason
+web01-admin,WIN-LOCAL-ADMIN,WinServerLocal,admin,web01.example.com,password,FakePassw0rd1,False,No Reason
+Operating System-UnixSSH-db01.example.com-root,UNX-LOCAL-ROOT,UnixSSH,root,db01.example.com,password,FakePassw0rd2,True,
+app-svc,APP-PAYMENTS,,svc_app,10.0.0.15,password,FakePassw0rd3,False,(CPM)MaxRetries

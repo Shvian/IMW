@@ -85,8 +85,9 @@ class SafeOverridesInStore(Base):
         out = self.tmp / "o"
         from imw.store import run_extract
         run_extract(st, out)
-        safes = {s["safeName"]: s for s in read_csv(out / "upload" / "Safes.csv")}
-        self.assertEqual((safes["X-MINE"]["managingCPM"], safes["X-MINE"]["numberOfVersionsRetention"]), ("MyCPM", "5"))
+        safes = {s["SafeName"]: s for s in read_csv(out / "upload" / "Safes.csv")}
+        self.assertEqual((safes["X-MINE"]["ManagingCPM"], safes["X-MINE"]["NumberOfVersionsRetention"]), ("MyCPM", "5"))
+        self.assertEqual(safes["X-MINE"]["Location"], "\\")                # empty location: the Vault root
         st.set_safe_override(old, {}, undo=True, old_name="X-MINE", new_name=old)
         st.map(st.stored_config())
         self.assertTrue(st.db.execute("SELECT 1 FROM plan_safes WHERE safe_name = ?", (old,)).fetchone())

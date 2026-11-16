@@ -119,9 +119,9 @@ public class FormulaInjection : TestBase
         Assert.Equal("'-admin", review["Username"]);
         Assert.Equal("'+evil", review["Source.Comment"]);
         var acct = ReadCsv(Path.Combine(out_, "upload", "Accounts.csv"))[0];
-        Assert.Equal("-admin", acct["userName"]);          // API data is left exactly as it is
-        Assert.Equal("-Secret=1", acct["secret"]);
-        Assert.Equal("@host", acct["address"]);
+        Assert.Equal("-admin", acct["UserName"]);          // API data is left exactly as it is
+        Assert.Equal("-Secret=1", acct["Secret"]);
+        Assert.Equal("@host", acct["Address"]);
         // Feeding the review file back is not seen as a change.
         var row = Transform.LoadOverrides(Path.Combine(out_, "review", "Accounts_Review.csv")).Values.First();
         Assert.Equal("-admin", row["Username"]);
@@ -284,7 +284,7 @@ public class ReviewRoundTrip : TestBase
         Assert.Equal(0, RunCli("extract", "--db", db, "-o", out_, "--include-secrets").Item1);
         var review = Path.Combine(out_, "review", "Accounts_Review.csv");
         Assert.Equal("'=calc", ReadCsv(review)[0]["Account_Name"]);
-        Assert.Equal("-pw", ReadCsv(Path.Combine(out_, "upload", "Accounts.csv"))[0]["secret"]);
+        Assert.Equal("-pw", ReadCsv(Path.Combine(out_, "upload", "Accounts.csv"))[0]["Secret"]);
         using var st = new Store(db);
         Assert.Equal(0, st.ImportReview(review));          // nothing changed, nothing imported
     }

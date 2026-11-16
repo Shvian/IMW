@@ -115,9 +115,9 @@ class FormulaInjection(Base):
         self.assertEqual(review["Username"], "'-admin")
         self.assertEqual(review["Source.Comment"], "'+evil")
         acct = read_csv(out / "upload" / "Accounts.csv")[0]
-        self.assertEqual(acct["userName"], "-admin")       # API data is left exactly as it is
-        self.assertEqual(acct["secret"], "-Secret=1")
-        self.assertEqual(acct["address"], "@host")
+        self.assertEqual(acct["UserName"], "-admin")       # API data is left exactly as it is
+        self.assertEqual(acct["Secret"], "-Secret=1")
+        self.assertEqual(acct["Address"], "@host")
         # Feeding the review file back is not seen as a change.
         ov = load_overrides(out / "review" / "Accounts_Review.csv")
         row = next(iter(ov.values()))
@@ -272,7 +272,7 @@ class ReviewRoundTrip(Base):
         self.assertEqual(self.run_cli("extract", "--db", db, "-o", str(out), "--include-secrets")[0], 0)
         review = out / "review" / "Accounts_Review.csv"
         self.assertEqual(read_csv(review)[0]["Account_Name"], "'=calc")
-        self.assertEqual(read_csv(out / "upload" / "Accounts.csv")[0]["secret"], "-pw")
+        self.assertEqual(read_csv(out / "upload" / "Accounts.csv")[0]["Secret"], "-pw")
         st = Store(db)
         try:
             self.assertEqual(st.import_review(review), 0)          # nothing changed, nothing imported

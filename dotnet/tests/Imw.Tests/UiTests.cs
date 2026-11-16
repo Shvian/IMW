@@ -164,10 +164,9 @@ public class UiServerTests : UiTestBase
         (st, r) = Post("/api/extract", @"{""name"": ""w1"", ""include_secrets"": true, ""confirm"": ""INCLUDE SECRETS"",
                                          ""scope"": ""filter"", ""view"": ""all"", ""filters"": {""source"": ""delinea""}}");
         Assert.True(st == 200, Json.Dumps(r));
-        var accounts = ReadCsv(WsPath("output", "w1", "upload", "Accounts.csv")).ToDictionary(a => Id(a, "recordId"));
-        Assert.Equal("FIN-Portals", accounts["107"]["safeName"]);
-        Assert.Equal("P@ssw0rd!1", accounts["101"]["secret"]);
-        Assert.All(accounts.Values, a => Assert.StartsWith("delinea:", a["recordId"]));
+        var accounts = ReadCsv(WsPath("output", "w1", "upload", "Accounts.csv")).ToDictionary(a => a["Name"]);
+        Assert.Equal("FIN-Portals", accounts["Vendor Portal"]["SafeName"]);
+        Assert.Equal("P@ssw0rd!1", accounts["svc_sql_prod"]["Secret"]);
         Assert.Equal(200, Post("/api/output/delete", @"{""name"": ""w1"", ""what"": ""upload""}").Status);
         Assert.False(Directory.Exists(WsPath("output", "w1", "upload")));
         Assert.True(Directory.Exists(WsPath("output", "w1", "review")));
@@ -315,9 +314,9 @@ public class UiServerTests : UiTestBase
         (st, r) = Post("/api/extract", @"{""name"": ""o1""}");
         Assert.True(st == 200, Json.Dumps(r));
         var up = WsPath("output", "o1", "upload");
-        Assert.Contains(ReadCsv(Path.Combine(up, "FileCategories.csv")), c => c["column"] == "address");
+        Assert.Contains(ReadCsv(Path.Combine(up, "FileCategories.csv")), c => c["column"] == "Address");
         Assert.NotEmpty(ReadCsv(Path.Combine(up, "PlatformProperties.csv")));
-        Assert.Equal(2, ReadCsv(Path.Combine(up, "SafeMembers.csv")).Count(m => m["memberName"] == "PAM-Auditors"));
+        Assert.Equal(2, ReadCsv(Path.Combine(up, "SafeMembers.csv")).Count(m => m["MemberName"] == "PAM-Auditors"));
     }
 
     [Fact]

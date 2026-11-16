@@ -7,28 +7,36 @@ public static class Writers
 {
     public const string Version = "2.0.0";
 
-    public static readonly string[] SafeFields = { "safeName", "description", "location", "managingCPM",
-        "numberOfVersionsRetention", "numberOfDaysRetention", "olacEnabled", "autoPurgeEnabled" };
-    public static readonly string[] AccountFields = { "safeName", "platformId", "name", "address", "userName", "secretType", "secret",
-        "secretManagement.automaticManagementEnabled", "secretManagement.manualManagementReason" };
+    // Upload CSV columns, named and ordered like the Privilege Cloud (ISPSS) bulk-upload samples:
+    // (CSV column, field it holds). The optional columns are added at the end only when a value is set.
+    public static readonly (string Col, string Field)[] SafeColumns = { ("SafeName", "safeName"), ("Description", "description"),
+        ("Location", "location"), ("ManagingCPM", "managingCPM"), ("NumberOfDaysRetention", "numberOfDaysRetention"),
+        ("NumberOfVersionsRetention", "numberOfVersionsRetention") };
+    public static readonly (string Col, string Field)[] SafeOptional = { ("OlacEnabled", "olacEnabled"), ("AutoPurgeEnabled", "autoPurgeEnabled") };
+    public static readonly string[] MemberColumns = { "SafeName", "MemberName", "MemberType" };   // then one column per permission
+    public static readonly string[] MemberOptional = { "SearchIn" };
+    public static readonly string[] AccountColumns = { "Name", "SafeName", "PlatformId", "UserName", "Address", "SecretType", "Secret",
+        "AutomaticManagement", "ManualManagementReason" };
+    public const string PropertyPrefix = "platformAccountProperties.";
+    public const string DefaultLocation = "\\";               // the Vault root, as the samples write it
 
     // Accounts.csv column -> Vault file category (what the account stores it as) and a note.
     static readonly Dictionary<string, (string, string)> FileCategories = new()
     {
-        ["safeName"] = ("", "Safe the account is stored in (not a file category)"),
-        ["platformId"] = ("PolicyID", "Platform ID"),
-        ["name"] = ("", "Account (object) name in the Safe (not a file category)"),
-        ["address"] = ("Address", "Target address"),
-        ["userName"] = ("UserName", "Account username"),
-        ["secretType"] = ("", "password or key (the type of the account's secret)"),
-        ["secret"] = ("", "The password or private key itself"),
-        ["secretManagement.automaticManagementEnabled"] = ("CPMDisabled", "false sets CPMDisabled on the account"),
-        ["secretManagement.manualManagementReason"] = ("CPMDisabled", "Text stored in CPMDisabled when the CPM does not manage it"),
+        ["Name"] = ("", "Account (object) name in the Safe (not a file category)"),
+        ["SafeName"] = ("", "Safe the account is stored in (not a file category)"),
+        ["PlatformId"] = ("PolicyID", "Platform ID"),
+        ["UserName"] = ("UserName", "Account username"),
+        ["Address"] = ("Address", "Target address"),
+        ["SecretType"] = ("", "password or key (the type of the account's secret)"),
+        ["Secret"] = ("", "The password or private key itself"),
+        ["AutomaticManagement"] = ("CPMDisabled", "False sets CPMDisabled on the account"),
+        ["ManualManagementReason"] = ("CPMDisabled", "Text stored in CPMDisabled when the CPM does not manage it"),
     };
 
     static (string, string) Category(string col)
     {
-        if (col.StartsWith("platformAccountProperties.", StringComparison.Ordinal))
+        if (col.StartsWith(PropertyPrefix, StringComparison.Ordinal))
             return (col.Substring(col.IndexOf('.') + 1), "Platform account property from the source column(s) mapped in account_property_map");
         return FileCategories.TryGetValue(col, out var c) ? c : ("", "");
     }
@@ -43,12 +51,12 @@ public static class Writers
     /// PlatformProperties.csv: per platform, which file categories its accounts use.</summary>
     public static List<string> WriteCategories(string out_, List<string> header, List<Dictionary<string, string>> rows)
     {
-        var cols = header.Skip(1).ToList();                       // without recordId
+        var cols = header.ToList();
         var used = cols.Distinct().ToDictionary(c => c, _ => 0);
         var perPlatform = new OrderedMap<string, PlatformUsage>(StringComparer.Ordinal);
         foreach (var row in rows)
         {
-            var plat = row["platformId"];
+            var plat = row["PlatformId"];
             var pp = perPlatform.GetOrAdd(plat, () => new PlatformUsage { Cols = cols.Distinct().ToDictionary(c => c, _ => 0) });
             pp.Accounts++;
             foreach (var c in cols)
@@ -87,13 +95,20 @@ public static class Writers
         return new List<string> { catPath, platPath };
     }
 
-    /// <summary>_fmt: true/false for booleans, "" for None, else str(v).</summary>
-    public static string Fmt(object v) => v switch
+    /// <summary>Upload CSV booleans: True / False, as the Privilege Cloud samples write them.</summary>
+    public static string Bool(object v)
     {
-        bool b => b ? "true" : "false",
-        null => "",
-        _ => Py.Str(v),
-    };
+        if (v is string t && (Py.Lower(Py.Strip(t)) == "true" || Py.Lower(Py.Strip(t)) == "false"))
+            v = Py.Lower(Py.Strip(t)) == "true";
+        return v switch
+        {
+            bool b => b ? "True" : "False",
+            null => "",
+            _ => Py.Str(v),
+        };
+    }
+
+    static bool IsTrue(object v) => v is true || (v is string t && Py.Lower(Py.Strip(t)) == "true");
 
     static StreamWriter Open(string path) => Csv.OpenWrite(path);
 
@@ -222,77 +237,94 @@ public static class Writers
         var uploadSafes = plan.Safes.Where(kv => kv.Value.Migrating > 0).Select(kv => kv.Key).ToList();
 
         var safes = Path.Combine(out_, "Safes.csv");
+        var bodies = uploadSafes.Select(name => (name, body: Transform.SafeSettings(name, plan.Safes[name], cfg))).ToList();
+        var safeCols = SafeColumns.Concat(SafeOptional.Where(c => bodies.Any(b => IsTrue(b.body.Get(c.Field))))).ToList();
         using (var fh = Open(safes))
         {
             var w = new Csv.Writer(fh);
-            w.WriteRow(SafeFields);
-            foreach (var name in uploadSafes)
+            w.WriteRow(safeCols.Select(c => (object)c.Col));
+            foreach (var (name, body) in bodies)
             {
-                var body = Transform.SafeSettings(name, plan.Safes[name], cfg);
-                w.WriteRow(SafeFields.Select(f => (object)Fmt(body.Get(f, ""))));
+                object Field(string f)
+                {
+                    if (f == "safeName") return name;
+                    var v = body.Get(f, "");
+                    if (f == "location" && Py.Strip(v == null ? "" : Py.Str(v)).Length == 0) return DefaultLocation;
+                    return v;
+                }
+                w.WriteRow(safeCols.Select(c => (object)Bool(Field(c.Field))));
             }
         }
 
         var members = Path.Combine(out_, "SafeMembers.csv");
         int skippedMembers = 0;
         var roles = Config.AllRoles(cfg);
+        var memberRows = new List<(List<object> Row, string SearchIn)>();
+        foreach (var kv in plan.Members)
+        {
+            var m = kv.Value;
+            if (m.Role == null || !roles.TryGetValue(m.Role, out var perms))
+            {
+                skippedMembers++;
+                continue;
+            }
+            var granted = perms.ToHashSet();
+            var row = new List<object> { kv.Key.Item1, m.MemberName, m.MemberType };
+            row.AddRange(Config.AllPermissions.Select(p => (object)Bool(granted.Contains(p))));
+            memberRows.Add((row, m.SearchIn ?? ""));
+        }
+        bool withSearchIn = memberRows.Any(r => Py.Strip(r.SearchIn).Length > 0);
         using (var fh = Open(members))
         {
             var w = new Csv.Writer(fh);
-            w.WriteRow(new object[] { "safeName", "memberName", "memberType", "searchIn", "role" }
-                .Concat(Config.AllPermissions.Select(p => (object)$"permissions.{p}")));
-            foreach (var kv in plan.Members)
-            {
-                var m = kv.Value;
-                if (m.Role == null || !roles.TryGetValue(m.Role, out var perms))
-                {
-                    skippedMembers++;
-                    continue;
-                }
-                var granted = perms.ToHashSet();
-                w.WriteRow(new object[] { kv.Key.Item1, m.MemberName, m.MemberType, m.SearchIn, m.Role }
-                    .Concat(Config.AllPermissions.Select(p => (object)Fmt(granted.Contains(p)))));
-            }
+            w.WriteRow(MemberColumns.Concat(Config.AllPermissions).Concat(withSearchIn ? MemberOptional : Array.Empty<string>())
+                .Select(c => (object)c));
+            foreach (var (row, searchIn) in memberRows)
+                w.WriteRow(withSearchIn ? row.Append(searchIn) : row);
         }
 
         var propMap = cfg.Obj("account_property_map");
-        var propCols = propMap.Values.Select(v => Py.Str(v)).Distinct().ToList();
         var acctDefaults = cfg.Obj("account_defaults");
+        var auto = acctDefaults.Get("automaticManagementEnabled", false);
+        var reason = IsTrue(auto) ? "" : acctDefaults.Get("manualManagementReason", "");
         var accounts = Path.Combine(out_, "Accounts.csv");
-        int count = 0;
-        var header = new List<string> { "recordId" };
-        header.AddRange(AccountFields);
-        header.AddRange(propCols.Select(c => $"platformAccountProperties.{c}"));
+        var rows = new List<(AccountPlan P, List<object> Base, Dictionary<string, string> Props)>();
+        foreach (var p in plan.Accounts)
+        {
+            if (!p.Uploadable) continue;
+            var r = p.Rec;
+            var props = new Dictionary<string, string>(StringComparer.Ordinal);
+            var extraLower = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var kv in r.Extra) extraLower[Py.Lower(kv.Key)] = kv.Value;
+            foreach (var kv in propMap)
+            {
+                var val = extraLower.TryGetValue(Py.Lower(kv.Key), out var v) ? v ?? "" : "";
+                var dst = Py.Str(kv.Value);
+                if (Py.Strip(val).Length > 0 && string.IsNullOrEmpty(props.GetValueOrDefault(dst))) props[dst] = val;
+            }
+            rows.Add((p, new List<object> { p.AccountName, p.Safe, p.Platform, r.Username, r.Address, r.SecretType,
+                includeSecrets ? r.Secret : "", Bool(auto), reason }, props));
+        }
+        // Property columns only for the platform properties some account has a value for.
+        var propCols = propMap.Values.Select(v => Py.Str(v)).Distinct()
+            .Where(c => rows.Any(x => !string.IsNullOrEmpty(x.Props.GetValueOrDefault(c)))).ToList();
+        var header = new List<string>(AccountColumns);
+        header.AddRange(propCols.Select(c => PropertyPrefix + c));
         var usage = new List<Dictionary<string, string>>();
         using (var fh = Open(accounts))
         {
-            var w = new Csv.Writer(fh, Csv.Quoting.All);
+            var w = new Csv.Writer(fh);
             w.WriteRow(header);
-            foreach (var p in plan.Accounts)
+            foreach (var (p, baseValues, props) in rows)
             {
-                if (!p.Uploadable) continue;
-                var r = p.Rec;
-                var props = new Dictionary<string, string>(StringComparer.Ordinal);
-                var extraLower = new Dictionary<string, string>(StringComparer.Ordinal);
-                foreach (var kv in r.Extra) extraLower[Py.Lower(kv.Key)] = kv.Value;
-                foreach (var kv in propMap)
-                {
-                    var val = extraLower.TryGetValue(Py.Lower(kv.Key), out var v) ? v ?? "" : "";
-                    var dst = Py.Str(kv.Value);
-                    if (Py.Strip(val).Length > 0 && string.IsNullOrEmpty(props.GetValueOrDefault(dst))) props[dst] = val;
-                }
-                var values = new List<object> { r.RecordId, p.Safe, p.Platform, p.AccountName, r.Address, r.Username,
-                    r.SecretType, includeSecrets ? r.Secret : "",
-                    Fmt(acctDefaults.Get("automaticManagementEnabled", false)),
-                    Py.Truthy(acctDefaults.Get("automaticManagementEnabled")) ? "" : acctDefaults.Get("manualManagementReason", "") };
+                var values = new List<object>(baseValues);
                 values.AddRange(propCols.Select(c => (object)props.GetValueOrDefault(c, "")));
                 w.WriteRow(values);
                 var row = new Dictionary<string, string>(StringComparer.Ordinal);
                 for (int i = 0; i < header.Count && i < values.Count; i++) row[header[i]] = values[i] == null ? "None" : Py.Str(values[i]);
                 // usage only, never the value
-                row["secret"] = r.HasSecret == true || Py.Strip(r.Secret ?? "").Length > 0 ? "x" : "";
+                row["Secret"] = p.Rec.HasSecret == true || Py.Strip(p.Rec.Secret ?? "").Length > 0 ? "x" : "";
                 usage.Add(row);
-                count++;
             }
         }
         if (includeSecrets) Restrict(accounts);
@@ -300,7 +332,7 @@ public static class Writers
         var files = new List<string> { safes, members, accounts };
         files.AddRange(extraFiles);
         return (files, Json.O(("safes", (long)uploadSafes.Count), ("members", (long)(plan.Members.Count - skippedMembers)),
-                              ("members_skipped", (long)skippedMembers), ("accounts", (long)count)));
+                              ("members_skipped", (long)skippedMembers), ("accounts", (long)rows.Count)));
     }
 
     /// <summary>inputs: each a JObj, or a (source, path) pair whose file gets a checksum.</summary>

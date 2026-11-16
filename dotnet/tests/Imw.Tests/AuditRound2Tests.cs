@@ -72,7 +72,7 @@ public class MergedMembers : TestBase
         Assert.Contains(m.Notes, n => n.StartsWith("merged source members"));
         Writers.WriteUpload(plan, cfg, Tmp, false);
         var rows = ReadCsv(T("upload", "SafeMembers.csv"));
-        Assert.Equal(new[] { ("APPS", "SQL-Admins") }, rows.Select(r => (r["safeName"], r["memberName"])));
+        Assert.Equal(new[] { ("APPS", "SQL-Admins") }, rows.Select(r => (r["SafeName"], r["MemberName"])));
     }
 
     [Fact]

@@ -1,0 +1,4 @@
+SafeName,MemberName,MemberType,useAccounts,retrieveAccounts,listAccounts,addAccounts,updateAccountContent,updateAccountProperties,initiateCPMAccountManagementOperations,specifyNextAccountContent,renameAccounts,deleteAccounts,unlockAccounts,manageSafe,manageSafeMembers,backupSafe,viewAuditLog,viewSafeMembers,accessWithoutConfirmation,createFolders,deleteFolders,moveAccountsAndFolders,requestsAuthorizationLevel1,requestsAuthorizationLevel2
+WIN-LOCAL-ADMIN,Privilege Cloud Administrators,Role,True,True,True,True,True,True,True,True,True,True,True,True,True,True,True,True,True,True,True,True,True,False
+WIN-LOCAL-ADMIN,PAM-Win-Admins,Group,True,True,True,True,True,True,True,True,True,True,False,False,False,False,True,True,False,True,True,True,False,False
+WIN-LOCAL-ADMIN,jane.doe@example.com,User,False,True,True,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False

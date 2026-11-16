@@ -104,14 +104,14 @@ class Delinea(Base):
         self.assertIn("Attachment", by_id["103"]["Notes"])
         self.assertNotIn("Source.Attachment", rows[0])
         accounts = read_csv(out / "upload" / "Accounts.csv")
-        self.assertTrue(all(a["secret"] == "" for a in accounts))
+        self.assertTrue(all(a["Secret"] == "" for a in accounts))
         self.assert_no_secrets(out)
 
     def test_include_secrets(self):
         out = self.convert(SAMPLES / "delinea_export.csv", extra=["--include-secrets"])
-        accounts = {a["recordId"].split(":")[-1]: a for a in read_csv(out / "upload" / "Accounts.csv")}
-        self.assertEqual(accounts["101"]["secret"], "P@ssw0rd!1")
-        self.assertTrue(accounts["105"]["secret"].startswith("-----BEGIN OPENSSH"))
+        accounts = {a["Name"]: a for a in read_csv(out / "upload" / "Accounts.csv")}
+        self.assertEqual(accounts["svc_sql_prod"]["Secret"], "P@ssw0rd!1")
+        self.assertTrue(accounts["deploy key app01"]["Secret"].startswith("-----BEGIN OPENSSH"))
         self.assert_no_secrets(out / "review")
         manifest = json.loads((out / "manifest.json").read_text())
         self.assertTrue(manifest["includes_secrets"])
@@ -144,9 +144,10 @@ class Delinea(Base):
         self.assertEqual(rows2["107"]["Safe_Mapping_Source"], "override")
         self.assertEqual(rows2["107"]["Platform_ID"], "VendorPortal")
         self.assertEqual(rows2["101"]["Safe_Mapping_Source"], "group_rule:CORP\\DBA-Team")
-        uploaded = {a["recordId"].split(":")[-1] for a in read_csv(out2 / "upload" / "Accounts.csv")}
-        self.assertNotIn("102", uploaded)
-        self.assertNotIn("IT-Backup", [s["safeName"] for s in read_csv(out2 / "upload" / "Safes.csv")])
+        uploaded = {a["Name"] for a in read_csv(out2 / "upload" / "Accounts.csv")}
+        self.assertNotIn("svc_backup", uploaded)
+        self.assertIn("svc_sql_prod", uploaded)
+        self.assertNotIn("IT-Backup", [s["SafeName"] for s in read_csv(out2 / "upload" / "Safes.csv")])
 
 
 class KeePass(Base):
@@ -185,7 +186,7 @@ class KeePass(Base):
         rows = {r["Account_Name"]: r for r in read_csv(out / "review" / "Accounts_Review.csv")}
         self.assertEqual(rows["switch core01"]["Status"], "ERROR")   # no username
         self.assertEqual(rows["root@web02"]["Target_Safe"], "UNIX-Servers")
-        accounts = {a["name"]: a for a in read_csv(out / "upload" / "Accounts.csv")}
+        accounts = {a["Name"]: a for a in read_csv(out / "upload" / "Accounts.csv")}
         self.assertNotIn("switch core01", accounts)
         self.assertEqual(accounts["root@web02"]["platformAccountProperties.Port"], "22")
         self.assert_no_secrets(out / "review")
@@ -217,12 +218,14 @@ class Table(Base):
         safes = sorted(r["Target_Safe"] for r in rows if r["Username"] == "sa")
         self.assertEqual(safes, ["DB-SQL Production Reportin-2", "DB-SQL Production Reporting"])
         members = read_csv(out / "upload" / "SafeMembers.csv")
-        helpdesk = [m for m in members if m["memberName"] == "Helpdesk"][0]
-        self.assertEqual(helpdesk["role"], "Read only")                  # "Read" -> Read only preset
-        self.assertEqual(helpdesk["searchIn"], "corp.example.com")
-        self.assertEqual(helpdesk["permissions.retrieveAccounts"], "true")
-        self.assertEqual(helpdesk["permissions.manageSafe"], "false")
-        uploaded = [a["userName"] for a in read_csv(out / "upload" / "Accounts.csv")]
+        helpdesk = [m for m in members if m["MemberName"] == "Helpdesk"][0]
+        self.assertNotIn("role", helpdesk)                               # the role is in the review file
+        self.assertEqual(helpdesk["SearchIn"], "corp.example.com")       # set here, so the column is added
+        self.assertEqual(helpdesk["retrieveAccounts"], "True")           # "Read" -> Read only preset
+        self.assertEqual(helpdesk["listAccounts"], "True")
+        self.assertEqual(helpdesk["deleteAccounts"], "False")
+        self.assertEqual(helpdesk["manageSafe"], "False")
+        uploaded = [a["UserName"] for a in read_csv(out / "upload" / "Accounts.csv")]
         self.assertNotIn("mfadmin", uploaded)
 
     def test_xlsx_grants_per_row(self):
@@ -235,11 +238,11 @@ class Table(Base):
         batch = rows[0]
         self.assertEqual(batch["Target_Safe"], "UNIX-Batch")
         self.assertIn("CORP\\Helpdesk=List", batch["Access_Groups"])
-        accounts = {a["name"]: a for a in read_csv(out / "upload" / "Accounts.csv")}
-        self.assertEqual(accounts["leading zero id"]["userName"], "0042")
-        self.assertEqual(accounts["leading zero id"]["secret"], "=1+1")
+        accounts = {a["Name"]: a for a in read_csv(out / "upload" / "Accounts.csv")}
+        self.assertEqual(accounts["leading zero id"]["UserName"], "0042")
+        self.assertEqual(accounts["leading zero id"]["Secret"], "=1+1")
         self.assertEqual(accounts["unix-batch01-root"]["platformAccountProperties.Port"], "22")
-        self.assertEqual(accounts["payments-api"]["safeName"], "APP-Payments-Prod")
+        self.assertEqual(accounts["payments-api"]["SafeName"], "APP-Payments-Prod")
 
     def test_multiple_inputs(self):
         out = self.convert(SAMPLES / "keepassxc_export.csv", "table=" + str(SAMPLES / "accounts_inventory.csv"),

@@ -287,7 +287,7 @@ class SecretsStayOutOfReviewFiles(Base):
         self.assertNotEqual(good["Status"], "ERROR", good["Notes"])
         self.assertNotIn("srv1", {r["Address"] for r in rows.values()})
         accounts = read_csv(out / "upload" / "Accounts.csv")
-        self.assertEqual([a["userName"] for a in accounts], ["admin2"])
+        self.assertEqual([a["UserName"] for a in accounts], ["admin2"])
 
     def test_keepass_csv_and_table_csv_shifted(self):
         kp = self.tmp / "kp.csv"

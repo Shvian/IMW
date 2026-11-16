@@ -142,12 +142,12 @@ public class DelineaXml : TestBase
             var body = ReadText(f);
             foreach (var s in DelineaXmlHelpers.XmlSecrets) Assert.False(body.Contains(s, StringComparison.Ordinal), $"'{s}' leaked into {Path.GetFileName(f)}");
         }
-        var accounts = ReadCsv(Path.Combine(out_, "upload", "Accounts.csv")).ToDictionary(a => a["name"]);
+        var accounts = ReadCsv(Path.Combine(out_, "upload", "Accounts.csv")).ToDictionary(a => a["Name"]);
         Assert.Equal(6, accounts.Count);
-        Assert.Contains("FAKE-Vend0r-Phrase-3", accounts.Values.Select(a => a["secret"]));
+        Assert.Contains("FAKE-Vend0r-Phrase-3", accounts.Values.Select(a => a["Secret"]));
         var members = ReadCsv(Path.Combine(out_, "upload", "SafeMembers.csv"));
-        var got = members.Select(m => (m["safeName"], m["memberName"], m["memberType"])).ToHashSet();
-        var searchIn = members.GroupBy(m => (m["memberName"], m["memberType"])).ToDictionary(g => g.Key, g => g.Last()["searchIn"]);
+        var got = members.Select(m => (m["SafeName"], m["MemberName"], m["MemberType"])).ToHashSet();
+        var searchIn = members.GroupBy(m => (m["MemberName"], m["MemberType"])).ToDictionary(g => g.Key, g => g.Last()["SearchIn"]);
         Assert.Equal("emea.corp.example.com", searchIn[("kmuller", "User")]);
         Assert.Equal("emea.corp.example.com", searchIn[("Linux-Ops-EU", "Group")]);
         Assert.Equal("apac.corp.example.com", searchIn[("wtan", "User")]);

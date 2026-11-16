@@ -356,7 +356,7 @@ public class SecretsStayOutOfReviewFiles : TestBase
         var good = rows.First(r => r["Username"] == "admin2");
         Assert.NotEqual("ERROR", good["Status"]);
         Assert.DoesNotContain("srv1", rows.Select(r => r["Address"]));
-        Assert.Equal(new[] { "admin2" }, ReadCsv(Path.Combine(out_, "upload", "Accounts.csv")).Select(a => a["userName"]));
+        Assert.Equal(new[] { "admin2" }, ReadCsv(Path.Combine(out_, "upload", "Accounts.csv")).Select(a => a["UserName"]));
     }
 
     [Fact]

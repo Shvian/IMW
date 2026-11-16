@@ -447,7 +447,7 @@ public static class Cli
         Console.WriteLine($"Output: {Path.GetFullPath(outDir)}");
         Console.WriteLine();
         Console.WriteLine(a.B("include_secrets") ? SecretsWarning
-            : "Accounts.csv has an empty 'secret' column. Add --include-secrets for the upload-ready version.");
+            : "Accounts.csv has an empty 'Secret' column. Add --include-secrets for the upload-ready version.");
         return 0;
     }
 
@@ -503,7 +503,7 @@ public static class Cli
         Console.WriteLine($"Output: {Path.GetFullPath(outDir)}  (manifest: {Path.GetFileName(manifest)})");
         Console.WriteLine();
         Console.WriteLine(a.B("include_secrets") ? SecretsWarning
-            : "Accounts.csv has an empty 'secret' column (dry run). Review the files, then run " +
+            : "Accounts.csv has an empty 'Secret' column (dry run). Review the files, then run " +
               "again with --include-secrets to produce the upload-ready version.");
         return 0;
     }

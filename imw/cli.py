@@ -224,7 +224,7 @@ def cmd_extract(args):
     print(f"Output: {out_dir.resolve()}")
     print()
     print(SECRETS_WARNING if args.include_secrets else
-          "Accounts.csv has an empty 'secret' column. Add --include-secrets for the upload-ready version.")
+          "Accounts.csv has an empty 'Secret' column. Add --include-secrets for the upload-ready version.")
     return 0
 
 
@@ -300,7 +300,7 @@ def cmd_convert(args):
     if args.include_secrets:
         print(SECRETS_WARNING)
     else:
-        print("Accounts.csv has an empty 'secret' column (dry run). Review the files, then run "
+        print("Accounts.csv has an empty 'Secret' column (dry run). Review the files, then run "
               "again with --include-secrets to produce the upload-ready version.")
     return 0
 

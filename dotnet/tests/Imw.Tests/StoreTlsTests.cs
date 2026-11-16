@@ -37,11 +37,10 @@ public class StoreFlow : TestBase
         var out_ = T("wave1");
         var (rc, text) = RunCli("extract", "--db", db, "-o", out_, "--where", "source = 'delinea'", "--include-secrets");
         Assert.True(rc == 0, text);
-        var accounts = ReadCsv(Path.Combine(out_, "upload", "Accounts.csv")).ToDictionary(a => Id(a, "recordId"));
-        Assert.False(accounts.ContainsKey("102"));                       // Migrate=N
-        Assert.Equal("FIN-Portals", accounts["107"]["safeName"]);        // edit, cleaned
-        Assert.Equal("P@ssw0rd!1", accounts["101"]["secret"]);
-        Assert.All(accounts.Values, a => Assert.StartsWith("delinea:", a["recordId"]));
+        var accounts = ReadCsv(Path.Combine(out_, "upload", "Accounts.csv")).ToDictionary(a => a["Name"]);
+        Assert.False(accounts.ContainsKey("svc_backup"));                // 102, Migrate=N
+        Assert.Equal("FIN-Portals", accounts["Vendor Portal"]["SafeName"]);        // edit, cleaned
+        Assert.Equal("P@ssw0rd!1", accounts["svc_sql_prod"]["Secret"]);
         Assert.Equal(12, ReadCsv(Path.Combine(out_, "review", "Accounts_Review.csv")).Count);   // review covers everything
         AssertNoSecrets(Path.Combine(out_, "review"));
     }

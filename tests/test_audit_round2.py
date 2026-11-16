@@ -69,7 +69,7 @@ class MergedMembers(Base):
         self.assertTrue(any(n.startswith("merged source members") for n in m["notes"]))
         write_upload(plan, cfg, self.tmp, False)
         rows = read_csv(self.tmp / "upload" / "SafeMembers.csv")
-        self.assertEqual([(r["safeName"], r["memberName"]) for r in rows], [("APPS", "SQL-Admins")])
+        self.assertEqual([(r["SafeName"], r["MemberName"]) for r in rows], [("APPS", "SQL-Admins")])
 
     def test_rename_onto_existing_member_merges(self):
         recs = [rec("1", grants=[("CORP\\A", "View"), ("CORP\\B", "View")])]

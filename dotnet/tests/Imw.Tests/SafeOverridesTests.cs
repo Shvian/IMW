@@ -92,8 +92,9 @@ public class SafeOverridesInStore : TestBase
         Assert.NotNull(st.Db.One("SELECT 1 FROM plan_members WHERE safe_name = 'X-MINE' AND member_name = 'PAM-Auditors'"));
         var out_ = T("o");
         Store.RunExtract(st, out_);
-        var safes = ReadCsv(Path.Combine(out_, "upload", "Safes.csv")).ToDictionary(s => s["safeName"]);
-        Assert.Equal(("MyCPM", "5"), (safes["X-MINE"]["managingCPM"], safes["X-MINE"]["numberOfVersionsRetention"]));
+        var safes = ReadCsv(Path.Combine(out_, "upload", "Safes.csv")).ToDictionary(s => s["SafeName"]);
+        Assert.Equal(("MyCPM", "5"), (safes["X-MINE"]["ManagingCPM"], safes["X-MINE"]["NumberOfVersionsRetention"]));
+        Assert.Equal("\\", safes["X-MINE"]["Location"]);                // empty location: the Vault root
         st.SetSafeOverride(old, new JObj(), undo: true, oldName: "X-MINE", newName: old);
         st.Map(st.StoredConfig());
         Assert.NotNull(st.Db.One("SELECT 1 FROM plan_safes WHERE safe_name = ?", old));

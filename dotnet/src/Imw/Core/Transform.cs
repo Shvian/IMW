@@ -223,7 +223,7 @@ public static class Transform
     public const string UnsafeText = @"[\x00-\x08\x0B-\x1F\x7F\u200b-\u200f\u2028\u2029\u2060\ufeff]";
     // One-line values you type (Safe settings, member names, searchIn): also no tab or line break.
     public const string UnsafeLine = @"[\x00-\x1F\x7F\u200b-\u200f\u2028\u2029\u2060\ufeff]";
-    public const string AccountNameInvalid = @"[\\/:*?""<>|\t\r\n]";
+    public const string AccountNameInvalid = @"[\\/:;*?""<>|\t\r\n]";
     public const int AccountNameMax = 128;
     const char Nbsp = '\u00a0';
 

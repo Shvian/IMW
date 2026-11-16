@@ -114,12 +114,12 @@ class DelineaXml(Base):
             body = f.read_text(encoding="utf-8-sig")
             for s in XML_SECRETS:
                 self.assertNotIn(s, body, f"{s!r} leaked into {f.name}")
-        accounts = {a["name"]: a for a in read_csv(out / "upload" / "Accounts.csv")}
+        accounts = {a["Name"]: a for a in read_csv(out / "upload" / "Accounts.csv")}
         self.assertEqual(len(accounts), 6)
-        self.assertIn("FAKE-Vend0r-Phrase-3", [a["secret"] for a in accounts.values()])
+        self.assertIn("FAKE-Vend0r-Phrase-3", [a["Secret"] for a in accounts.values()])
         members = read_csv(out / "upload" / "SafeMembers.csv")
-        got = {(m["safeName"], m["memberName"], m["memberType"]) for m in members}
-        search_in = {(m["memberName"], m["memberType"]): m["searchIn"] for m in members}
+        got = {(m["SafeName"], m["MemberName"], m["MemberType"]) for m in members}
+        search_in = {(m["MemberName"], m["MemberType"]): m["SearchIn"] for m in members}
         self.assertEqual(search_in[("kmuller", "User")], "emea.corp.example.com")
         self.assertEqual(search_in[("Linux-Ops-EU", "Group")], "emea.corp.example.com")
         self.assertEqual(search_in[("wtan", "User")], "apac.corp.example.com")

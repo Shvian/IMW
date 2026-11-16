@@ -1,0 +1,4 @@
+SafeName,Description,Location,ManagingCPM,NumberOfDaysRetention,NumberOfVersionsRetention
+WIN-LOCAL-ADMIN,,\,,7,
+UNX-LOCAL-ROOT,,\,CPM-01,7,
+APP-PAYMENTS,Payment app accounts,\,CPM-01,,5

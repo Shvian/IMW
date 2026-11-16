@@ -13,29 +13,36 @@ from . import __version__, csvsafe
 from .config import ALL_PERMISSIONS, all_roles
 from .transform import safe_settings
 
-SAFE_FIELDS = ["safeName", "description", "location", "managingCPM",
-               "numberOfVersionsRetention", "numberOfDaysRetention", "olacEnabled", "autoPurgeEnabled"]
-ACCOUNT_FIELDS = ["safeName", "platformId", "name", "address", "userName", "secretType", "secret",
-                  "secretManagement.automaticManagementEnabled",
-                  "secretManagement.manualManagementReason"]
+# Upload CSV columns, named and ordered like the Privilege Cloud (ISPSS) bulk-upload samples:
+# (CSV column, field it holds). The optional columns are added at the end only when a value is set.
+SAFE_COLUMNS = [("SafeName", "safeName"), ("Description", "description"), ("Location", "location"),
+                ("ManagingCPM", "managingCPM"), ("NumberOfDaysRetention", "numberOfDaysRetention"),
+                ("NumberOfVersionsRetention", "numberOfVersionsRetention")]
+SAFE_OPTIONAL = [("OlacEnabled", "olacEnabled"), ("AutoPurgeEnabled", "autoPurgeEnabled")]
+MEMBER_COLUMNS = ["SafeName", "MemberName", "MemberType"]        # then one column per permission
+MEMBER_OPTIONAL = ["SearchIn"]
+ACCOUNT_COLUMNS = ["Name", "SafeName", "PlatformId", "UserName", "Address", "SecretType", "Secret",
+                   "AutomaticManagement", "ManualManagementReason"]
+PROPERTY_PREFIX = "platformAccountProperties."
+DEFAULT_LOCATION = "\\"                # the Vault root, as the samples write it
 
 
 # Accounts.csv column -> Vault file category (what the account stores it as) and a note.
 FILE_CATEGORIES = {
-    "safeName": ("", "Safe the account is stored in (not a file category)"),
-    "platformId": ("PolicyID", "Platform ID"),
-    "name": ("", "Account (object) name in the Safe (not a file category)"),
-    "address": ("Address", "Target address"),
-    "userName": ("UserName", "Account username"),
-    "secretType": ("", "password or key (the type of the account's secret)"),
-    "secret": ("", "The password or private key itself"),
-    "secretManagement.automaticManagementEnabled": ("CPMDisabled", "false sets CPMDisabled on the account"),
-    "secretManagement.manualManagementReason": ("CPMDisabled", "Text stored in CPMDisabled when the CPM does not manage it"),
+    "Name": ("", "Account (object) name in the Safe (not a file category)"),
+    "SafeName": ("", "Safe the account is stored in (not a file category)"),
+    "PlatformId": ("PolicyID", "Platform ID"),
+    "UserName": ("UserName", "Account username"),
+    "Address": ("Address", "Target address"),
+    "SecretType": ("", "password or key (the type of the account's secret)"),
+    "Secret": ("", "The password or private key itself"),
+    "AutomaticManagement": ("CPMDisabled", "False sets CPMDisabled on the account"),
+    "ManualManagementReason": ("CPMDisabled", "Text stored in CPMDisabled when the CPM does not manage it"),
 }
 
 
 def _category(col):
-    if col.startswith("platformAccountProperties."):
+    if col.startswith(PROPERTY_PREFIX):
         prop = col.split(".", 1)[1]
         return prop, "Platform account property from the source column(s) mapped in account_property_map"
     return FILE_CATEGORIES.get(col, ("", ""))
@@ -44,11 +51,11 @@ def _category(col):
 def write_categories(out, header, rows):
     """FileCategories.csv: every Accounts.csv column and how often it is filled.
     PlatformProperties.csv: per platform, which file categories its accounts use."""
-    cols = header[1:]                                   # without recordId
+    cols = list(header)
     used = {c: 0 for c in cols}
     per_platform = {}
     for row in rows:
-        plat = row["platformId"]
+        plat = row["PlatformId"]
         pp = per_platform.setdefault(plat, {"accounts": 0, "cols": {c: 0 for c in cols}})
         pp["accounts"] += 1
         for c in cols:
@@ -75,10 +82,17 @@ def write_categories(out, header, rows):
     return [cat_path, plat_path]
 
 
-def _fmt(v):
+def _bool(v):
+    """Upload CSV booleans: True / False, as the Privilege Cloud samples write them."""
+    if isinstance(v, str) and v.strip().lower() in ("true", "false"):
+        v = v.strip().lower() == "true"
     if isinstance(v, bool):
-        return "true" if v else "false"
+        return "True" if v else "False"
     return "" if v is None else str(v)
+
+
+def _is_true(v):
+    return v is True or (isinstance(v, str) and v.strip().lower() == "true")
 
 
 def _open(path):
@@ -190,64 +204,73 @@ def write_upload(plan, cfg, out_dir, include_secrets):
     upload_safes = [n for n, s in plan.safes.items() if s["migrating"]]
 
     safes = out / "Safes.csv"
+    bodies = [(name, safe_settings(name, plan.safes[name], cfg)) for name in upload_safes]
+    safe_cols = SAFE_COLUMNS + [c for c in SAFE_OPTIONAL if any(_is_true(b.get(c[1])) for _, b in bodies)]
     with _open(safes) as fh:
         w = csv.writer(fh)
-        w.writerow(SAFE_FIELDS)
-        for name in upload_safes:
-            body = safe_settings(name, plan.safes[name], cfg)
-            w.writerow([_fmt(body.get(f, "")) for f in SAFE_FIELDS])
+        w.writerow([c for c, _ in safe_cols])
+        for name, body in bodies:
+            body = dict(body, safeName=name)
+            if not str(body.get("location") or "").strip():
+                body["location"] = DEFAULT_LOCATION
+            w.writerow([_bool(body.get(f, "")) for _, f in safe_cols])
 
     members = out / "SafeMembers.csv"
     skipped_members = 0
     roles = all_roles(cfg)
+    member_rows = []
+    for (safe, _), m in plan.members.items():
+        if m["role"] not in roles:
+            skipped_members += 1
+            continue
+        granted = set(roles[m["role"]])
+        member_rows.append(([safe, m["member_name"], m["member_type"]] +
+                            [_bool(p in granted) for p in ALL_PERMISSIONS], m["search_in"] or ""))
+    with_search_in = any(si.strip() for _, si in member_rows)
     with _open(members) as fh:
         w = csv.writer(fh)
-        w.writerow(["safeName", "memberName", "memberType", "searchIn", "role"] +
-                   [f"permissions.{p}" for p in ALL_PERMISSIONS])
-        for (safe, _), m in plan.members.items():
-            if m["role"] not in roles:
-                skipped_members += 1
-                continue
-            granted = set(roles[m["role"]])
-            w.writerow([safe, m["member_name"], m["member_type"], m["search_in"], m["role"]] +
-                       [_fmt(p in granted) for p in ALL_PERMISSIONS])
+        w.writerow(MEMBER_COLUMNS + [p for p in ALL_PERMISSIONS] + (MEMBER_OPTIONAL if with_search_in else []))
+        for row, search_in in member_rows:
+            w.writerow(row + ([search_in] if with_search_in else []))
 
     prop_map = cfg["account_property_map"]
-    prop_cols = list(dict.fromkeys(prop_map.values()))
     acct_defaults = cfg["account_defaults"]
+    auto = acct_defaults.get("automaticManagementEnabled", False)
+    reason = "" if _is_true(auto) else acct_defaults.get("manualManagementReason", "")
     accounts = out / "Accounts.csv"
-    count = 0
-    header = ["recordId"] + ACCOUNT_FIELDS + [f"platformAccountProperties.{c}" for c in prop_cols]
+    rows = []
+    for p in plan.accounts:
+        if not p.uploadable:
+            continue
+        r = p.rec
+        props = {}
+        extra_lower = {k.lower(): v for k, v in r.extra.items()}
+        for src, dst in prop_map.items():
+            val = extra_lower.get(src.lower(), "")
+            if val.strip() and not props.get(dst):
+                props[dst] = val
+        rows.append((p, [p.account_name, p.safe, p.platform, r.username, r.address, r.secret_type,
+                         r.secret if include_secrets else "", _bool(auto), reason], props))
+    # Property columns only for the platform properties some account has a value for.
+    prop_cols = [c for c in dict.fromkeys(prop_map.values()) if any(props.get(c) for _, _, props in rows)]
+    header = ACCOUNT_COLUMNS + [PROPERTY_PREFIX + c for c in prop_cols]
     usage = []
     with _open(accounts) as fh:
-        w = csv.writer(fh, quoting=csv.QUOTE_ALL)
+        w = csv.writer(fh)
         w.writerow(header)
-        for p in plan.accounts:
-            if not p.uploadable:
-                continue
-            r = p.rec
-            props = {}
-            extra_lower = {k.lower(): v for k, v in r.extra.items()}
-            for src, dst in prop_map.items():
-                val = extra_lower.get(src.lower(), "")
-                if val.strip() and not props.get(dst):
-                    props[dst] = val
-            values = [r.record_id, p.safe, p.platform, p.account_name, r.address, r.username,
-                      r.secret_type, r.secret if include_secrets else "",
-                      _fmt(acct_defaults.get("automaticManagementEnabled", False)),
-                      "" if acct_defaults.get("automaticManagementEnabled") else
-                      acct_defaults.get("manualManagementReason", "")] + [props.get(c, "") for c in prop_cols]
+        for p, base, props in rows:
+            values = base + [props.get(c, "") for c in prop_cols]
             w.writerow(values)
             row = dict(zip(header, values))
-            row["secret"] = "x" if r.has_secret or (r.secret or "").strip() else ""   # usage only, never the value
+            r = p.rec
+            row["Secret"] = "x" if r.has_secret or (r.secret or "").strip() else ""   # usage only, never the value
             usage.append(row)
-            count += 1
     if include_secrets:
         restrict(accounts)
     extra_files = write_categories(out, header, usage)
     return [safes, members, accounts] + extra_files, {"safes": len(upload_safes), "members": len(plan.members) -
                                         skipped_members, "members_skipped": skipped_members,
-                                        "accounts": count}
+                                        "accounts": len(rows)}
 
 
 def write_manifest(out_dir, inputs, files, counts, include_secrets, cfg_path):

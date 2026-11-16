@@ -26,7 +26,7 @@ PLATFORM_INVALID = re.compile(r"[^A-Za-z0-9_.\-]")
 UNSAFE_TEXT = re.compile("[\x00-\x08\x0b-\x1f\x7f\u200b-\u200f\u2028\u2029\u2060\ufeff]")
 # One-line values you type (Safe settings, member names, searchIn): also no tab or line break.
 UNSAFE_LINE = re.compile("[\x00-\x1f\x7f\u200b-\u200f\u2028\u2029\u2060\ufeff]")
-ACCOUNT_NAME_INVALID = re.compile(r'[\\/:*?"<>|\t\r\n]')
+ACCOUNT_NAME_INVALID = re.compile(r'[\\/:;*?"<>|\t\r\n]')
 ACCOUNT_NAME_MAX = 128
 
 

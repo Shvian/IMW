@@ -113,7 +113,7 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   // 2. Mapping rules, page by page
   await navTo('rules-dir');
   await page.waitForSelector('#t-dg', { state: 'attached' });
-  await page.waitForSelector('#pv-out th >> text=memberName');
+  await page.waitForSelector('#pv-out th >> text=MemberName');
   if (await page.$eval('[data-block="t-dg"]', e => e.open)) throw new Error('input table not folded by default');
   // Every column heading explains its field with an example; so does every cell
   {

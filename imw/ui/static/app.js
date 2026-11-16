@@ -947,7 +947,7 @@ PAGES["rules-dir"] = () => rulesPage("rules-dir",
         load: (patch) => api("/api/members/preview", { patch }),
         rows: (r) => r.members, summary: (r) => `${r.members.length} members`,
         head: `<tr>${SRC_HEAD(2)}${CSV_HEAD(3, "SafeMembers.csv")}<th class="grp"></th></tr>
-          <tr><th>Member in the export</th><th>Accounts</th><th>memberName</th><th>memberType</th><th>searchIn</th><th>Source used</th></tr>`,
+          <tr><th>Member in the export</th><th>Accounts</th><th>MemberName</th><th>MemberType</th><th>SearchIn</th><th>Source used</th></tr>`,
         row: (m) => `<tr><td>${esc(m.source)}</td><td>${m.accounts}</td><td${chg(m, "member_name")}><b>${esc(m.member_name)}</b></td>
           <td${chg(m, "type")}>${esc(m.type)}</td><td${chg(m, "search_in")}>${m.search_in ? esc(m.search_in) : '<span class="muted">(all directories)</span>'}</td>
           <td class="muted">${esc(/not matched/.test(m.directory_source || "") ? "the default" : m.directory_source)}</td></tr>`,
@@ -1126,10 +1126,10 @@ PAGES["rules-safes"] = () => rulesPage("rules-safes",
         load: previewApi("safes"), summary: countsSummary,
         head: `<tr>${SRC_HEAD(2)}${CSV_HEAD(5, "Safes.csv")}<th class="grp"></th></tr>
           <tr><th title="The folder the accounts are in, in the source export">Folder</th><th title="Accounts from this folder that go to this Safe">Accounts</th>
-          <th title="The Safe the accounts go to, with every rule, exception and your own changes applied">safeName</th>
+          <th title="The Safe the accounts go to, with every rule, exception and your own changes applied">SafeName</th>
           <th title="Characters in the Safe name (at most ${cfg.safe_name.max_length})">Length</th>
-          <th title="The CPM that manages this Safe's accounts: the Safe settings, then the 'Different settings' exceptions, then your own Safe changes. Empty = no CPM">managingCPM</th>
-          <th title="numberOfVersionsRetention or numberOfDaysRetention">Keeps</th><th>description</th>
+          <th title="The CPM that manages this Safe's accounts: the Safe settings, then the 'Different settings' exceptions, then your own Safe changes. Empty = no CPM">ManagingCPM</th>
+          <th title="numberOfVersionsRetention or numberOfDaysRetention">Keeps</th><th>Description</th>
           <th title="Things to check about this Safe">Notes</th></tr>`,
         row: (x) => `<tr><td>${esc(x.folder || "(no folder)")}</td><td>${x.accounts}</td>
           <td${chg(x, "safe", "nowrap")}><b>${esc(x.safe)}</b>${x.valid ? "" : ' <span class="pill REVIEW" title="Forbidden characters replaced or the name shortened">name changed</span>'}</td>
@@ -1301,7 +1301,7 @@ PAGES["rules-members"] = () => rulesPage("rules-members",
         load: previewApi("members"), summary: (m) => `${m.total_rows} Safe members on ${m.safes} Safes`,
         head: `<tr>${SRC_HEAD(2)}${CSV_HEAD(4, "SafeMembers.csv")}<th class="grp"></th></tr>
           <tr><th>Member in the export</th><th title="The permission the source gives (the strongest, when it has several)">Permission</th>
-          <th>safeName</th><th>memberName</th><th>memberType</th><th title="The Privilege Cloud role: a preset or your custom role, from the table on this page">role</th><th>Notes</th></tr>`,
+          <th>SafeName</th><th>MemberName</th><th>MemberType</th><th title="The Privilege Cloud role: a preset or your custom role, from the table on this page. SafeMembers.csv gets it as True/False permission columns">role</th><th>Notes</th></tr>`,
         row: (x) => `<tr${(x.changed || []).includes("new") ? ` class="chg-row" title="New compared with what is saved"` : ""}><td>${x.standard ? `<span class="muted" title="Not in the export: added by your standard member groups">${esc(x.source)}</span>` : esc(x.source)}</td><td>${esc(x.permission)}</td>
           <td class="nowrap">${esc(x.safe)}</td><td${chg(x, "member_name")}>${esc(x.member_name)}</td><td${chg(x, "member_type")}>${esc(x.member_type)}</td>
           <td${chg(x, "role", "nowrap")}>${x.role === "UNMAPPED" ? '<span class="pill ERROR">no role</span>' : esc(x.role)}</td><td class="notes">${esc(x.notes)}</td></tr>`,
@@ -1385,7 +1385,7 @@ PAGES["rules-platforms"] = () => rulesPage("rules-platforms",
         title: "each record type → the platform its accounts get",
         load: previewApi("platforms"), summary: countsSummary,
         head: `<tr>${SRC_HEAD(3)}${CSV_HEAD(1, "Accounts.csv")}<th class="grp" colspan="2"></th></tr>
-          <tr><th>Record type</th><th>Folders</th><th>Accounts</th><th title="The platform ID the accounts get">platformId</th>
+          <tr><th>Record type</th><th>Folders</th><th>Accounts</th><th title="The platform ID the accounts get">PlatformId</th>
           <th title="Which setting chose the platform">Chosen by</th><th>Errors</th></tr>`,
         row: (x) => `<tr><td>${esc(x.type)}</td><td class="small">${esc(x.folders)}</td><td>${x.accounts}</td>
           <td${chg(x, "platform", "nowrap")}>${x.platform ? esc(x.platform) : '<span class="pill ERROR">no platform</span>'}${x.moved ? ` <span class="muted">(${x.moved} changed)</span>` : ""}</td>
@@ -1425,7 +1425,7 @@ PAGES["rules-accounts"] = () => rulesPage("rules-accounts",
             Invalid characters become _, and a name repeated in one Safe gets _2, _3.</p>
           <label class="inline" style="display:block;margin:6px 0"><input type="radio" name="an-mode" value="none" ${none ? "checked" : ""}>
             <b>Leave the name empty and let Privilege Cloud name each account</b></label>
-          <p class="muted small" style="margin-left:24px">The <code>name</code> column in Accounts.csv stays empty. Two accounts with the same platform, address and username in one Safe would get the same generated name, so the second is rejected. Accounts sharing a username and address are flagged as possible duplicates anyway, in any Safe.
+          <p class="muted small" style="margin-left:24px">The <code>Name</code> column in Accounts.csv stays empty. Two accounts with the same platform, address and username in one Safe would get the same generated name, so the second is rejected. Accounts sharing a username and address are flagged as possible duplicates anyway, in any Safe.
             You can also leave single accounts unnamed in step 3 (<b>Let Privilege Cloud name them</b>).</p>
           <p><label class="inline"><input type="checkbox" id="url-host" ${cfg.url_address_to_host ? "checked" : ""}> Turn URL addresses into host names (https://fw01.example.com/login → fw01.example.com)</label></p></div>
         <div class="card"><h3>Extra account properties</h3>
@@ -1436,8 +1436,8 @@ PAGES["rules-accounts"] = () => rulesPage("rules-accounts",
         title: "each source record → its account name, address and properties",
         load: previewApi("accounts"), summary: countsSummary,
         head: `<tr>${SRC_HEAD(3)}${CSV_HEAD(5, "Accounts.csv")}<th class="grp"></th></tr>
-          <tr><th>Name</th><th>Address</th><th>Username</th><th>safeName</th><th>platformId</th>
-          <th title="The account's name in its Safe; empty = Privilege Cloud names it">name</th><th>address</th>
+          <tr><th>Name</th><th>Address</th><th>Username</th><th>SafeName</th><th>PlatformId</th>
+          <th title="The account's name in its Safe; empty = Privilege Cloud names it">Name</th><th>Address</th>
           <th title="platformAccountProperties from the extra properties table">properties</th><th>Notes</th></tr>`,
         row: (x) => `<tr><td>${esc(x.source_name)}</td><td>${esc(x.source_address)}</td><td>${esc(x.username)}</td>
           <td class="nowrap">${esc(x.safe)}</td><td class="nowrap">${esc(x.platform)}</td>
@@ -1466,7 +1466,7 @@ PAGES["rules-json"] = () => rulesPage("rules-json",
     preview: {
       title: "folders → Safes with the settings as typed (any valid JSON)",
       load: previewApi("safes"), summary: countsSummary,
-      head: `<tr>${SRC_HEAD(2)}${CSV_HEAD(3, "Safes.csv")}</tr><tr><th>Folder</th><th>Accounts</th><th>safeName</th><th>managingCPM</th><th>Keeps</th></tr>`,
+      head: `<tr>${SRC_HEAD(2)}${CSV_HEAD(3, "Safes.csv")}</tr><tr><th>Folder</th><th>Accounts</th><th>SafeName</th><th>ManagingCPM</th><th>Keeps</th></tr>`,
       row: (x) => `<tr><td>${esc(x.folder || "(no folder)")}</td><td>${x.accounts}</td><td${chg(x, "safe", "nowrap")}><b>${esc(x.safe)}</b></td>
         <td${chg(x, "cpm")}>${esc(x.cpm)}</td><td${chg(x, "keeps")}>${esc(x.keeps)}</td></tr>`,
     },
@@ -1554,7 +1554,7 @@ async function loadList() {
   const head = csv
     ? `<tr><th></th>${SRC_HEAD(4)}${CSV_HEAD(6, "Accounts.csv")}<th class="grp" colspan="${showStatus ? 2 : 1}"></th></tr>
        <tr><th><input type="checkbox" id="selall" title="Tick every account on this page"></th><th>Name</th><th>Address</th>${sortTh(["folder", "Folder"])}<th>Type</th>
-       ${sortTh(["target_safe", "safeName"])}${sortTh(["platform_id", "platformId"])}${sortTh(["account_name", "name"])}${sortTh(["address", "address"])}${sortTh(["username", "userName"])}<th>secretType</th>
+       ${sortTh(["target_safe", "SafeName"])}${sortTh(["platform_id", "PlatformId"])}${sortTh(["account_name", "Name"])}${sortTh(["address", "Address"])}${sortTh(["username", "UserName"])}<th>SecretType</th>
        ${showStatus ? sortTh(["status", "Status"]) : ""}<th>${whyLabel}</th></tr>`
     : `<tr><th><input type="checkbox" id="selall" title="Tick every account on this page"></th>
       ${cols.concat(showStatus ? [["status", "Status"]] : []).map(c => sortTh(c)).join("")}
@@ -1767,7 +1767,7 @@ PAGES["review-safes"] = async () => {
         <span class="muted small" id="s-count"></span></div>
       <div class="tablewrap"><table id="safes-table">${csvMode ? `<thead><tr><th></th>${SRC_HEAD(2)}${CSV_HEAD(7, "Safes.csv")}<th class="grp" colspan="2"></th></tr>
         <tr><th></th><th title="The source folders whose accounts go to this Safe">Folders</th><th title="The name the rules gave, before cleanup or your rename">Rules proposed</th>
-        <th>safeName</th><th>managingCPM</th><th title="numberOfVersionsRetention or numberOfDaysRetention">Keeps</th><th>description</th><th>location</th><th>olacEnabled</th><th>autoPurgeEnabled</th>
+        <th>SafeName</th><th>ManagingCPM</th><th title="numberOfVersionsRetention or numberOfDaysRetention">Keeps</th><th>Description</th><th>Location</th><th>OlacEnabled</th><th>AutoPurgeEnabled</th>
         <th>Accounts</th><th>Members</th></tr></thead><tbody>` : `<tr><th></th><th>Safe</th><th>Accounts</th><th>To upload</th><th>Members</th><th>CPM</th><th>Keeps</th><th>Description</th></tr>`}
       ${d.safes.map(s => csvMode ? `<tr data-name="${esc((s.safe_name + " " + (s.source_folders || "")).toLowerCase())}"${noFull(s) ? ' data-nofull="1"' : ""}><td><input type="checkbox" class="s-sel" value="${esc(s.safe_name)}" ${SAFES.selected.has(s.safe_name) ? "checked" : ""}></td>
         <td class="small">${esc(s.source_folders || "").split(" | ").join("<br>")}</td><td class="small">${esc(s.proposed_names || "")}</td>
@@ -1802,7 +1802,7 @@ PAGES["review-safes"] = async () => {
       <div class="row" style="margin-bottom:8px"><input type="search" id="p-filter" placeholder="Show members containing…" size="28" value="${esc(SAFES.pfilter || "")}">
         <label class="inline${csvMode ? " hidden" : ""}"><input type="checkbox" id="p-nosafe" ${SAFES.nosafe ? "checked" : ""}> only members on no Safe</label><span class="muted small" id="p-count"></span></div>
       ${csvMode ? `<div class="tablewrap"><table id="sm-table"><thead><tr>${SRC_HEAD(2)}${CSV_HEAD(5, "SafeMembers.csv")}<th class="grp" colspan="2"></th></tr>
-        <tr><th>Member in the export</th><th title="The permission the source gives (the strongest, when it has several)">Permission</th><th>safeName</th><th>memberName</th><th>memberType</th><th>searchIn</th><th>role</th><th>Accounts</th><th>Notes</th></tr></thead>
+        <tr><th>Member in the export</th><th title="The permission the source gives (the strongest, when it has several)">Permission</th><th>SafeName</th><th>MemberName</th><th>MemberType</th><th>SearchIn</th><th>role</th><th>Accounts</th><th>Notes</th></tr></thead>
         <tbody>${d.members.map(m => `<tr class="clickable" data-sm-safe="${esc(m.safe_name)}" data-name="${esc([m.source_member, m.member_name, m.safe_name].join(" ").toLowerCase())}">
           <td>${esc(m.source_member || "")}</td><td>${esc(m.source_permission || "")}</td><td class="nowrap">${esc(m.safe_name)}</td><td>${esc(m.member_name)}</td><td>${esc(m.member_type)}</td>
           <td>${m.search_in ? esc(m.search_in) : '<span class="muted">(all)</span>'}</td><td class="nowrap">${m.role === "UNMAPPED" ? '<span class="pill ERROR">no role</span>' : esc(m.role)}</td>

@@ -36,11 +36,10 @@ class StoreFlow(Base):
         rc, text = self.run_cli("extract", "--db", self.db, "-o", str(out), "--where", "source = 'delinea'",
                                 "--include-secrets")
         self.assertEqual(rc, 0, text)
-        accounts = {a["recordId"].split(":")[-1]: a for a in read_csv(out / "upload" / "Accounts.csv")}
-        self.assertNotIn("102", accounts)                        # Migrate=N
-        self.assertEqual(accounts["107"]["safeName"], "FIN-Portals")  # edit, cleaned
-        self.assertEqual(accounts["101"]["secret"], "P@ssw0rd!1")
-        self.assertTrue(all(a["recordId"].startswith("delinea:") for a in accounts.values()))
+        accounts = {a["Name"]: a for a in read_csv(out / "upload" / "Accounts.csv")}
+        self.assertNotIn("svc_backup", accounts)                 # 102, Migrate=N
+        self.assertEqual(accounts["Vendor Portal"]["SafeName"], "FIN-Portals")  # 107, edit, cleaned
+        self.assertEqual(accounts["svc_sql_prod"]["Secret"], "P@ssw0rd!1")
         review = read_csv(out / "review" / "Accounts_Review.csv")
         self.assertEqual(len(review), 12)                       # review always covers everything
         self.assert_no_secrets(out / "review")

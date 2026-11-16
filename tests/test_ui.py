@@ -233,10 +233,9 @@ class UiServer(Base):
         st, r = self.req("POST", "/api/extract", {"name": "w1", "include_secrets": True, "confirm": "INCLUDE SECRETS",
                                                   "scope": "filter", "view": "all", "filters": {"source": "delinea"}})
         self.assertEqual(st, 200, r)
-        accounts = {a["recordId"].split(":")[-1]: a for a in read_csv(self.ws / "output" / "w1" / "upload" / "Accounts.csv")}
-        self.assertEqual(accounts["107"]["safeName"], "FIN-Portals")
-        self.assertEqual(accounts["101"]["secret"], "P@ssw0rd!1")
-        self.assertTrue(all(k.startswith("delinea:") for k in (a["recordId"] for a in accounts.values())))
+        accounts = {a["Name"]: a for a in read_csv(self.ws / "output" / "w1" / "upload" / "Accounts.csv")}
+        self.assertEqual(accounts["Vendor Portal"]["SafeName"], "FIN-Portals")     # 107
+        self.assertEqual(accounts["svc_sql_prod"]["Secret"], "P@ssw0rd!1")         # 101
         st, r = self.req("POST", "/api/output/delete", {"name": "w1", "what": "upload"})
         self.assertEqual(st, 200)
         self.assertFalse((self.ws / "output" / "w1" / "upload").exists())
@@ -385,10 +384,10 @@ class UiServer(Base):
         self.assertEqual(st, 200, r)
         up = self.ws / "output" / "o1" / "upload"
         cats = {c["column"]: c for c in read_csv(up / "FileCategories.csv")}
-        self.assertIn("address", cats)
+        self.assertIn("Address", cats)
         self.assertTrue(read_csv(up / "PlatformProperties.csv"))
         members = read_csv(up / "SafeMembers.csv")
-        self.assertEqual(sum(1 for m in members if m["memberName"] == "PAM-Auditors"), 2)
+        self.assertEqual(sum(1 for m in members if m["MemberName"] == "PAM-Auditors"), 2)
 
     def test_typed_values_lose_invisible_characters(self):
         """Round 3 audit: Safe settings, member names and searchIn typed in the UI are cleaned."""

@@ -59,7 +59,7 @@ public class DelineaCsv : TestBase
         Assert.Contains("Attachment", byId["103"]["Notes"]);
         Assert.False(rows[0].ContainsKey("Source.Attachment"));
         var accounts = ReadCsv(Path.Combine(out_, "upload", "Accounts.csv"));
-        Assert.All(accounts, a => Assert.Equal("", a["secret"]));
+        Assert.All(accounts, a => Assert.Equal("", a["Secret"]));
         AssertNoSecrets(out_);
     }
 
@@ -67,9 +67,9 @@ public class DelineaCsv : TestBase
     public void IncludeSecrets()
     {
         var out_ = ConvertOne(S("delinea_export.csv"), null, "--include-secrets");
-        var accounts = ReadCsv(Path.Combine(out_, "upload", "Accounts.csv")).ToDictionary(a => Id(a, "recordId"));
-        Assert.Equal("P@ssw0rd!1", accounts["101"]["secret"]);
-        Assert.StartsWith("-----BEGIN OPENSSH", accounts["105"]["secret"]);
+        var accounts = ReadCsv(Path.Combine(out_, "upload", "Accounts.csv")).ToDictionary(a => a["Name"]);
+        Assert.Equal("P@ssw0rd!1", accounts["svc_sql_prod"]["Secret"]);
+        Assert.StartsWith("-----BEGIN OPENSSH", accounts["deploy key app01"]["Secret"]);
         AssertNoSecrets(Path.Combine(out_, "review"));
         var manifestText = File.ReadAllText(Path.Combine(out_, "manifest.json"));
         Assert.Equal(true, Json.ParseObj(manifestText)["includes_secrets"]);
@@ -102,9 +102,10 @@ public class DelineaCsv : TestBase
         Assert.Equal("override", rows2["107"]["Safe_Mapping_Source"]);
         Assert.Equal("VendorPortal", rows2["107"]["Platform_ID"]);
         Assert.Equal("group_rule:CORP\\DBA-Team", rows2["101"]["Safe_Mapping_Source"]);
-        var uploaded = ReadCsv(Path.Combine(out2, "upload", "Accounts.csv")).Select(a => Id(a, "recordId")).ToHashSet();
-        Assert.DoesNotContain("102", uploaded);
-        Assert.DoesNotContain("IT-Backup", ReadCsv(Path.Combine(out2, "upload", "Safes.csv")).Select(s => s["safeName"]));
+        var uploaded = ReadCsv(Path.Combine(out2, "upload", "Accounts.csv")).Select(a => a["Name"]).ToHashSet();
+        Assert.DoesNotContain("svc_backup", uploaded);
+        Assert.Contains("svc_sql_prod", uploaded);
+        Assert.DoesNotContain("IT-Backup", ReadCsv(Path.Combine(out2, "upload", "Safes.csv")).Select(s => s["SafeName"]));
     }
 }
 
@@ -154,7 +155,7 @@ public class KeePassTests : TestBase
         var rows = ReadCsv(Path.Combine(out_, "review", "Accounts_Review.csv")).ToDictionary(r => r["Account_Name"]);
         Assert.Equal("ERROR", rows["switch core01"]["Status"]);     // no username
         Assert.Equal("UNIX-Servers", rows["root@web02"]["Target_Safe"]);
-        var accounts = ReadCsv(Path.Combine(out_, "upload", "Accounts.csv")).ToDictionary(a => a["name"]);
+        var accounts = ReadCsv(Path.Combine(out_, "upload", "Accounts.csv")).ToDictionary(a => a["Name"]);
         Assert.False(accounts.ContainsKey("switch core01"));
         Assert.Equal("22", accounts["root@web02"]["platformAccountProperties.Port"]);
         AssertNoSecrets(Path.Combine(out_, "review"));
@@ -194,12 +195,14 @@ public class TableTests : TestBase
         var safes = rows.Where(r => r["Username"] == "sa").Select(r => r["Target_Safe"]).OrderBy(x => x, StringComparer.Ordinal).ToList();
         Assert.Equal(new[] { "DB-SQL Production Reportin-2", "DB-SQL Production Reporting" }, safes);
         var members = ReadCsv(Path.Combine(out_, "upload", "SafeMembers.csv"));
-        var helpdesk = members.First(m => m["memberName"] == "Helpdesk");
-        Assert.Equal("Read only", helpdesk["role"]);                 // "Read" -> Read only preset
-        Assert.Equal("corp.example.com", helpdesk["searchIn"]);
-        Assert.Equal("true", helpdesk["permissions.retrieveAccounts"]);
-        Assert.Equal("false", helpdesk["permissions.manageSafe"]);
-        Assert.DoesNotContain("mfadmin", ReadCsv(Path.Combine(out_, "upload", "Accounts.csv")).Select(a => a["userName"]));
+        var helpdesk = members.First(m => m["MemberName"] == "Helpdesk");
+        Assert.False(helpdesk.ContainsKey("role"));                  // the role is in the review file
+        Assert.Equal("corp.example.com", helpdesk["SearchIn"]);      // set here, so the column is added
+        Assert.Equal("True", helpdesk["retrieveAccounts"]);          // "Read" -> Read only preset
+        Assert.Equal("True", helpdesk["listAccounts"]);
+        Assert.Equal("False", helpdesk["deleteAccounts"]);
+        Assert.Equal("False", helpdesk["manageSafe"]);
+        Assert.DoesNotContain("mfadmin", ReadCsv(Path.Combine(out_, "upload", "Accounts.csv")).Select(a => a["UserName"]));
     }
 
     [Fact]
@@ -214,11 +217,11 @@ public class TableTests : TestBase
         var batch = rows[0];
         Assert.Equal("UNIX-Batch", batch["Target_Safe"]);
         Assert.Contains("CORP\\Helpdesk=List", batch["Access_Groups"]);
-        var accounts = ReadCsv(Path.Combine(out_, "upload", "Accounts.csv")).ToDictionary(a => a["name"]);
-        Assert.Equal("0042", accounts["leading zero id"]["userName"]);
-        Assert.Equal("=1+1", accounts["leading zero id"]["secret"]);
+        var accounts = ReadCsv(Path.Combine(out_, "upload", "Accounts.csv")).ToDictionary(a => a["Name"]);
+        Assert.Equal("0042", accounts["leading zero id"]["UserName"]);
+        Assert.Equal("=1+1", accounts["leading zero id"]["Secret"]);
         Assert.Equal("22", accounts["unix-batch01-root"]["platformAccountProperties.Port"]);
-        Assert.Equal("APP-Payments-Prod", accounts["payments-api"]["safeName"]);
+        Assert.Equal("APP-Payments-Prod", accounts["payments-api"]["SafeName"]);
     }
 
     [Fact]
