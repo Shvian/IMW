@@ -23,6 +23,8 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.0" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
+    <!-- Newer native SQLite than Microsoft.Data.Sqlite 10.0.0 brings in (2.1.11 has advisory GHSA-2m69-gcr7-jv3q). -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.14" />
   </ItemGroup>
 
   <!-- The web pages are the same files the Python version serves (imw/ui/static), built into the exe. -->

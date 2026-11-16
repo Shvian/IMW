@@ -2,6 +2,14 @@
 setlocal
 REM Starts the Idira Migration Workbench (HTTPS, self-signed certificate) in your browser. Close this window to stop it.
 cd /d "%~dp0"
+REM The Windows app (IMW.exe) needs no Python. Use it when it sits next to this script.
+if exist "%~dp0IMW.exe" (
+  echo Starting the Workbench with: IMW.exe
+  "%~dp0IMW.exe" ui %*
+  pause
+  exit /b
+)
+REM Otherwise run the Python version.
 REM Find a Python 3 that really runs. Each candidate is tried with --version first, so a missing
 REM command (or the Microsoft Store placeholder) is skipped quietly.
 set "IMW_PY="

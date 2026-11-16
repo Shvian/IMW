@@ -14,6 +14,8 @@ The code lives in the `imw` folder (IMW = Idira Migration Workbench); run it wit
 
 Requirements: Python 3.8 or later, **standard library only** (Excel files included). There's nothing to `pip install` on the migration host.
 
+**No Python? Use IMW.exe.** The Workbench is also built as one Windows program, `IMW.exe` (about 52 MB, .NET 10 built in, nothing to install). It takes the same commands and options as `python -m imw` (`IMW.exe ui`, `IMW.exe convert ...`), uses the same workspace, database and config files, and writes byte-for-byte the same output files. Put `IMW.exe` next to `start-ui.cmd` and the launcher uses it instead of Python. To build it yourself (on any computer with the .NET 10 SDK): `dotnet publish dotnet/src/Imw -c Release -r win-x64 -o dist`. Every push also builds it on GitHub (Actions, workflow *Windows app*, artifact `IMW-win-x64`).
+
 ## Easiest: the Idira Migration Workbench (menus, no SQL)
 
 Double-click `start-ui.cmd`, or run `python -m imw ui`. A page opens in your browser over HTTPS. **Sign in with your Windows password first**: only the Windows user who started the Workbench can unlock it, and Windows itself checks the password (nothing is stored).
@@ -258,6 +260,7 @@ The rules, validation and writers need no changes: they only see the common mode
 | Path | What it is |
 |---|---|
 | `imw/` | The converter: `adapters/`, `config.py`, `model.py`, `transform.py`, `writers.py`, `store.py` (staging database), `protect.py` (DPAPI), `ui/` (Workbench), `xlsx.py`, `cli.py` |
+| `dotnet/` | The same Workbench in C# for .NET 10, built into `IMW.exe`: `src/Imw` (the program), `tests/Imw.Tests` (`dotnet test`, the Python tests ported to xUnit), `tests/parity` (scripts that run both versions on the same inputs and compare every output file and UI answer) |
 | `samples/` | Sample exports for every source, with matching configs |
 | `tests/` | `python -m unittest discover -s tests`, plus `tests/ui_browser_test.js` (Playwright) for the UI |
 | `docs/ui/` | UI screenshots |
