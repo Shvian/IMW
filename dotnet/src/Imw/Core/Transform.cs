@@ -1309,7 +1309,7 @@ public static class Transform
             if (n > 0 && n < s.Accounts) s.Issues.Add($"{n} of its accounts have no access groups in the source");
             else if (n > 0 && !standard)
                 s.Issues.Add("no access groups in the source for any of its accounts; " +
-                             "Standard member groups (Mapping rules B) can give it members");
+                             "Standard member groups (4. Members · Roles) can give it members");
         }
         if (Py.Truthy(limitObj))
         {

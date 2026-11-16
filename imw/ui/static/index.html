@@ -104,7 +104,8 @@ code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; font-si
 .hidden { display: none !important; }
 nav .sub { padding: 6px 10px 6px 42px; font-size: 13px; display: none; }
 /* Only the step you are in shows its pages. */
-nav[data-open="rules"] .sub[data-sub="rules"], nav[data-open="review"] .sub[data-sub="review"] { display: flex; }
+nav[data-open="plat"] .sub[data-sub="plat"], nav[data-open="members"] .sub[data-sub="members"],
+nav[data-open="final"] .sub[data-sub="final"] { display: flex; }
 button.btn.icon { width: 36px; padding: 7px 0; text-align: center; font-size: 15px; }
 /* Folded "How this page works" help */
 details.explain { padding: 6px 14px; }
@@ -155,6 +156,13 @@ input.need::placeholder { color: var(--err); }
 .steps li.next { border-color: var(--accent); }
 .steps b { display: block; }
 .steps .st { color: var(--muted); font-size: 12px; }
+/* Add files: what the Workbench has */
+.checklist { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+.checklist li { display: flex; gap: 10px; align-items: baseline; }
+.checklist .dot { width: 20px; height: 20px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+.checklist li.ok .dot { background: var(--ok-bg); color: var(--ok); }
+.checklist li.todo .dot { background: var(--warn-bg); color: var(--warn); }
+tr.muted td { color: var(--muted); }
 .linkbtn { font: inherit; font-size: 12px; background: none; border: 0; color: var(--link); cursor: pointer; padding: 0; text-decoration: underline; }
 .floatbar .adv { margin-left: auto; font-size: 12px; }
 .stat.link { cursor: pointer; }
@@ -286,19 +294,19 @@ input.chk-bad { border-color: var(--warn); background: var(--warn-bg); }
   <nav id="nav">
     <button data-page="overview"><span class="num">⌂</span>Overview</button>
     <hr>
-    <button data-page="load"><span class="num">1</span>Load exports</button>
-    <button data-page="rules-safes" data-group="rules"><span class="num">2</span>Mapping rules</button>
-    <button class="sub" data-sub="rules" data-page="rules-safes">A. Safes</button>
-    <button class="sub" data-sub="rules" data-page="rules-members">B. Safe permissions</button>
-    <button class="sub" data-sub="rules" data-page="rules-dir">C. Safe members</button>
-    <button class="sub" data-sub="rules" data-page="rules-platforms">D. Platforms</button>
-    <button class="sub" data-sub="rules" data-page="rules-accounts">E. Accounts</button>
-    <button data-page="review-safes" data-group="review"><span class="num">3</span>Review &amp; change</button>
-    <button class="sub" data-sub="review" data-page="review-safes">A. Safes &amp; members</button>
-    <button class="sub" data-sub="review" data-page="review">B. Accounts &amp; platforms</button>
-    <button data-page="output"><span class="num">4</span>Create upload files</button>
-    <hr>
-    <button data-page="activity"><span class="num">≡</span>Activity log</button>
+    <button data-page="load" title="Copy your exports and reports into the inbox and load them"><span class="num">1</span>Add files</button>
+    <button data-page="rules-platforms" data-group="plat" title="Which platform each secret template becomes, and how accounts are named"><span class="num">2</span>Platforms</button>
+    <button class="sub" data-sub="plat" data-page="rules-platforms">Templates to platforms</button>
+    <button class="sub" data-sub="plat" data-page="rules-accounts">Account names</button>
+    <button data-page="rules-safes" title="How folders become Safes, and the Safe settings"><span class="num">3</span>Safes</button>
+    <button data-page="rules-members" data-group="members" title="Who gets access to each Safe, with which role"><span class="num">4</span>Members</button>
+    <button class="sub" data-sub="members" data-page="rules-members">Roles</button>
+    <button class="sub" data-sub="members" data-page="rules-dir">Names (UPN, domains)</button>
+    <button class="sub" data-sub="members" data-page="members-decide">Users to decide</button>
+    <button data-page="review-safes" data-group="final" title="Check the result, change single Safes, members or accounts, and create the upload files"><span class="num">5</span>Review &amp; create</button>
+    <button class="sub" data-sub="final" data-page="review-safes">Safes &amp; members</button>
+    <button class="sub" data-sub="final" data-page="review">Accounts</button>
+    <button class="sub" data-sub="final" data-page="output">Create upload files</button>
   </nav>
   <main id="main"></main>
 </div>

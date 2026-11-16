@@ -126,7 +126,7 @@ public sealed class UiApp
 
     Store OpenStore(bool create = false)
     {
-        if (!DbExists(DbPath) && !create) throw new UiError("No data yet. Start with step 1, Load exports.", 409);
+        if (!DbExists(DbPath) && !create) throw new UiError("No data yet. Start with step 1, Add files.", 409);
         string protector = null;
         if (create && !DbExists(DbPath))
         {

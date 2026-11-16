@@ -297,7 +297,7 @@ class App:
     # -- helpers ----------------------------------------------------------
     def store(self, create=False):
         if not self.db_path.exists() and not create:
-            raise UiError("No data yet. Start with step 1, Load exports.", 409)
+            raise UiError("No data yet. Start with step 1, Add files.", 409)
         protector = None
         if create and not self.db_path.exists():
             if self.protector_flag:
@@ -602,7 +602,7 @@ class App:
     def api_rules_values(self, body):
         """The distinct values of one account detail in the loaded records, with how many
         accounts have each and a suggested 1-4 letter code, so a Safe name placeholder can be
-        built from them (Mapping rules A: "Build Safe names from account details").
+        built from them (3. Safes: "Build Safe names from account details").
         field: column:<source column>, address_domain, type or platform."""
         field = str(body.get("field") or "").strip()
         if not (field.startswith("column:") and field[7:].strip()) and field not in self.VALUE_FIELDS:

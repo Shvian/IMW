@@ -34,7 +34,7 @@ PERMISSION_PRESETS = {
     "Full": _perms(*[p for p in ALL_PERMISSIONS if p != "requestsAuthorizationLevel2"]),
 }
 
-# The suggested standard member groups (Mapping rules B: "Use the suggested set").
+# The suggested standard member groups (4. Members · Roles: "Use the suggested set").
 STANDARD_MEMBER_SET = [
     {"name": "{safe}-Owners", "member_type": "Group", "role": "Full", "search_in": ""},
     {"name": "{safe}-Users", "member_type": "Group", "role": "Connect only", "search_in": ""},

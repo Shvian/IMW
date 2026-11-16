@@ -35,7 +35,10 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   const navTo = async (id) => {
     const sub = page.locator(`nav button.sub[data-page="${id}"]`);
     if (await sub.count()) {
-      if (!(await sub.isVisible())) await page.click(`nav button[data-group="${id.startsWith('rules') ? 'rules' : 'review'}"]`);
+      if (!(await sub.isVisible())) {
+        await page.click(`nav button[data-group="${await page.evaluate(p => NAV_GROUP[p], id)}"]`);
+        if (await page.evaluate(() => PAGE) === id) return;   // the group opened on this page already
+      }
       await sub.click();
     } else await page.click(`nav button[data-page="${id}"]`);
   };
@@ -61,36 +64,25 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   await page.click('#theme');
   await shot(page, '00_welcome');
 
-  // 1. Load (both permissions files ticked and merged)
-  await page.click('nav >> text=Load exports');
+  // 1. Add files (both permissions files recognised, ticked and merged)
+  await page.click('nav >> text=Add files');
   await page.waitForSelector('#go-load');
   for (const r of await page.$$('#main div.card table tr')) {
     const t = await r.innerText();
     if (t.includes('accounts_by_group.xlsx')) { const cb = await r.$('.pick'); if (await cb.isChecked()) await cb.uncheck(); }
     if (t.includes('delinea_permissions')) {
-      if (!(await (await r.$('.perm')).isChecked())) throw new Error('permissions file not pre-selected: ' + t);
+      if ((await (await r.$('.kind')).inputValue()) !== 'permissions') throw new Error('permissions file not recognised: ' + t);
       if (!(await (await r.$('.pick')).isChecked())) throw new Error('permissions file not ticked to load');
     }
+    if (t.includes('keepass_export.xml') && (await (await r.$('.kind')).inputValue()) !== 'accounts') throw new Error('export not recognised: ' + t);
   }
-  // Ticking "Permissions file" must tick Load, never untick it
-  {
-    const r = (await page.$$('#main div.card table tr'))[1];
-    const pick = await r.$('.pick'), perm = await r.$('.perm');
-    const was = [await pick.isChecked(), await perm.isChecked()];
-    await pick.uncheck(); await perm.uncheck(); await perm.check();
-    if (!(await pick.isChecked())) throw new Error('ticking Permissions file did not tick Load');
-    await perm.uncheck();
-    if (!(await pick.isChecked())) throw new Error('unticking Permissions file unticked Load');
-    if (!was[0]) await pick.uncheck();
-    if (was[1]) await perm.check();
-  }
-  if (!(await page.getAttribute('.perm', 'title'))) throw new Error('no tooltip on the Permissions file box');
+  if (!(await page.getAttribute('.kind', 'title'))) throw new Error('no tooltip on the What it is box');
   await shot(page, '01_load');
   await page.click('#go-load');
   await page.waitForSelector('#load-msg .msg.ok', { timeout: 10000 });
   const loadMsg = await page.innerText('#load-msg');
   console.log('LOAD:', loadMsg.replace(/\n/g, ' | '));
-  if (!loadMsg.includes('delinea_export.csv: 8 records')) throw new Error('load failed');
+  if (!loadMsg.includes('delinea_export.csv: 8 accounts')) throw new Error('load failed');
   if (!loadMsg.includes('delinea_permissions_extra.csv')) throw new Error('second permissions file not merged');
   // Loaded files say so, and are no longer ticked to load again
   for (const r of await page.$$('#main div.card table tr')) {
@@ -102,9 +94,8 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   }
   if (!(await page.$('#del-loaded'))) throw new Error('no button to securely delete the loaded exports');
   // load the same KeePass file again: the Overview must say it is the same content
-  await page.click('nav >> text=Load exports');
+  await page.click('nav >> text=Add files');
   await page.waitForFunction(() => document.querySelector('#go-load') && !document.querySelector('#load-msg').textContent);
-  for (const cb of await page.$$('.perm')) if (await cb.isChecked()) await cb.uncheck();
   for (const cb of await page.$$('.pick')) if (await cb.isChecked()) await cb.uncheck();
   for (const r of await page.$$('#main div.card table tr')) if ((await r.innerText()).includes('keepass_export.xml')) await (await r.$('.pick')).check();
   await page.click('#go-load');
@@ -142,11 +133,11 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   await page.waitForSelector('#rules-msg .msg.ok');
   if ((await page.$eval('nav', e => getComputedStyle(e).position)) !== 'sticky') throw new Error('left nav does not stay in view');
 
-  if (!(await page.innerText('#rules-next')).includes('D. Platforms')) throw new Error('C. Safe members does not lead to D. Platforms');
-  if (!(await page.innerText('h2')).includes('C. Safe members')) throw new Error('the member names page is not C. Safe members');
+  if (!(await page.innerText('#rules-next')).includes('Users to decide')) throw new Error('member names do not lead to Users to decide');
+  if (!(await page.innerText('h2')).includes('4. Members · Names')) throw new Error('the member names page is not 4. Members · Names');
   await navTo('rules-safes');
   await page.waitForSelector('text=Safe from access groups');
-  if (!(await page.innerText('h2')).includes('A. Safes')) throw new Error('A. Safes did not open');
+  if (!(await page.innerText('h2')).includes('3. Safes')) throw new Error('3. Safes did not open');
   if (!(await page.isDisabled('#save'))) throw new Error('Save & apply enabled with nothing changed');
   if (await page.inputValue('#fallback') !== 'convention') throw new Error('folder naming is not the default');
   rows = await addRow('t-gr');
@@ -212,7 +203,7 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
 
   await page.click('#rules-next');                       // Next goes to the next sub-page
   await page.waitForSelector('#roles table', { state: 'attached' });
-  if (!(await page.innerText('h2')).includes('B. Safe permissions')) throw new Error('Next did not open B. Safe permissions');
+  if (!(await page.innerText('h2')).includes('4. Members · Roles')) throw new Error('Next did not open 4. Members · Roles');
   await page.waitForSelector('#roles table', { state: 'attached' });
   await page.waitForSelector('#pv-out table');           // members preview: source member -> SafeMembers.csv
   await page.selectOption('#role-from', 'Read only');
@@ -246,7 +237,7 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   DISMISS = true;
   await navTo('rules-accounts');
   if (!/not saved/.test(DIALOGS[DIALOGS.length - 1] || '')) throw new Error('no unsaved-changes warning when leaving a page');
-  if (!(await page.innerText('h2')).includes('D. Platforms')) throw new Error('Cancel on the unsaved warning still left the page');
+  if (!(await page.innerText('h2')).includes('2. Platforms')) throw new Error('Cancel on the unsaved warning still left the page');
   await page.fill('#defplat', '');
   await shot(page, '02e_platforms');
   await page.click('#save');
@@ -461,14 +452,14 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   await page.click('.stat[data-view=errors]');
   await page.waitForSelector('#list table');
   if (await page.inputValue('#view') !== 'errors') throw new Error('errors box did not open the errors list');
-  if (!(await page.isVisible('.floatbar >> text=Next: 4. Create upload files'))) throw new Error('Accounts page has no floating Next');
+  if (!(await page.isVisible('.floatbar >> text=Next: Create upload files'))) throw new Error('Accounts page has no floating Next');
   await navTo('output');
   await page.waitForSelector('text=Ready check');
   await page.click('.stat[data-view=review]');
   await page.waitForSelector('#list');
   if (await page.inputValue('#view') !== 'review') throw new Error('review box did not open the review list');
-  await page.click('.floatbar >> text=Next: 4. Create upload files');
-  await page.waitForSelector('#main h2 >> text=4. Create upload files');
+  await page.click('.floatbar >> text=Next: Create upload files');
+  await page.waitForSelector('#main h2 >> text=Create upload files');
   await navTo('load');
   await page.waitForSelector('#loaded-files');
   if (!(await page.content()).includes('same content')) throw new Error('repeated load not marked');
@@ -547,8 +538,9 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
     await page.click('#drawer >> text=Close');
   }
 
-  // Activity log
-  await navTo('activity');
+  // Activity log: linked from the Overview
+  await navTo('overview');
+  await page.click('#main a[data-go="activity"]');
   await page.waitForSelector('text=Your changes to accounts');
   await page.waitForSelector('text=Latest entries');
   if (!(await page.innerText('#main')).includes('Loaded keepass_export.xml')) throw new Error('log entries not written as sentences');
