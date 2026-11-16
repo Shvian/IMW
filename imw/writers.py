@@ -174,6 +174,16 @@ def write_review(plan, out_dir):
                 w.writerow([g["member_name"], g["member_type"], g["search_in"], len(g["safes"]),
                             " | ".join(sorted(g["roles"])), " | ".join(g["safes"]), "; ".join(g["notes"])])
         files.append(path)
+    if plan.undecided:
+        path = out / "Users_To_Decide.csv"
+        with _open(path) as fh:
+            w = csvsafe.SafeWriter(csv.writer(fh))
+            w.writerow(["Folder", "Target_Safe", "Source_Member", "Member_Name", "Source_Permission",
+                        "Groups_With_This_Access", "Accounts", "Decision", "Notes"])
+            for h in plan.undecided:
+                w.writerow([h["folder"], h["safe"], h["member"], h["member_name"], h["permission"],
+                            h["groups"], h["accounts"], h["decision"] or "not decided", h["note"]])
+        files.append(path)
     return files
 
 

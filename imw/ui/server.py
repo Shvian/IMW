@@ -43,8 +43,9 @@ from ..config import (ALL_PERMISSIONS, DEFAULT_CONFIG, PERMISSION_PRESETS, STAND
 from ..model import SourceRecord
 from ..naming import DEFAULT_PLATFORM_CODES, Namer, address_domain
 from ..protect import ProtectError
+from ..reference import KIND_HELP, KINDS, USED_KINDS, read_templates, read_users, reference_kind
 from ..store import Store, StoreError, run_extract, sha256_file
-from ..transform import (PERM_GROUP_COLUMNS, PERM_ROLE_COLUMNS, PERM_USER_COLUMNS, STANDARD_PLACEHOLDERS, Permissions,
+from ..transform import (target_for, PERM_GROUP_COLUMNS, PERM_ROLE_COLUMNS, PERM_USER_COLUMNS, STANDARD_PLACEHOLDERS, Permissions,
                          apply_member_override, clean_line, member_target,
                          normalize_member_type, safe_settings, sanitize_safe_name)
 from .auth import get_authenticator
@@ -235,7 +236,7 @@ def check_settings(cfg):
 def looks_like_permissions(path):
     """A CSV whose header has a group/user column and a permission column, and no password column
     (the Workbench layout, or a Delinea folder-permissions report)."""
-    if path.suffix.lower() != ".csv":
+    if path.suffix.lower() != ".csv" or reference_kind(path):
         return False
     try:
         with open(path, encoding="utf-8-sig", errors="replace") as fh:
@@ -321,15 +322,19 @@ class App:
         state = {"version": __version__, "workspace": str(self.ws), "inbox": str(self.inbox),
                  "output": str(self.output), "has_db": self.db_path.exists(),
                  "sources": {k: v.description for k, v in ADAPTERS.items()},
-                 "inbox_files": [], "outputs": [], "views": {k: v[0] for k, v in VIEWS.items()}}
+                 "inbox_files": [], "outputs": [], "views": {k: v[0] for k, v in VIEWS.items()},
+                 "kinds": {k: {"label": v, "help": KIND_HELP[k], "used": k in USED_KINDS} for k, v in KINDS.items()}}
         for f in sorted(self.inbox.iterdir()):
             if f.is_file():
                 try:
                     guess = detect_adapter(f).name
                 except AdapterError:
                     guess = ""
+                ref = reference_kind(f)
+                perm = looks_like_permissions(f)
+                kind = ref or ("permissions" if perm else "accounts" if guess else "")
                 state["inbox_files"].append({"name": f.name, "size": f.stat().st_size, "guess": guess,
-                                             "permissions": looks_like_permissions(f)})
+                                             "permissions": perm, "kind": kind})
         for d in sorted(self.output.iterdir(), reverse=True):
             if d.is_dir():
                 man = d / "manifest.json"
@@ -363,6 +368,11 @@ class App:
                 state["sanitized"] = st.db.execute(
                     "SELECT COUNT(*) FROM accounts WHERE " + VIEWS["sanitized"][1]).fetchone()[0]
                 state["member_edits"] = st.db.execute("SELECT COUNT(*) FROM member_edits").fetchone()[0]
+                state["undecided"] = st.db.execute(
+                    "SELECT COUNT(*) FROM plan_undecided WHERE decision = ''").fetchone()[0]
+                state["undecided_all"] = st.db.execute("SELECT COUNT(*) FROM plan_undecided").fetchone()[0]
+                state["references"] = {k: st.db.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+                                       for k, t in (("templates", "ref_templates"), ("users", "ref_users"))}
                 state["stale"] = bool(st.db.execute(
                     "SELECT COUNT(*) FROM records WHERE record_id NOT IN (SELECT record_id FROM plan_accounts)"
                 ).fetchone()[0])
@@ -396,7 +406,8 @@ class App:
 
     def api_ingest(self, body):
         files = body.get("files") or []
-        if not files:
+        refs = body.get("references") or []
+        if not files and not refs:
             raise UiError("Pick at least one export file.")
         cfg = self.config()
         perm_names = body.get("permissions") or []
@@ -410,6 +421,14 @@ class App:
         results = []
         st = self.store(create=True)
         try:
+            for f in refs:
+                path = self._inbox_file(f["name"])
+                kind = f.get("kind") or reference_kind(path)
+                if kind not in USED_KINDS:
+                    raise UiError(f"{path.name} is not a template list or users list")
+                rows = (read_templates if kind == "templates" else read_users)(path)
+                n = st.ingest_reference(kind, path, rows)
+                results.append({"name": f["name"], "source": kind, "records": n, "replaced": 0, "sanitized": 0})
             for f in files:
                 path = self._inbox_file(f["name"])
                 adapter = get_adapter(f["source"]) if f.get("source") else detect_adapter(path)
@@ -429,6 +448,35 @@ class App:
         finally:
             st.close()
         return {"results": results, "protector": self.protector_flag or "dpapi"}
+
+    def api_undecided(self, _body):
+        """Users from the users report who may get their access through a group (one row per
+        folder, Safe and user), with your decision."""
+        if not self.db_path.exists():
+            return {"rows": []}
+        st = self.store()
+        try:
+            rows = [dict(r) for r in st.db.execute(
+                "SELECT folder, safe_name, member, member_name, permission, groups, accounts, decision, notes "
+                "FROM plan_undecided ORDER BY groups, member, folder")]
+        finally:
+            st.close()
+        return {"rows": rows}
+
+    def api_decide(self, body):
+        items = [(i.get("folder") or "", i.get("member") or "") for i in body.get("items") or []]
+        if not items:
+            raise UiError("Tick at least one user first.")
+        decision = body.get("decision") or ""
+        st = self.store()
+        try:
+            n = st.set_decisions(items, decision, body.get("reason") or "")
+            st.map(self.config(), str(self.config_path) if self.config_path.exists() else None)
+        except StoreError as exc:
+            raise UiError(str(exc))
+        finally:
+            st.close()
+        return {"changed": n}
 
     def _inbox_file(self, name):
         path = (self.inbox / name).resolve()
@@ -901,8 +949,11 @@ class App:
             edits = st.member_edits()
             overrides = st.member_overrides()
             safe_ov = st.safe_overrides()
+            # Users waiting for your decision are listed on their own page, not here.
             grants = st.db.execute("SELECT member, max(member_type) AS member_type, COUNT(DISTINCT record_id) AS n "
-                                   "FROM grants GROUP BY lower(member)").fetchall()
+                                   "FROM grants WHERE coalesce(basis, '') <> 'undecided' "
+                                   "GROUP BY lower(member)").fetchall()
+            refs = st.references()
         finally:
             st.close()
         cfg = self.config()
@@ -910,12 +961,12 @@ class App:
         members = [dict(zip(mcols, r)) for r in mrows]
         return {"safes": [dict(zip(cols, r)) for r in rows], "members": members, "member_edits": edits,
                 "safe_overrides": sorted(safe_ov.values(), key=lambda o: o.get("changed_utc") or ""),
-                "people": self._people(members, grants, overrides, cfg),
+                "people": self._people(members, grants, overrides, cfg, refs),
                 "roles": roles, "directories": sorted({m["search_in"] for m in members if m["search_in"]} | {"Vault"}),
                 "known_members": sorted({m["member_name"] for m in members}, key=str.lower)}
 
     @staticmethod
-    def _people(members, grants, overrides, cfg):
+    def _people(members, grants, overrides, cfg, refs=None):
         """One row per member (user, group or role), with the Safes it is on. Members from the
         export whose accounts are not uploaded are listed too, with no Safes."""
         in_export = {r["member"].lower(): r["n"] for r in grants}
@@ -938,7 +989,7 @@ class App:
             if key in people:
                 continue
             mtype = normalize_member_type(r["member_type"], default_type)
-            name, search_in, src = member_target(r["member"], cfg, mtype)
+            name, search_in, src = target_for(r["member"], cfg, mtype, refs)
             m = apply_member_override({"source_name": r["member"], "member_name": name, "member_type": mtype,
                                        "type": mtype, "search_in": search_in,
                                        "directory_source": src or "default"}, overrides.get(key))
@@ -1187,6 +1238,7 @@ class App:
         try:
             rows = st.db.execute("SELECT member, member_type, COUNT(DISTINCT record_id) AS n FROM grants "
                                  "GROUP BY lower(member), member_type ORDER BY 3 DESC LIMIT 300").fetchall()
+            refs = st.references()
         finally:
             st.close()
         try:
@@ -1196,11 +1248,11 @@ class App:
         out = []
         for r in rows:
             mtype = normalize_member_type(r["member_type"], normalize_member_type(cfg["default_member_type"]))
-            name, search_in, src = member_target(r["member"], cfg, mtype)
+            name, search_in, src = target_for(r["member"], cfg, mtype, refs)
             changed = []
             if before is not None:
                 old_type = normalize_member_type(r["member_type"], normalize_member_type(before["default_member_type"]))
-                old_name, old_in, _ = member_target(r["member"], before, old_type)
+                old_name, old_in, _ = target_for(r["member"], before, old_type, refs)
                 changed = [k for k, a, b in (("member_name", old_name, name), ("search_in", old_in, search_in),
                                              ("type", old_type, mtype)) if (a or "") != (b or "")]
             out.append({"source": r["member"], "type": mtype, "accounts": r["n"], "member_name": name,
@@ -1284,7 +1336,8 @@ class App:
         ("GET", "/api/safes"): "api_safes", ("POST", "/api/extract"): "api_extract",
         ("POST", "/api/output/delete"): "api_output_delete", ("GET", "/api/audit"): "api_audit",
         ("POST", "/api/naming/preview"): "api_naming_preview", ("POST", "/api/safes/preview"): "api_safes_preview", ("POST", "/api/rules/preview"): "api_rules_preview", ("POST", "/api/rules/values"): "api_rules_values",
-        ("POST", "/api/approve"): "api_approve", ("POST", "/api/open"): "api_open_folder",
+        ("POST", "/api/approve"): "api_approve", ("GET", "/api/undecided"): "api_undecided",
+        ("POST", "/api/decide"): "api_decide", ("POST", "/api/open"): "api_open_folder",
         ("POST", "/api/lock"): "api_lock", ("POST", "/api/end"): "api_end", ("POST", "/api/ping"): "api_ping",
         ("POST", "/api/members/preview"): "api_members_preview", ("POST", "/api/members/edit"): "api_members_edit",
         ("POST", "/api/members/change"): "api_members_change", ("POST", "/api/safes/change"): "api_safes_change",

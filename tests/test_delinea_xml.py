@@ -158,7 +158,7 @@ class DelineaReports(Base):
         p = self.write("users.csv", "Folder,User Name,Domain,Permissions\n"
                                     "\\Infra,jsmith,CORP,\"View, Edit\"\n")
         self.assertTrue(looks_like_permissions(p))
-        g = Permissions(p).by_folder["infra"][0]
+        g = Permissions(p).users_by_folder["infra"][0]
         self.assertEqual((g.member, g.permission, g.member_type), ("CORP\\jsmith", "Edit", "User"))
 
     def test_user_and_group_columns_keep_the_group(self):

@@ -1,0 +1,5 @@
+Folder Path,Inherit Permissions,Permissions,User,Color
+\IT\Web,Yes,"View, Edit, Owner",Jane Smith,
+\Unix\Linux,No,"View, Edit",Bob Jones,
+\Unix\Linux,No,View,Jane Smith,
+\Unix\Linux,No,View,Nobody Known,

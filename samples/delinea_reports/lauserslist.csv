@@ -1,0 +1,3 @@
+Username,Display name,Email address,Directory source,Status,Last invite,Last login,Membership type,Account expires,Risk score
+jane.smith@corp.example.com,Jane Smith,jane@corp.example.com,AD,Active,,,,,
+bob.jones@corp.example.com,Bob Jones,bob@corp.example.com,AD,Active,,,,,

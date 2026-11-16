@@ -15,6 +15,12 @@ class Grant:
     member: str
     permission: str              # source wording: Owner, Edit, View, Read, Full...
     member_type: str = ""        # User, Group or Role; blank -> config default_member_type
+    # A user from a report of effective access ("What folders can all users see?"), which
+    # lists access a user gets through a group too: "direct" when no group explains it,
+    # "undecided" when a group on the same folder gives the same or stronger access (hint:
+    # those groups). Undecided users wait for your decision before they become Safe members.
+    basis: str = ""
+    hint: str = ""
 
 
 @dataclass

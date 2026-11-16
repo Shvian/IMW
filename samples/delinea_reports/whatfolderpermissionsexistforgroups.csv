@@ -1,0 +1,5 @@
+Folder Path,Inherit Permissions,Group,Permissions,Color
+\IT,No,CORP\IT Admins,"View, Edit, Owner",
+\IT\Servers\Windows,Yes,CORP\IT Admins,"View, Edit, Owner",
+\IT\Web,Yes,CORP\IT Admins,"View, Edit, Owner",
+\Unix\Linux,No,Unix Team,View,

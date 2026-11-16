@@ -431,6 +431,40 @@ class UiServer(Base):
         self.assertEqual(st, 400, r)
         self.assertIn("not a readable CSV file", r["error"])
 
+    def test_add_files_and_decide(self):
+        self.login()
+        for f in (SAMPLES / "delinea_reports").glob("*.csv"):
+            shutil.copy(f, self.ws / "inbox" / f.name)
+        st, state = self.req("GET", "/api/state")
+        kinds = {f["name"]: f["kind"] for f in state["inbox_files"]}
+        self.assertEqual(kinds["allsecrets.csv"], "templates")
+        self.assertEqual(kinds["lauserslist.csv"], "users")
+        self.assertEqual(kinds["whatroleassignmentsexist.csv"], "roles")
+        self.assertEqual(kinds["whatfolderscanalluserssee.csv"], "permissions")
+        self.assertEqual(kinds["secrets-export.csv"], "accounts")
+        self.assertFalse(state["kinds"]["roles"]["used"])
+        st, r = self.req("POST", "/api/ingest", {
+            "files": [{"name": "secrets-export.csv", "source": ""}],
+            "permissions": ["whatfolderpermissionsexistforgroups.csv", "whatfolderscanalluserssee.csv"],
+            "references": [{"name": "allsecrets.csv", "kind": "templates"}, {"name": "lauserslist.csv", "kind": "users"}]})
+        self.assertEqual(st, 200, r)
+        self.assertEqual([x["source"] for x in r["results"]], ["templates", "users", "delinea"])
+        st, state = self.req("GET", "/api/state")
+        self.assertEqual(state["undecided"], 3)
+        self.assertEqual(state["references"], {"templates": 5, "users": 2})
+        st, u = self.req("GET", "/api/undecided")
+        self.assertEqual(len(u["rows"]), 3)
+        jane = [x for x in u["rows"] if x["member"] == "Jane Smith"]
+        st, r = self.req("POST", "/api/decide", {"items": [{"folder": x["folder"], "member": x["member"]} for x in jane],
+                                                 "decision": "include"})
+        self.assertEqual((st, r["changed"]), (200, 2))
+        st, state = self.req("GET", "/api/state")
+        self.assertEqual(state["undecided"], 1)
+        st, s = self.req("GET", "/api/safes")
+        self.assertIn("jane.smith@corp.example.com", {m["member_name"] for m in s["members"]})
+        self.assertNotIn("Nobody Known", {p["source_member"] for p in s["people"]})
+        self.assertEqual(self.req("POST", "/api/decide", {"items": [], "decision": "include"})[0], 400)
+
 
 class _Quiet:
     """Silence the server's start-up prints during tests."""

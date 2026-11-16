@@ -62,6 +62,12 @@ def strongest_permission(text):
     return min(parts, key=lambda p: rank.get(p.lower(), len(rank)))
 
 
+def permission_rank(text):
+    """0 = strongest (Owner); unknown wording ranks weakest."""
+    rank = {w: i for i, w in enumerate(_PERMISSION_ORDER)}
+    return rank.get((text or "").strip().lower(), len(rank))
+
+
 class Permissions:
     """
     CSV with one grant per row. Columns (case-insensitive, see PERM_*_COLUMNS):
@@ -79,6 +85,10 @@ class Permissions:
         self.by_id = defaultdict(list)
         self.by_name = defaultdict(list)
         self.by_folder = defaultdict(list)
+        # Users from a report of effective access per folder (no group column), kept apart so
+        # each can be checked against the groups on the same folder (see resolve).
+        self.users_by_folder = defaultdict(list)
+        self.has_group_report = False
         paths = [p for p in (path if isinstance(path, (list, tuple)) else [path]) if p]
         self.loaded = bool(paths)
         self.paths = paths
@@ -105,9 +115,13 @@ class Permissions:
             perm_cols = [cols[n.lower()] for n in PERM_ROLE_COLUMNS if n.lower() in cols]
             type_col = pick(PERM_TYPE_COLUMNS)
             domain_col = pick(PERM_DOMAIN_COLUMNS)
-            if user_col and not group_col:
-                log.warning("%s lists permissions per user, not per group: each user becomes a Safe member. "
-                            "Delinea's 'What folder permissions exist for groups?' report keeps the groups.", path)
+            user_report = bool(user_col and not group_col)
+            if group_col:
+                self.has_group_report = True
+            if user_report:
+                log.warning("%s lists each user's access, including access through a group: a user becomes a "
+                            "Safe member only where no group on the folder explains it; the others wait for "
+                            "your decision.", path)
 
             def col(row, *names):
                 for n in names:
@@ -140,12 +154,22 @@ class Permissions:
                     self._add(self.by_id[rid], g)
                 elif name:
                     self._add(self.by_name[(folder, name.lower())], g)
+                elif user_report:
+                    self._add(self.users_by_folder[folder], g)
                 else:
                     self._add(self.by_folder[folder], g)
 
     def log_summary(self):
         log.info("permissions: %d record-level, %d folder-level entries",
-                 len(self.by_id) + len(self.by_name), len(self.by_folder))
+                 len(self.by_id) + len(self.by_name), len(set(self.by_folder) | set(self.users_by_folder)))
+
+    @staticmethod
+    def _nearest(index, folder):
+        for i in range(len(folder), -1, -1):
+            cand = "\\".join(folder[:i])
+            if cand in index:
+                return cand
+        return None
 
     def resolve(self, rec):
         if rec.source_id in self.by_id:
@@ -154,11 +178,34 @@ class Permissions:
         key = ("\\".join(folder), rec.name.lower())
         if key in self.by_name:
             return self.by_name[key], "record"
-        for i in range(len(folder), -1, -1):
-            cand = "\\".join(folder[:i])
-            if cand in self.by_folder:
-                return self.by_folder[cand], "folder"
+        at = self._nearest(self.by_folder, folder)
+        groups = list(self.by_folder[at]) if at is not None else []
+        users = self._users(folder)
+        if groups or users:
+            return groups + users, "folder"
         return [], "none"
+
+    def _users(self, folder):
+        """Users from an effective-access report for this folder, each marked direct (no group on
+        the folder gives that much access) or undecided (with the groups that might explain it)."""
+        at = self._nearest(self.users_by_folder, folder)
+        if at is None:
+            return []
+        # The groups that reach this folder: the nearest folder the group report lists.
+        g_at = self._nearest(self.by_folder, at.split("\\") if at else [])
+        on_folder = self.by_folder[g_at] if g_at is not None else []
+        out = []
+        for u in self.users_by_folder[at]:
+            rank = permission_rank(u.permission)
+            covering = [g.member for g in on_folder if permission_rank(g.permission) <= rank]
+            if not self.has_group_report:
+                basis, hint = "undecided", ""
+            elif covering:
+                basis, hint = "undecided", ", ".join(covering)
+            else:
+                basis, hint = "direct", ""
+            out.append(Grant(u.member, u.permission, u.member_type, basis, hint))
+        return out
 
 
 # --------------------------------------------------------------------------- #
@@ -483,6 +530,9 @@ class Plan:
     member_edits: list = field(default_factory=list)
     member_overrides: dict = field(default_factory=dict)
     safe_overrides: dict = field(default_factory=dict)
+    # Users who may get their access through a group (see Permissions._users): one row per
+    # folder, Safe and user, with your decision ("" = none yet, include, exclude).
+    undecided: list = field(default_factory=list)
 
 
 def load_overrides(path, encoding="utf-8-sig"):
@@ -528,8 +578,10 @@ def _explicit_changed(edited, computed):
 
 
 def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_edits=None,
-               member_overrides=None, safe_overrides=None):
+               member_overrides=None, safe_overrides=None, refs=None):
     """explicit=True: overrides are deliberate edits (database), not a re-fed review file.
+    refs: reference.References (templates by secret name, full name -> UPN, your decisions on
+    users who may get their access through a group).
     safe_overrides: {lower Safe name as the rules give it: {"new_name": ..., settings...}},
     your direct changes to whole Safes (name, description, CPM, retention, ...)."""
     safe_overrides = safe_overrides or {}
@@ -547,6 +599,11 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
         p = AccountPlan(rec=rec)
         p.warnings.extend(n for n in rec.notes if not n.startswith(ERROR_NOTE))
         p.errors.extend(n[len(ERROR_NOTE):] for n in rec.notes if n.startswith(ERROR_NOTE))
+        # A secrets export without a template column: the template list gives it.
+        if refs is not None and not rec.type:
+            rec.type, why = refs.template_for(rec.name, rec.folder)
+            if why:
+                p.warnings.append(why)
         # Access (looked up by the source's own id, before a duplicate id is suffixed)
         if rec.grants is not None:
             p.grants, p.access_source = list(rec.grants), rec.access_source or "source"
@@ -704,10 +761,11 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
                                 "already has: their accounts are now in one Safe")
 
     safes = _safes(plans, cfg, safe_overrides)
-    members = _members(plans, cfg, member_edits, member_overrides)
+    undecided = []
+    members = _members(plans, cfg, member_edits, member_overrides, refs, undecided)
     flag_safes_without_full_member(safes, members, cfg)
     return Plan(plans, safes, members,
-                list(member_edits or []), dict(member_overrides or {}), dict(safe_overrides))
+                list(member_edits or []), dict(member_overrides or {}), dict(safe_overrides), undecided)
 
 
 SPLIT_NOT_FOR = ("source", "override")     # a Safe the source or you named is never split
@@ -1049,16 +1107,50 @@ def flag_safes_without_full_member(safes, members, cfg):
     return safes
 
 
-def _members(plans, cfg, edits=None, overrides=None):
+def user_target(name, cfg, refs):
+    """A user's memberName, searchIn and source: the users list turns a full name into the UPN,
+    then the member rules run on it. Also returns a note when the name can't be turned."""
+    upn, note = refs.upn_for(name) if refs is not None else (None, "")
+    if upn:
+        # The UPN is the name Privilege Cloud needs, so the member rules only give its searchIn.
+        _, search_in, _ = member_target(upn, cfg, "User")
+        return upn, search_in, "users list", ""
+    if note and ("\\" in name or "@" in name):
+        note = ""      # a domain or UPN name, not a full name: the users list isn't needed
+    target, search_in, src = member_target(name, cfg, "User")
+    return target, search_in, src, note
+
+
+def target_for(name, cfg, member_type, refs=None):
+    """member_target, with the users list for users (full name -> UPN)."""
+    if normalize_member_type(member_type, "") == "User":
+        return user_target(name, cfg, refs)[:3]
+    return member_target(name, cfg, member_type)
+
+
+def _members(plans, cfg, edits=None, overrides=None, refs=None, undecided=None):
     """Strongest role per (Safe, member) over the accounts that migrate. Order matters:
     the rules give each source member its target name, your member changes (overrides)
     rename it everywhere, rows that now share a target name on one Safe merge (the API
     takes one row per Safe and member), and last your per-Safe edits apply."""
     members = OrderedDict()
+    held = OrderedDict()
     for p in plans:
         if not p.uploadable:
             continue
         for g in p.grants:
+            why = ""
+            if g.basis == "undecided":
+                decision = refs.decision(p.rec.folder, g.member) if refs is not None else ""
+                h = held.setdefault((p.rec.folder_path.lower(), p.safe, g.member.lower()), {
+                    "folder": p.rec.folder_path, "safe": p.safe, "member": g.member,
+                    "permission": g.permission, "groups": g.hint, "accounts": 0, "decision": decision})
+                h["accounts"] += 1
+                if decision != "include":
+                    continue
+                why = "included by you" + (f"; it may also get this access through {g.hint}" if g.hint else "")
+            elif g.basis == "direct":
+                why = "direct access: no group on the folder gives this much access"
             role = role_for(g.permission, cfg)
             key = (p.safe, g.member.lower())
             m = members.setdefault(key, {"source_name": g.member, "type": g.member_type,
@@ -1068,15 +1160,22 @@ def _members(plans, cfg, edits=None, overrides=None):
                 m["ids"].add(id(p))
                 m["accounts"] += 1
             m["seen"].add(g.permission or "(blank)")
+            if why and why not in m.setdefault("why", []):
+                m["why"].append(why)
             if role_rank(role, cfg) > role_rank(m["role"], cfg):
                 m["role"], m["permission"] = role, g.permission
     for m in members.values():
         m["member_type"] = normalize_member_type(m["type"], normalize_member_type(cfg["default_member_type"]))
-        m["member_name"], m["search_in"], m["directory_source"] = member_target(
-            m["source_name"], cfg, m["member_type"])
+        m["notes"] = list(m.pop("why", []))
+        if m["member_type"] == "User":
+            m["member_name"], m["search_in"], m["directory_source"], note = user_target(m["source_name"], cfg, refs)
+            if note:
+                m["notes"].append(note)
+        else:
+            m["member_name"], m["search_in"], m["directory_source"] = member_target(
+                m["source_name"], cfg, m["member_type"])
         m["rule_name"] = m["member_name"]
         m["sources"] = [m["source_name"]]
-        m["notes"] = []
     _add_standard_members(members, plans, cfg)
     for m in members.values():
         if m.get("standard"):
@@ -1102,6 +1201,10 @@ def _members(plans, cfg, edits=None, overrides=None):
         m["notes"] = notes + m["notes"]
         m.pop("ids", None)
     apply_member_edits(members, plans, edits)
+    if undecided is not None:
+        for h in held.values():
+            h["member_name"], _, _, h["note"] = user_target(h["member"], cfg, refs)
+            undecided.append(h)
     return members
 
 

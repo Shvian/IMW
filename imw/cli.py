@@ -10,6 +10,7 @@ from . import __version__
 from .adapters import ADAPTERS, AdapterError, detect_adapter, get_adapter
 from .config import load_config, write_default_config
 from .protect import ProtectError
+from .reference import KINDS, USED_KINDS, References, read_templates, read_users, reference_kind
 from .store import REPORTS, Store, StoreError, print_table, run_extract
 from .transform import sanitize_record, Permissions, build_plan, load_overrides
 from .writers import write_convention, write_manifest, write_review, write_upload
@@ -32,14 +33,47 @@ def parse_input(spec):
     return None, spec
 
 
+def read_references(args):
+    """[(kind, path, rows)] from --reference and from any --input that is a reference file
+    (a template list or users list, see reference.py); None after logging an error."""
+    out = []
+    specs = list(getattr(args, "reference", None) or [])
+    specs += [s for s in args.input if parse_input(s)[0] is None and not args.source
+              and Path(s).is_file() and reference_kind(s, args.encoding)]
+    for path in specs:
+        if not Path(path).is_file():
+            log.error("reference file not found: %s", path)
+            return None
+        kind = reference_kind(path, args.encoding)
+        if kind not in USED_KINDS:
+            log.warning("%s: %s; skipped", path, KINDS.get(kind, "not a template list or users list"))
+            continue
+        try:
+            rows = (read_templates if kind == "templates" else read_users)(path, args.encoding)
+        except (ValueError, OSError) as exc:
+            log.error("%s", exc)
+            return None
+        log.info("%s: %d rows read as %s", path, len(rows), KINDS[kind].lower())
+        out.append((kind, path, rows))
+    return out
+
+
+def references_from(loaded):
+    return References([r for k, _, rows in loaded if k == "templates" for r in rows],
+                      [r for k, _, rows in loaded if k == "users" for r in rows])
+
+
 def read_inputs(args, cfg):
-    """[(adapter_name, path, records)] or None after logging an error."""
+    """[(adapter_name, path, records)] or None after logging an error. Reference files given
+    with --input are left to read_references."""
     out = []
     for spec in args.input:
         name, path = parse_input(spec)
         if not Path(path).is_file():
             log.error("input not found: %s", path)
             return None
+        if name is None and not args.source and reference_kind(path, args.encoding):
+            continue
         try:
             adapter = get_adapter(name or args.source) if (name or args.source) else detect_adapter(path)
             got = list(adapter.read(path, cfg, args.encoding))
@@ -106,7 +140,8 @@ def cmd_ingest(args):
         log.error("%s", exc)
         return 2
     loaded = read_inputs(args, cfg)
-    if loaded is None:
+    refs = read_references(args)
+    if loaded is None or refs is None:
         return 2
     try:
         perms = Permissions(args.permissions, args.encoding) if args.permissions else None
@@ -114,6 +149,9 @@ def cmd_ingest(args):
         log.error("permissions: %s", exc)
         return 2
     try:
+        for kind, path, rows in refs:
+            store.ingest_reference(kind, path, rows)
+            print(f"{path}: {len(rows)} rows stored as {KINDS[kind].lower()}")
         for name, path, records in loaded:
             n, replaced = store.ingest(name, path, records, perms, args.permissions)
             print(f"{path}: {n} records stored ({replaced} replaced earlier copies)")
@@ -270,7 +308,8 @@ def cmd_convert(args):
     if out_dir is None:
         return 2
     loaded = read_inputs(args, cfg)
-    if loaded is None:
+    refs = read_references(args)
+    if loaded is None or refs is None:
         return 2
     records = [r for _, _, got in loaded for r in got]
     inputs = [(name, path) for name, path, _ in loaded]
@@ -287,7 +326,7 @@ def cmd_convert(args):
     except (ValueError, OSError) as exc:
         log.error("%s", exc)
         return 2
-    plan = build_plan(records, cfg, perms, overrides)
+    plan = build_plan(records, cfg, perms, overrides, refs=references_from(refs))
 
     files = write_review(plan, out_dir) + [write_convention(plan, cfg, out_dir)]
     upload_files, counts = write_upload(plan, cfg, out_dir, args.include_secrets)
@@ -327,6 +366,10 @@ def main(argv=None):
     p.add_argument("--config", "-c", help="Config JSON (see init-config)")
     p.add_argument("--permissions", "-p", action="append",
                        help="Permissions CSV: groups per folder or record. Repeat to merge several files")
+    p.add_argument("--reference", action="append",
+                   help="Template list (secret name -> template, e.g. Delinea's allsecrets.csv) or users "
+                        "list (full name -> UPN, e.g. lauserslist.csv). Repeat for several. Found "
+                        "automatically when passed with --input too")
     p.add_argument("--overrides", help="An edited review/Accounts_Review.csv; changed Migrate, "
                                        "Target_Safe, Platform_ID and Account_Name values win")
     p.add_argument("--output-dir", "-o", default="imw_output")
@@ -343,6 +386,10 @@ def main(argv=None):
         p.add_argument("--source", choices=sorted(ADAPTERS), help="Source for every --input without a prefix")
         p.add_argument("--permissions", "-p", action="append",
                        help="Permissions CSV: groups per folder or record. Repeat to merge several files")
+        p.add_argument("--reference", action="append",
+                       help="Template list (secret name -> template, e.g. Delinea's allsecrets.csv) or users "
+                            "list (full name -> UPN, e.g. lauserslist.csv). Repeat for several. Found "
+                            "automatically when passed with --input too")
         p.add_argument("--encoding", default="utf-8-sig", help="Text encoding of CSV inputs (try cp1252)")
 
     def add_db(p):

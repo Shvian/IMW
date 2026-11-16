@@ -29,6 +29,7 @@ from . import csvsafe
 from .model import Grant, SourceRecord
 from .owner import OwnerError, current_identity, restrict
 from .protect import ProtectError, get_protector, new_salt
+from .reference import References, folder_key
 from .transform import SAFE_OVERRIDE_KEYS, _changed, build_plan, rebuild_totals, safe_settings, sanitize_record
 from .writers import write_convention, write_manifest, write_review, write_upload
 
@@ -45,7 +46,8 @@ CREATE TABLE IF NOT EXISTS records (
   source_ref TEXT, name TEXT, folder TEXT, folder_json TEXT, type TEXT, address TEXT,
   username TEXT, secret_type TEXT, has_secret INTEGER, secret_enc TEXT, has_grants INTEGER,
   access_source TEXT, target_safe TEXT, target_platform TEXT, extra_json TEXT, notes_json TEXT);
-CREATE TABLE IF NOT EXISTS grants (record_id TEXT, member TEXT, permission TEXT, member_type TEXT);
+CREATE TABLE IF NOT EXISTS grants (record_id TEXT, member TEXT, permission TEXT, member_type TEXT,
+  basis TEXT DEFAULT '', hint TEXT DEFAULT '');
 CREATE INDEX IF NOT EXISTS grants_record ON grants(record_id);
 CREATE TABLE IF NOT EXISTS edits (
   record_id TEXT, field TEXT, value TEXT, changed_utc TEXT, changed_by TEXT, reason TEXT,
@@ -74,6 +76,14 @@ CREATE TABLE IF NOT EXISTS safe_overrides (
   safe_key TEXT PRIMARY KEY, settings_json TEXT, changed_utc TEXT, changed_by TEXT, reason TEXT);
 CREATE TABLE IF NOT EXISTS approvals (
   record_id TEXT PRIMARY KEY, fingerprint TEXT, approved_utc TEXT, approved_by TEXT, reason TEXT);
+CREATE TABLE IF NOT EXISTS ref_templates (input_id INTEGER, name TEXT, folder TEXT, template TEXT);
+CREATE TABLE IF NOT EXISTS ref_users (input_id INTEGER, display_name TEXT, username TEXT, email TEXT);
+CREATE TABLE IF NOT EXISTS member_decisions (
+  folder TEXT, member TEXT, decision TEXT, changed_utc TEXT, changed_by TEXT, reason TEXT,
+  PRIMARY KEY (folder, member));
+CREATE TABLE IF NOT EXISTS plan_undecided (
+  folder TEXT, safe_name TEXT, member TEXT, member_name TEXT, permission TEXT, groups TEXT,
+  accounts INTEGER, decision TEXT, notes TEXT);
 CREATE TABLE IF NOT EXISTS audit (
   id INTEGER PRIMARY KEY, ts TEXT, user TEXT, host TEXT, action TEXT, detail TEXT);
 CREATE VIEW IF NOT EXISTS accounts AS SELECT * FROM plan_accounts;
@@ -154,6 +164,10 @@ class Store:
         self.db.executescript(SCHEMA)
         if "approved" not in [r[1] for r in self.db.execute("PRAGMA table_info(plan_accounts)")]:
             self.db.execute("ALTER TABLE plan_accounts ADD COLUMN approved TEXT DEFAULT ''")
+        grant_cols = [r[1] for r in self.db.execute("PRAGMA table_info(grants)")]
+        for column in ("basis", "hint"):
+            if column not in grant_cols:
+                self.db.execute(f"ALTER TABLE grants ADD COLUMN {column} TEXT DEFAULT ''")
         if new:
             self._set_meta("schema_version", SCHEMA_VERSION)
             self._set_meta("created_utc", _now())
@@ -257,8 +271,9 @@ class Store:
                  0 if rec.grants is None else 1, rec.access_source or "none", rec.target_safe,
                  rec.target_platform, json.dumps(rec.extra), json.dumps(rec.notes)))
             for g in rec.grants or []:
-                self.db.execute("INSERT INTO grants VALUES (?,?,?,?)",
-                                (rid, g.member, g.permission, g.member_type))
+                self.db.execute("INSERT INTO grants(record_id, member, permission, member_type, basis, hint) "
+                                "VALUES (?,?,?,?,?,?)",
+                                (rid, g.member, g.permission, g.member_type, g.basis, g.hint))
             rec.secret = ""  # drop the plaintext as soon as it is stored
         self.audit("ingest", source=source, path=str(path), records=len(records), replaced=replaced,
                    sanitized=self.last_sanitized,
@@ -266,11 +281,58 @@ class Store:
         self.db.commit()
         return len(records), replaced
 
+    def ingest_reference(self, kind, path, rows):
+        """A reference file (reference.py): templates by secret name, or the users list. Loading
+        a file with the same name and kind again replaces what it gave before."""
+        name = Path(path).name.lower()
+        for old in self.db.execute("SELECT id, path FROM inputs WHERE source = ?", (kind,)).fetchall():
+            if Path(old["path"]).name.lower() == name or Path(old["path"].replace("\\", "/")).name.lower() == name:
+                for table in ("ref_templates", "ref_users"):
+                    self.db.execute(f"DELETE FROM {table} WHERE input_id = ?", (old["id"],))
+        cur = self.db.execute(
+            "INSERT INTO inputs(source, path, sha256, records, loaded_utc, loaded_by) VALUES (?,?,?,?,?,?)",
+            (kind, str(Path(path).resolve()), sha256_file(path), len(rows), _now(), _user()))
+        table = {"templates": "ref_templates", "users": "ref_users"}[kind]
+        for r in rows:
+            self.db.execute(f"INSERT INTO {table} VALUES (?,?,?,?)", (cur.lastrowid,) + tuple(r))
+        self.audit("ingest", source=kind, path=str(path), records=len(rows))
+        self.db.commit()
+        return len(rows)
+
+    def references(self):
+        templates = [tuple(r) for r in self.db.execute(
+            "SELECT name, folder, template FROM ref_templates ORDER BY input_id, rowid")]
+        users = [tuple(r) for r in self.db.execute(
+            "SELECT display_name, username, email FROM ref_users ORDER BY input_id, rowid")]
+        decisions = {(r["folder"], r["member"]): r["decision"]
+                     for r in self.db.execute("SELECT folder, member, decision FROM member_decisions")}
+        return References(templates, users, decisions)
+
+    def set_decisions(self, items, decision, reason=""):
+        """Include or exclude users who may get their access through a group, per folder;
+        decision "" takes the decision back. items: [(folder path, member)]."""
+        if decision not in ("include", "exclude", ""):
+            raise StoreError(f"unknown decision '{decision}'")
+        done = 0
+        for folder, member in items:
+            key = (folder_key(folder), (member or "").strip().lower())
+            if not key[1]:
+                continue
+            self.db.execute("DELETE FROM member_decisions WHERE folder = ? AND member = ?", key)
+            if decision:
+                self.db.execute("INSERT INTO member_decisions VALUES (?,?,?,?,?,?)",
+                                key + (decision, _now(), _user(), reason))
+            done += 1
+        self.audit("decide", decision=decision or "undo", users=done, reason=reason)
+        self.db.commit()
+        return done
+
     # -- load -------------------------------------------------------------
     def load_records(self, with_secrets=False):
         grants = {}
         for g in self.db.execute("SELECT * FROM grants"):
-            grants.setdefault(g["record_id"], []).append(Grant(g["member"], g["permission"], g["member_type"]))
+            grants.setdefault(g["record_id"], []).append(
+                Grant(g["member"], g["permission"], g["member_type"], g["basis"] or "", g["hint"] or ""))
         out = []
         for r in self.db.execute("SELECT * FROM records ORDER BY input_id, rowid"):
             rec = SourceRecord(source=r["source"], source_file=r["source_file"], source_id=r["source_id"],
@@ -412,13 +474,18 @@ class Store:
     def plan(self, cfg, with_secrets=False):
         return build_plan(self.load_records(with_secrets), cfg, None, self.overrides(), explicit=True,
                           member_edits=self.member_edits(), member_overrides=self.member_overrides(),
-                          safe_overrides=self.safe_overrides())
+                          safe_overrides=self.safe_overrides(), refs=self.references())
 
     def map(self, cfg, cfg_path=None):
         plan = self.plan(cfg)
         self.db.execute("DELETE FROM plan_accounts")
         self.db.execute("DELETE FROM plan_safes")
         self.db.execute("DELETE FROM plan_members")
+        self.db.execute("DELETE FROM plan_undecided")
+        for h in plan.undecided:
+            self.db.execute("INSERT INTO plan_undecided VALUES (?,?,?,?,?,?,?,?,?)",
+                            (h["folder"], h["safe"], h["member"], h["member_name"], h["permission"],
+                             h["groups"], h["accounts"], h["decision"], h["note"]))
         for p in plan.accounts:
             r = p.rec
             self.db.execute(
