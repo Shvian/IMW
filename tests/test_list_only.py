@@ -229,8 +229,9 @@ class ListOnlyUi(test_ui.UiServer):
         self.assertIn("SVR-WIN-LA-03", [x["safe_name"] for x in s["safes"]])
         st, out = self.req("POST", "/api/extract", {"name": "t1"})
         self.assertEqual(st, 200, out)
-        self.assertIn("review/MemberGroups_To_Create.csv", out["files"])
-        self.assertIn("review/SafeNamingConvention.csv", out["files"])
+        files = [f.replace("\\", "/") for f in out["files"]]       # \ on Windows
+        self.assertIn("review/MemberGroups_To_Create.csv", files)
+        self.assertIn("review/SafeNamingConvention.csv", files)
         st, text = self.req("GET", "/api/export/convention.csv")
         self.assertEqual(st, 200)
         self.assertIn("{safe}-Owners", text.decode("utf-8-sig"))

@@ -4,6 +4,7 @@ import datetime as dt
 import shutil
 import ssl
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -91,7 +92,7 @@ class Certificate(unittest.TestCase):
     def test_damaged_key_makes_a_new_pair(self):
         cert, _, _ = tls.ensure_certificate(self.ws)
         before = cert.read_text()
-        (self.ws / "tls" / tls.KEY_PEM).write_text("rubbish")
+        (self.ws / "tls" / (tls.KEY_DPAPI if sys.platform == "win32" else tls.KEY_PEM)).write_text("rubbish")
         _, cert, created = tls.server_context(self.ws)
         self.assertTrue(created)
         self.assertNotEqual(cert.read_text(), before)

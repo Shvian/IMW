@@ -366,7 +366,8 @@ class WindowsOnly(unittest.TestCase):
 
     def test_path_owner(self):
         from imw.owner import current_identity, path_owner_sid
-        self.assertEqual(path_owner_sid(Path(__file__).parent), current_identity()["sid"])
+        # An elevated session (a build server) makes new files owned by the Administrators group.
+        self.assertIn(path_owner_sid(Path(__file__).parent), (current_identity()["sid"], "S-1-5-32-544"))
 
 
 if __name__ == "__main__":

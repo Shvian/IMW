@@ -22,6 +22,14 @@ def as_user(who):
 class Owner(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
+        if os.name == "nt":
+            # Windows can't put the made-up SIDs of Ian and Bob on a real folder (icacls refuses unknown
+            # accounts), and on an elevated build server new folders belong to Administrators: stand in for both.
+            for p in (mock.patch.object(owner, "restrict", lambda *a, **k: "test"),
+                      mock.patch.object(store, "restrict", lambda *a, **k: "test"),
+                      mock.patch.object(owner, "path_owner_sid", lambda path: IAN["sid"])):
+                p.start()
+                self.addCleanup(p.stop)
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)

@@ -191,18 +191,18 @@ class FrontendCsp(unittest.TestCase):
         import re
         from imw.ui import server
         static = server.STATIC
-        html = (static / "index.html").read_text()
+        html = (static / "index.html").read_text(encoding="utf-8")
         self.assertEqual(re.findall(r"<script(?![^>]*\bsrc=)", html), [])
         for name in ["index.html"] + list(server.STATIC_SCRIPTS.values()):
-            text = (static / name).read_text()
+            text = (static / name).read_text(encoding="utf-8")
             self.assertEqual(re.findall(r"\son[a-z]+\s*=\s*[\"']", text), [], name)
-        src = (Path(server.__file__)).read_text()
+        src = (Path(server.__file__)).read_text(encoding="utf-8")
         self.assertIn("script-src 'self';", src)
         self.assertNotIn("script-src 'self' 'unsafe-inline'", src)
 
     def test_security_notice_on_overview(self):
         from imw.ui import server
-        js = (server.STATIC / "app.js").read_text()
+        js = (server.STATIC / "app.js").read_text(encoding="utf-8")
         self.assertIn("const securityNotice", js)
         self.assertIn("${securityNotice(true)}", js)                 # welcome page: open
         self.assertIn("${securityNotice(false)}", js)                # overview: folded

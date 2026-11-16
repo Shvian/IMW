@@ -336,7 +336,7 @@ class UiServer(Base):
 
     def test_members_platforms_and_sanitizing(self):
         dirty = (SAMPLES / "delinea_export.csv").read_text(encoding="utf-8-sig").replace("svc_sql", "svc\u200b_sql", 1)
-        (self.ws / "inbox" / "delinea_export.csv").write_text(dirty, encoding="utf-8")
+        (self.ws / "inbox" / "delinea_export.csv").write_text(dirty, encoding="utf-8", newline="")   # no CRLF on Windows
         self.login()
         st, r = self.req("POST", "/api/ingest", {"files": [{"name": "delinea_export.csv", "source": ""}],
                                                  "permissions": ["delinea_permissions.csv"]})
