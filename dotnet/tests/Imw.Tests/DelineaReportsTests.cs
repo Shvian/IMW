@@ -201,6 +201,29 @@ public class PersonalSafesTests : TestBase
         Assert.Contains("personal Safe of Jane Smith", safes["P-jane.smith"]["Safe_Name_Issues"]);
         Assert.Contains("Personal Safe,\\Personal Folders,P-{user}", ReadText(T("out", "review", "SafeNamingConvention.csv")));
     }
+
+    [Fact]
+    public void OwnerIsAMember()
+    {
+        var args = new List<string> { "-i", P("secrets-export.csv"), "-i", P("allsecrets.csv"), "--reference", Users,
+                                      "-c", P("config.json"), "-p", P("whatfolderscanalluserssee.csv") };
+        var (rc, text) = RunCli(new[] { "convert", "-o", T("out"), "--force" }.Concat(args).ToArray());
+        Assert.True(rc == 0, text);
+        var members = ReadCsv(T("out", "review", "SafeMembers_Review.csv")).ToDictionary(m => (m["Target_Safe"], m["Member_Name"]));
+        var jane = members[("P-jane.smith", "jane.smith@corp.example.com")];
+        Assert.Equal(("Full", "Owner"), (jane["Role"], jane["Source_Permission"]));
+        Assert.Contains("the folder report gives it Owner", jane["Notes"]);
+        Assert.Contains("added by the Workbench", members[("P-bob.jones", "bob.jones@corp.example.com")]["Notes"]);
+        Assert.Single(members.Keys, k => k.Item1 == "P-jane.smith");
+        Assert.DoesNotContain("Jane Smith", ReadCsv(T("out", "review", "Users_To_Decide.csv")).Select(d => d["Source_Member"]));
+        File.WriteAllText(T("noowner.json"), @"{""personal_safes"": {""owner_role"": """", ""folders"": [{""folder"": ""\\Personal Folders""}]}}");
+        args[args.IndexOf(P("config.json"))] = T("noowner.json");
+        (rc, text) = RunCli(new[] { "convert", "-o", T("out2"), "--force" }.Concat(args).ToArray());
+        Assert.True(rc == 0, text);
+        var names = ReadCsv(T("out2", "review", "SafeMembers_Review.csv")).Select(m => (m["Target_Safe"], m["Member_Name"])).ToList();
+        Assert.DoesNotContain(("P-NobodyKnown", "Nobody Known"), names);
+        Assert.Contains(("P-jane.smith", "jane.smith@corp.example.com"), names);
+    }
 }
 
 public class DelineaReportsUiTests : UiTestBase

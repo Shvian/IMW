@@ -383,18 +383,29 @@ def _natural_order(name):
     return name
 
 
+def person_upn(person, refs):
+    """(UPN or "", note, the name the users list knows) for the person a personal folder is
+    named after ("Smith, Jane" is found as "Jane Smith")."""
+    if "@" in person:
+        return person, "", person
+    if refs is None:
+        return "", "", person
+    found, why = refs.upn_for(person)
+    if not found and "," in person:
+        found, why2 = refs.upn_for(_natural_order(person))
+        if found:
+            return found, "", _natural_order(person)
+        if "pick the right one" in why2:
+            why = why2
+    return found or "", ("" if found else why), person
+
+
 def personal_safe(person, cfg, refs=None):
     """(Safe name, notes) for a person's personal Safe, from personal_safes.template."""
     notes = []
-    upn = person if "@" in person else ""
-    if not upn and refs is not None:
-        found, why = refs.upn_for(person)
-        if not found and "," in person:
-            found, why2 = refs.upn_for(_natural_order(person))
-            why = why if not found and "pick the right one" not in why2 else why2
-        if found:
-            upn = found
-        elif why:
+    upn, why, _ = person_upn(person, refs)
+    if not upn:
+        if why:
             notes.append(f"CHECK: {person} is " + ("in the users list more than once" if "pick the right one" in why
                          else "not in the users list") + ", so the personal Safe is named from the folder name")
     if refs is not None and not refs.has_users and not upn:
@@ -580,6 +591,7 @@ class AccountPlan:
     # name shortened, a Safe shared by several folders). They show on the Safe, not on the
     # account, so they never make an account "need a look".
     safe_notes: List[str] = field(default_factory=list)
+    personal: str = ""             # the person whose personal folder this is, for a personal Safe
 
     @property
     def status(self):
@@ -733,6 +745,7 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
             if person:
                 safe, why = personal_safe(person, cfg, refs)
                 src = "personal:" + pfolder
+                p.personal = person
                 p.safe_notes.append(f"personal Safe of {person}")
                 p.safe_notes.extend(why)
         rules = [lambda: match_folder_rules(rec, cfg, ctx), lambda: match_group_rules(p.grants, cfg, rec, ctx)]
@@ -1213,12 +1226,23 @@ def _members(plans, cfg, edits=None, overrides=None, refs=None, undecided=None):
     takes one row per Safe and member), and last your per-Safe edits apply."""
     members = OrderedDict()
     held = OrderedDict()
+    owner_role = clean_line((cfg.get("personal_safes") or {}).get("owner_role"))
     for p in plans:
         if not p.uploadable:
             continue
+        owner = p.personal
+        names = set()
+        if owner:
+            names.add(owner.lower())
+            upn = person_upn(owner, refs)[0]
+            if upn:
+                names.add(upn.lower())
+        owner_seen = []
         for g in p.grants:
             why = ""
-            if g.basis == "undecided":
+            if owner and g.member.lower() in names:
+                why = f"owner of this personal Safe; the folder report gives it {g.permission or '(blank)'}"
+            elif g.basis == "undecided":
                 decision = refs.decision(p.rec.folder, g.member) if refs is not None else ""
                 h = held.setdefault((p.rec.folder_path.lower(), p.safe, g.member.lower()), {
                     "folder": p.rec.folder_path, "safe": p.safe, "member": g.member,
@@ -1242,6 +1266,10 @@ def _members(plans, cfg, edits=None, overrides=None, refs=None, undecided=None):
                 m["why"].append(why)
             if role_rank(role, cfg) > role_rank(m["role"], cfg):
                 m["role"], m["permission"] = role, g.permission
+            if owner and g.member.lower() in names and m not in owner_seen:
+                owner_seen.append(m)
+        if owner and owner_role:
+            _add_owner(members, p, person_upn(owner, refs)[2], owner_seen, owner_role, cfg)
     for m in members.values():
         m["member_type"] = normalize_member_type(m["type"], normalize_member_type(cfg["default_member_type"]))
         m["notes"] = list(m.pop("why", []))
@@ -1284,6 +1312,32 @@ def _members(plans, cfg, edits=None, overrides=None, refs=None, undecided=None):
             h["member_name"], _, _, h["note"] = user_target(h["member"], cfg, refs)
             undecided.append(h)
     return members
+
+
+def _add_owner(members, p, owner, seen, role, cfg):
+    """The person a personal Safe belongs to is a member with at least the owner role. seen: the
+    members the folder reports already gave for this person on this account."""
+    for m in seen:
+        if role_rank(role, cfg) > role_rank(m["role"], cfg):
+            m["role"] = role
+            note = f"role raised to {role}: owner of this personal Safe"
+            if note not in m["why"]:
+                m["why"].append(note)
+    if seen:
+        return
+    m = members.setdefault((p.safe, owner.lower()), {"source_name": owner, "type": "User", "role": role,
+                                                     "permission": "", "accounts": 0, "seen": set(), "ids": set()})
+    if id(p) not in m["ids"]:
+        m["ids"].add(id(p))
+        m["accounts"] += 1
+    if role_rank(role, cfg) > role_rank(m["role"], cfg):
+        m["role"] = role
+    folder = p.rec.folder_path
+    note = (f"owner of this personal Safe: added by the Workbench. CHECK: the folder permissions for {folder} "
+            "don't include this person" if p.grants else
+            f"owner of this personal Safe: added by the Workbench (the source has no permissions for {folder})")
+    if note not in m.setdefault("why", []):
+        m["why"].append(note)
 
 
 STANDARD_SOURCE = "standard member groups"

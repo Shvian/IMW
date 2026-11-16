@@ -88,7 +88,9 @@ DEFAULT_CONFIG = {
     #            person, the folder and everything under it is that person's.
     #   template: {user} the username (the UPN before @, from the users list), {upn} the full UPN,
     #             {first} {last} the first and last name, {name} the name as the folder gives it.
-    "personal_safes": {"template": "P-{user}", "folders": []},
+    #   owner_role: the person is a member of their personal Safe with at least this role ("" = not
+    #             added); the folder reports should show them too, and the Safe notes say if not.
+    "personal_safes": {"template": "P-{user}", "owner_role": "Full", "folders": []},
     # Optional, role oriented: access group -> Safe, checked in order; the first rule
     # matching one of the record's access groups picks its Safe. Used for records no
     # folder rule matched (or before folder rules with group_rules_first). "group" is an

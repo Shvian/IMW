@@ -187,5 +187,31 @@ class PersonalSafes(Base):
         self.assertIn("Personal Safe,\\Personal Folders,P-{user}", conv)
 
 
+    def test_owner_is_a_member(self):
+        args = ["-i", str(PERSONAL / "secrets-export.csv"), "-i", str(PERSONAL / "allsecrets.csv"),
+                "--reference", str(REPORTS / "lauserslist.csv"), "-c", str(PERSONAL / "config.json"),
+                "-p", str(PERSONAL / "whatfolderscanalluserssee.csv")]
+        rc, text = self.run_cli("convert", "-o", str(self.tmp / "out"), "--force", *args)
+        self.assertEqual(rc, 0, text)
+        members = {(m["Target_Safe"], m["Member_Name"]): m for m in read_csv(self.tmp / "out" / "review" / "SafeMembers_Review.csv")}
+        jane = members[("P-jane.smith", "jane.smith@corp.example.com")]
+        self.assertEqual((jane["Role"], jane["Source_Permission"]), ("Full", "Owner"))
+        self.assertIn("the folder report gives it Owner", jane["Notes"])
+        self.assertIn("added by the Workbench", members[("P-bob.jones", "bob.jones@corp.example.com")]["Notes"])
+        self.assertEqual(sum(1 for k in members if k[0] == "P-jane.smith"), 1)    # "Smith, Jane" merges into Jane
+        # Bob's View on Jane's folder is still his to decide; the owner never is
+        decide = read_csv(self.tmp / "out" / "review" / "Users_To_Decide.csv")
+        self.assertNotIn("Jane Smith", {d["Source_Member"] for d in decide})
+        # owner_role "" leaves the owner out
+        cfg = self.tmp / "noowner.json"
+        cfg.write_text('{"personal_safes": {"owner_role": "", "folders": [{"folder": "\\\\Personal Folders"}]}}', encoding="utf-8")
+        args[args.index(str(PERSONAL / "config.json"))] = str(cfg)
+        rc, text = self.run_cli("convert", "-o", str(self.tmp / "out2"), "--force", *args)
+        self.assertEqual(rc, 0, text)
+        names = {(m["Target_Safe"], m["Member_Name"]) for m in read_csv(self.tmp / "out2" / "review" / "SafeMembers_Review.csv")}
+        self.assertNotIn(("P-NobodyKnown", "Nobody Known"), names)
+        self.assertIn(("P-jane.smith", "jane.smith@corp.example.com"), names)    # the report still gives it
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -26,6 +26,7 @@ public sealed class AccountPlan
     public string RuleSafe = "";         // the Safe name the rules gave, before you renamed the Safe
     // Notes about the account's Safe rather than the account itself. They show on the Safe.
     public List<string> SafeNotes = new();
+    public string Personal = "";        // the person whose personal folder this is, for a personal Safe
     public bool ByConvention;
 
     public AccountPlan(SourceRecord rec) { Rec = rec; }
@@ -513,22 +514,30 @@ public static class Transform
         return string.Join(" ", new[] { rest, last }.Where(x => x.Length > 0));
     }
 
+    /// <summary>(UPN or "", note, the name the users list knows) for the person a personal folder is
+    /// named after ("Smith, Jane" is found as "Jane Smith").</summary>
+    public static (string, string, string) PersonUpn(string person, References refs)
+    {
+        if (person.Contains('@')) return (person, "", person);
+        if (refs == null) return ("", "", person);
+        var (found, why) = refs.UpnFor(person);
+        if (string.IsNullOrEmpty(found) && person.Contains(','))
+        {
+            var (found2, why2) = refs.UpnFor(NaturalOrder(person));
+            if (!string.IsNullOrEmpty(found2)) return (found2, "", NaturalOrder(person));
+            if ((why2 ?? "").Contains("pick the right one")) why = why2;
+        }
+        return (found ?? "", string.IsNullOrEmpty(found) ? why ?? "" : "", person);
+    }
+
     /// <summary>(Safe name, notes) for a person's personal Safe, from personal_safes.template.</summary>
     public static (string, List<string>) PersonalSafe(string person, JObj cfg, References refs = null)
     {
         var notes = new List<string>();
-        var upn = person.Contains('@') ? person : "";
-        if (upn.Length == 0 && refs != null)
+        var (upn, why, _) = PersonUpn(person, refs);
+        if (upn.Length == 0)
         {
-            var (found, why) = refs.UpnFor(person);
-            if (string.IsNullOrEmpty(found) && person.Contains(','))
-            {
-                var (found2, why2) = refs.UpnFor(NaturalOrder(person));
-                found = found2;
-                if (!string.IsNullOrEmpty(found2) || (why2 ?? "").Contains("pick the right one")) why = why2;
-            }
-            if (!string.IsNullOrEmpty(found)) upn = found;
-            else if (!string.IsNullOrEmpty(why))
+            if (why.Length > 0)
                 notes.Add($"CHECK: {person} is " + (why.Contains("pick the right one") ? "in the users list more than once"
                           : "not in the users list") + ", so the personal Safe is named from the folder name");
         }
@@ -541,6 +550,33 @@ public static class Transform
         var name = tmpl.Replace("{user}", user).Replace("{upn}", upn.Length > 0 ? upn : user).Replace("{first}", first)
                        .Replace("{last}", last).Replace("{name}", person);
         return (name, notes);
+    }
+
+    /// <summary>The person a personal Safe belongs to is a member with at least the owner role. seen: the
+    /// members the folder reports already gave for this person on this account.</summary>
+    static void AddOwner(OrderedMap<(string, string), MemberInfo> members, Dictionary<MemberInfo, List<string>> why,
+        AccountPlan p, string owner, List<MemberInfo> seen, string role, JObj cfg)
+    {
+        List<string> Why(MemberInfo m) => why.TryGetValue(m, out var l) ? l : why[m] = new List<string>();
+        foreach (var m in seen)
+        {
+            if (RoleRank(role, cfg) > RoleRank(m.Role, cfg))
+            {
+                m.Role = role;
+                var note = $"role raised to {role}: owner of this personal Safe";
+                if (!Why(m).Contains(note)) Why(m).Add(note);
+            }
+        }
+        if (seen.Count > 0) return;
+        var mm = members.GetOrAdd((p.Safe, Py.Lower(owner)), () => new MemberInfo
+            { SourceName = owner, Type = "User", Role = role, Permission = "" });
+        if (mm.Ids.Add(p)) mm.Accounts++;
+        if (RoleRank(role, cfg) > RoleRank(mm.Role, cfg)) mm.Role = role;
+        var folder = p.Rec.FolderPath;
+        var n = p.Grants.Count > 0
+            ? $"owner of this personal Safe: added by the Workbench. CHECK: the folder permissions for {folder} don't include this person"
+            : $"owner of this personal Safe: added by the Workbench (the source has no permissions for {folder})";
+        if (!Why(mm).Contains(n)) Why(mm).Add(n);
     }
 
     public static (string, string) FallbackSafe(SourceRecord rec, JObj cfg, (Namer, string)? ctx = null)
@@ -882,6 +918,7 @@ public static class Transform
                 {
                     var (pname, why) = PersonalSafe(person, cfg, refs);
                     (safe, src) = (pname, "personal:" + pfolder);
+                    p.Personal = person;
                     p.SafeNotes.Add($"personal Safe of {person}");
                     p.SafeNotes.AddRange(why);
                 }
@@ -1466,13 +1503,26 @@ public static class Transform
         var members = new OrderedMap<(string, string), MemberInfo>();
         var held = new OrderedMap<(string, string, string), UndecidedUser>();
         var why = new Dictionary<MemberInfo, List<string>>(ReferenceEqualityComparer.Instance);
+        var ownerRole = Transform.CleanLine(S(cfg.Obj("personal_safes")?.Get("owner_role"))) ?? "";
         foreach (var p in plans)
         {
             if (!p.Uploadable) continue;
+            var owner = p.Personal;
+            var names = new HashSet<string>(StringComparer.Ordinal);
+            if (owner.Length > 0)
+            {
+                names.Add(Py.Lower(owner));
+                var upn = PersonUpn(owner, refs).Item1;
+                if (upn.Length > 0) names.Add(Py.Lower(upn));
+            }
+            var ownerSeen = new List<MemberInfo>();
             foreach (var g in p.Grants)
             {
                 var reason = "";
-                if (g.Basis == "undecided")
+                bool isOwner = owner.Length > 0 && names.Contains(Py.Lower(g.Member));
+                if (isOwner)
+                    reason = $"owner of this personal Safe; the folder report gives it {(string.IsNullOrEmpty(g.Permission) ? "(blank)" : g.Permission)}";
+                else if (g.Basis == "undecided")
                 {
                     var decision = refs != null ? refs.Decision(p.Rec.Folder, g.Member) : "";
                     var h = held.GetOrAdd((Py.Lower(p.Rec.FolderPath), p.Safe, Py.Lower(g.Member)), () => new UndecidedUser
@@ -1496,7 +1546,10 @@ public static class Transform
                     if (!lst.Contains(reason)) lst.Add(reason);
                 }
                 if (RoleRank(role, cfg) > RoleRank(m.Role, cfg)) (m.Role, m.Permission) = (role, g.Permission);
+                if (isOwner && !ownerSeen.Contains(m)) ownerSeen.Add(m);
             }
+            if (owner.Length > 0 && ownerRole.Length > 0)
+                AddOwner(members, why, p, PersonUpn(owner, refs).Item3, ownerSeen, ownerRole, cfg);
         }
         var defaultType = NormalizeMemberType(cfg.Get("default_member_type"));
         foreach (var m in members.Values)

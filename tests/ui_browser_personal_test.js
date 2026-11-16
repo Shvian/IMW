@@ -1,6 +1,6 @@
 // Browser test of personal Safes: 3. Safes offers to mark \Personal Folders, and Save & apply names them after the person.
 //
-//   copy samples/personal_safes/secrets-export.csv and samples/delinea_reports/lauserslist.csv into <ws>/inbox, then
+//   copy samples/personal_safes/*.csv and samples/delinea_reports/lauserslist.csv into <ws>/inbox, then
 //   IMW_UI_TEST_PASSWORD=test-pass IMW_UI_NO_OPEN=1 \
 //     python -m imw ui -w <ws> --no-browser --insecure-plaintext-secrets > ui.log &
 //   node tests/ui_browser_personal_test.js ui.log [screenshot-folder]
@@ -49,6 +49,13 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   if (!safes.includes('P-jane.smith')) throw new Error('personal Safe not in the Safes list: ' + safes);
   if (/PRS-FLD-JANE/.test(safes)) throw new Error('the abbreviated Safe is still there');
   await shot(page, 'p3_review');
+  // Each person is a member of their own Safe; the folder report's Owner shows in the notes
+  await page.click('.tabs [data-tab="members"]');
+  await page.waitForFunction(() => /jane\.smith@corp\.example\.com/.test(document.querySelector('#main').innerText), null, { timeout: 10000 });
+  const members = await page.innerText('#main');
+  for (const t of ['jane.smith@corp.example.com', 'Nobody Known'])
+    if (!members.includes(t)) throw new Error('personal Safe owner missing: ' + t);
+  await shot(page, 'p4_owners');
 
   if (errors.length) throw new Error('page errors: ' + errors.join('; '));
   await browser.close();

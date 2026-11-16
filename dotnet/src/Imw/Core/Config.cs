@@ -75,6 +75,7 @@ public static class Config
  "folder_rules": [],
  "personal_safes": {
   "template": "P-{user}",
+  "owner_role": "Full",
   "folders": []
  },
  "group_rules": [],
