@@ -537,7 +537,7 @@ public static class Transform
         var user = upn.Length > 0 ? upn.Split('@', 2)[0] : NaturalOrder(person.Split('\\')[^1]).Replace(" ", "");
         var (first, last) = SplitPerson(person.Contains('@') ? user.Replace(".", " ") : person);
         var tmpl = S(cfg.Obj("personal_safes")?.Get("template"));
-        if (tmpl.Length == 0) tmpl = "PER-{user}";
+        if (tmpl.Length == 0) tmpl = "P-{user}";
         var name = tmpl.Replace("{user}", user).Replace("{upn}", upn.Length > 0 ? upn : user).Replace("{first}", first)
                        .Replace("{last}", last).Replace("{name}", person);
         return (name, notes);

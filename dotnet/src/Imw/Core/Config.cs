@@ -74,7 +74,7 @@ public static class Config
  },
  "folder_rules": [],
  "personal_safes": {
-  "template": "PER-{user}",
+  "template": "P-{user}",
   "folders": []
  },
  "group_rules": [],

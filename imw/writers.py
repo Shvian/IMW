@@ -394,7 +394,7 @@ def convention_rows(plan, cfg, examples=25):
     ps = cfg.get("personal_safes") or {}
     for r in ps.get("folders") or []:
         whose = f"{r['person']}'s" if r.get("person") else "each folder directly under it is one person's"
-        rows.append(["Personal Safe", r.get("folder", ""), ps.get("template") or "PER-{user}",
+        rows.append(["Personal Safe", r.get("folder", ""), ps.get("template") or "P-{user}",
                      f"the folder is {r.get('folder', '')} or under it ({whose})",
                      "{user} = username from the users list, {upn}, {first}, {last}, {name}"])
     for r in cfg.get("folder_rules") or []:

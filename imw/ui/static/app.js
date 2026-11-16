@@ -1115,7 +1115,7 @@ PAGES["rules-safes"] = () => rulesPage("rules-safes",
                   tip: "The folder that holds personal folders, such as Delinea's \\Personal Folders. Everything in it and under it goes to personal Safes." },
                 { key: "person", label: "Whose (optional)", ph: "empty: each folder under it is one person's",
                   tip: "Leave empty when each folder directly under this one is named after its person (Delinea: \\Personal Folders\\Jane Smith).\nOr give one person's name (or UPN) when this whole folder belongs to that person.\nExample: Jane Smith" }];
-    const ps = cfg.personal_safes || { template: "PER-{user}", folders: [] };
+    const ps = cfg.personal_safes || { template: "P-{user}", folders: [] };
     // Top folders that look like Delinea's personal folders and aren't marked yet.
     const marked = new Set((ps.folders || []).map(r => normName(r.folder || "")));
     const personalTops = [...new Set((hints.folders || []).map(f => String(f.name || "").replace(/^\\+/, "").split("\\")[0])
@@ -1205,8 +1205,8 @@ PAGES["rules-safes"] = () => rulesPage("rules-safes",
         <p class="muted small">Without this, a folder such as <code>\\Personal Folders\\Jane Smith</code> becomes a Safe named from abbreviations of the person's name. Mark the personal folders here and their Safes are named with your personal Safe pattern instead.
           The username comes from the users list (lauserslist.csv), so load it in step 1.</p>
         ${personalTops.length ? `<div class="msg warn">Your folders include ${personalTops.map(t => `<code>${esc(t)}</code>`).join(", ")}. ${personalTops.map(t => `<button class="btn small ps-mark" data-folder="${esc(t)}" title="Adds this folder below: each folder directly under it becomes one person's Safe. Nothing is saved until you click Save &amp; apply.">Mark ${esc(t)} as personal</button>`).join(" ")}</div>` : ""}
-        <div class="row"><label class="inline">Personal Safe pattern <input type="text" id="ps-template" size="24" value="${esc(ps.template || "PER-{user}")}" data-check="safe"
-          title="How personal Safes are named. Placeholders:\n{user} the username (the UPN before the @, from the users list)\n{upn} the whole UPN\n{first} {last} the first and last name\n{name} the name as the folder gives it\nExamples: PER-{user} gives PER-jane.smith · P-{last}{first} gives P-SmithJane"></label>
+        <div class="row"><label class="inline">Personal Safe pattern <input type="text" id="ps-template" size="24" value="${esc(ps.template || "P-{user}")}" data-check="safe"
+          title="How personal Safes are named. Placeholders:\n{user} the username (the UPN before the @, from the users list)\n{upn} the whole UPN\n{first} {last} the first and last name\n{name} the name as the folder gives it\nExamples: P-{user} gives P-jane.smith · P-{last}{first} gives P-SmithJane"></label>
           <span class="muted small">{user} {upn} {first} {last} {name}</span></div>
         ${editorTable("t-ps", PS, ps.folders || [], "+ Add a personal folder")}</div>
       <div class="card"><h3>Exceptions <span class="muted small">(only for the Safes, folders or groups you list; empty unless you add rows)</span></h3>
@@ -1267,7 +1267,7 @@ PAGES["rules-safes"] = () => rulesPage("rules-safes",
         fallback_strategy: $("#fallback").value,
         safe_name: { ...cfg.safe_name, prefix: $("#prefix").value.trim() },
         folder_rules: readTable("t-fr"),
-        personal_safes: { template: $("#ps-template").value.trim() || "PER-{user}",
+        personal_safes: { template: $("#ps-template").value.trim() || "P-{user}",
           folders: readTable("t-ps").filter(r => r.folder).map(r => r.person ? { folder: r.folder, person: r.person } : { folder: r.folder, person: "" }) },
         group_rules: readTable("t-gr").map(r => { const o = { safe: r.safe }; if (r.group) o.group = r.group; else if (r.group_pattern) o.group_pattern = r.group_pattern; if (r.min_role) o.min_role = r.min_role; return o; }),
         group_rules_first: $("#gr-first").checked,

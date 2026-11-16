@@ -404,7 +404,7 @@ def personal_safe(person, cfg, refs=None):
     else:
         user = _natural_order(person.split("\\")[-1]).replace(" ", "")
     first, last = split_person(user.replace(".", " ") if "@" in person else person)
-    tmpl = (cfg.get("personal_safes") or {}).get("template") or "PER-{user}"
+    tmpl = (cfg.get("personal_safes") or {}).get("template") or "P-{user}"
     name = (tmpl.replace("{user}", user).replace("{upn}", upn or user).replace("{first}", first)
                 .replace("{last}", last).replace("{name}", person))
     return name, notes

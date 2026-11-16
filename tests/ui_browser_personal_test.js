@@ -37,7 +37,7 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   await page.waitForFunction(() => /PRS-FLD-JANE/.test(document.querySelector('#pv-out')?.innerText || ''), null, { timeout: 10000 });
   await shot(page, 'p1_before');
   await page.click('.ps-mark[data-folder="\\\\Personal Folders"]');
-  await page.waitForFunction(() => /PER-jane\.smith/.test(document.querySelector('#pv-out')?.innerText || ''), null, { timeout: 10000 });
+  await page.waitForFunction(() => /P-jane\.smith/.test(document.querySelector('#pv-out')?.innerText || ''), null, { timeout: 10000 });
   await page.click('#save');
   await page.waitForSelector('#rules-msg .msg.ok', { timeout: 10000 });
   await shot(page, 'p2_marked');
@@ -46,7 +46,7 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   await page.click('nav button[data-page="review-safes"]');
   await page.waitForSelector('#safes-table');
   const safes = await page.innerText('#safes-table');
-  if (!safes.includes('PER-jane.smith')) throw new Error('personal Safe not in the Safes list: ' + safes);
+  if (!safes.includes('P-jane.smith')) throw new Error('personal Safe not in the Safes list: ' + safes);
   if (/PRS-FLD-JANE/.test(safes)) throw new Error('the abbreviated Safe is still there');
   await shot(page, 'p3_review');
 

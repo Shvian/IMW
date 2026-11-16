@@ -152,7 +152,7 @@ public class PersonalSafesTests : TestBase
     static string P(string name) => Path.Combine(Samples, "personal_safes", name);
     static string Users => Path.Combine(Samples, "delinea_reports", "lauserslist.csv");
 
-    static JObj PCfg(string template = "PER-{user}") => Cfg(@"{""personal_safes"": {""template"": """ + template + @""", ""folders"": [
+    static JObj PCfg(string template = "P-{user}") => Cfg(@"{""personal_safes"": {""template"": """ + template + @""", ""folders"": [
         {""folder"": ""\\Personal Folders"", ""person"": """"}, {""folder"": ""\\IT\\Bob's things"", ""person"": ""Bob Jones""}]}}");
 
     static SourceRecord At(params string[] folder)
@@ -178,11 +178,11 @@ public class PersonalSafesTests : TestBase
     {
         var refs = new References(null, Reference.ReadUsers(Users));
         var (name, notes) = Transform.PersonalSafe("Jane Smith", PCfg(), refs);
-        Assert.Equal("PER-jane.smith", name);
+        Assert.Equal("P-jane.smith", name);
         Assert.Empty(notes);
-        Assert.Equal("PER-jane.smith", Transform.PersonalSafe("Smith, Jane", PCfg(), refs).Item1);
+        Assert.Equal("P-jane.smith", Transform.PersonalSafe("Smith, Jane", PCfg(), refs).Item1);
         (name, notes) = Transform.PersonalSafe("Nobody Known", PCfg(), refs);
-        Assert.Equal("PER-NobodyKnown", name);
+        Assert.Equal("P-NobodyKnown", name);
         Assert.Contains("not in the users list", notes[0]);
         Assert.Equal("P-SmithJane", Transform.PersonalSafe("Jane Smith", PCfg("P-{last}{first}"), refs).Item1);
         Assert.Equal("jane.smith@corp.example.com", Transform.PersonalSafe("Jane Smith", PCfg("{upn}"), refs).Item1);
@@ -195,11 +195,11 @@ public class PersonalSafesTests : TestBase
         var (rc, text) = RunCli("convert", "-o", T("out"), "--force", "-i", P("secrets-export.csv"), "--reference", Users, "-c", P("config.json"));
         Assert.True(rc == 0, text);
         var safes = ReadCsv(T("out", "review", "Safes_Review.csv")).ToDictionary(r => r["Target_Safe"]);
-        Assert.Equal(new[] { "IT-SVR", "PER-NobodyKnown", "PER-bob.jones", "PER-jane.smith", "PRS-FLD" },
+        Assert.Equal(new[] { "IT-SVR", "P-NobodyKnown", "P-bob.jones", "P-jane.smith", "PRS-FLD" },
                      safes.Keys.OrderBy(x => x, StringComparer.Ordinal));
-        Assert.Equal("3", safes["PER-jane.smith"]["Accounts"]);
-        Assert.Contains("personal Safe of Jane Smith", safes["PER-jane.smith"]["Safe_Name_Issues"]);
-        Assert.Contains("Personal Safe,\\Personal Folders,PER-{user}", ReadText(T("out", "review", "SafeNamingConvention.csv")));
+        Assert.Equal("3", safes["P-jane.smith"]["Accounts"]);
+        Assert.Contains("personal Safe of Jane Smith", safes["P-jane.smith"]["Safe_Name_Issues"]);
+        Assert.Contains("Personal Safe,\\Personal Folders,P-{user}", ReadText(T("out", "review", "SafeNamingConvention.csv")));
     }
 }
 
