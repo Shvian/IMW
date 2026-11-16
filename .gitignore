@@ -23,3 +23,7 @@ run.lock
 workbench.key.*
 /pam2pc_workspace/
 /pam2pc_output/
+# .NET build output
+dotnet/**/bin/
+dotnet/**/obj/
+dotnet/publish/
