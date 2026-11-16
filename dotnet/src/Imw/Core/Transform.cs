@@ -466,6 +466,83 @@ public static class Transform
         return (null, null);
     }
 
+    /// <summary>(person, folder rule) when the record is in a personal folder, else (null, null).
+    /// The most specific folder wins.</summary>
+    public static (string, string) PersonalFolder(SourceRecord rec, JObj cfg)
+    {
+        var folder = rec.Folder.Select(Py.Lower).ToList();
+        (int Len, string Person, string Raw)? best = null;
+        foreach (var ro in cfg.Obj("personal_safes")?.List("folders") ?? new List<object>())
+        {
+            if (ro is not JObj row) continue;
+            var raw = S(row.Get("folder"));
+            var prefix = SourceRecord.SplitFolder(raw, "auto").Select(Py.Lower).ToList();
+            if (prefix.Count == 0 || folder.Count < prefix.Count || !folder.Take(prefix.Count).SequenceEqual(prefix)) continue;
+            var person = Py.Strip(S(row.Get("person")));
+            if (person.Length == 0)
+            {
+                if (rec.Folder.Count <= prefix.Count) continue;   // a secret in the parent folder itself is nobody's
+                person = rec.Folder[prefix.Count];
+            }
+            if (best == null || prefix.Count > best.Value.Len) best = (prefix.Count, person, raw);
+        }
+        return best != null ? (best.Value.Person, best.Value.Raw) : (null, null);
+    }
+
+    /// <summary>(first, last) from "Jane Smith" or "Smith, Jane".</summary>
+    public static (string, string) SplitPerson(string name)
+    {
+        name = string.Join(" ", Py.SplitWs(name ?? ""));
+        if (name.Contains(','))
+        {
+            var i = name.IndexOf(',');
+            string last = Py.Strip(name.Substring(0, i)), first = Py.Strip(name.Substring(i + 1));
+            return (first.Length > 0 ? first.Split(' ')[0] : "", last);
+        }
+        var words = name.Split(' ');
+        return (words[0], words.Length > 1 ? words[^1] : "");
+    }
+
+    /// <summary>"Smith, Jane" -> "Jane Smith"; other names as they are (spaces tidied).</summary>
+    static string NaturalOrder(string name)
+    {
+        name = string.Join(" ", Py.SplitWs(name ?? ""));
+        if (!name.Contains(',')) return name;
+        var i = name.IndexOf(',');
+        string last = Py.Strip(name.Substring(0, i)), rest = Py.Strip(name.Substring(i + 1));
+        return string.Join(" ", new[] { rest, last }.Where(x => x.Length > 0));
+    }
+
+    /// <summary>(Safe name, notes) for a person's personal Safe, from personal_safes.template.</summary>
+    public static (string, List<string>) PersonalSafe(string person, JObj cfg, References refs = null)
+    {
+        var notes = new List<string>();
+        var upn = person.Contains('@') ? person : "";
+        if (upn.Length == 0 && refs != null)
+        {
+            var (found, why) = refs.UpnFor(person);
+            if (string.IsNullOrEmpty(found) && person.Contains(','))
+            {
+                var (found2, why2) = refs.UpnFor(NaturalOrder(person));
+                found = found2;
+                if (!string.IsNullOrEmpty(found2) || (why2 ?? "").Contains("pick the right one")) why = why2;
+            }
+            if (!string.IsNullOrEmpty(found)) upn = found;
+            else if (!string.IsNullOrEmpty(why))
+                notes.Add($"CHECK: {person} is " + (why.Contains("pick the right one") ? "in the users list more than once"
+                          : "not in the users list") + ", so the personal Safe is named from the folder name");
+        }
+        if (refs != null && !refs.HasUsers && upn.Length == 0)
+            notes.Add($"personal Safe of {person}: load the users list to name it after the username");
+        var user = upn.Length > 0 ? upn.Split('@', 2)[0] : NaturalOrder(person.Split('\\')[^1]).Replace(" ", "");
+        var (first, last) = SplitPerson(person.Contains('@') ? user.Replace(".", " ") : person);
+        var tmpl = S(cfg.Obj("personal_safes")?.Get("template"));
+        if (tmpl.Length == 0) tmpl = "PER-{user}";
+        var name = tmpl.Replace("{user}", user).Replace("{upn}", upn.Length > 0 ? upn : user).Replace("{first}", first)
+                       .Replace("{last}", last).Replace("{name}", person);
+        return (name, notes);
+    }
+
     public static (string, string) FallbackSafe(SourceRecord rec, JObj cfg, (Namer, string)? ctx = null)
     {
         var strategy = S(cfg.Get("fallback_strategy"));
@@ -798,6 +875,17 @@ public static class Transform
             namer.Used = false;
             string safe = null, src = null;
             if (!string.IsNullOrEmpty(rec.TargetSafe)) (safe, src) = (rec.TargetSafe, "source");
+            if (string.IsNullOrEmpty(safe))
+            {
+                var (person, pfolder) = PersonalFolder(rec, cfg);
+                if (person != null)
+                {
+                    var (pname, why) = PersonalSafe(person, cfg, refs);
+                    (safe, src) = (pname, "personal:" + pfolder);
+                    p.SafeNotes.Add($"personal Safe of {person}");
+                    p.SafeNotes.AddRange(why);
+                }
+            }
             var rules = new List<Func<(string, string)>>
             {
                 () => MatchFolderRules(rec, cfg, ctx),

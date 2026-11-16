@@ -143,5 +143,49 @@ class Decisions(Base):
         st.close()
 
 
+PERSONAL = SAMPLES / "personal_safes"
+
+
+class PersonalSafes(Base):
+    def cfg(self, template="PER-{user}"):
+        from imw.config import config_from_dict
+        return config_from_dict({"personal_safes": {"template": template, "folders": [
+            {"folder": "\\Personal Folders", "person": ""}, {"folder": "\\IT\\Bob's things", "person": "Bob Jones"}]}})
+
+    def test_folder_and_person(self):
+        from imw.transform import personal_folder
+        cfg = self.cfg()
+        at = lambda *f: type("R", (), {"folder": f})()
+        self.assertEqual(personal_folder(at("Personal Folders", "Jane Smith", "Lab"), cfg), ("Jane Smith", "\\Personal Folders"))
+        self.assertEqual(personal_folder(at("personal folders", "Jane Smith"), cfg)[0], "Jane Smith")
+        self.assertEqual(personal_folder(at("Personal Folders"), cfg), (None, None))
+        self.assertEqual(personal_folder(at("IT", "Bob's things", "x"), cfg), ("Bob Jones", "\\IT\\Bob's things"))
+        self.assertEqual(personal_folder(at("IT", "Servers"), cfg), (None, None))
+
+    def test_names(self):
+        from imw.transform import personal_safe
+        refs = References([], read_users(REPORTS / "lauserslist.csv"))
+        self.assertEqual(personal_safe("Jane Smith", self.cfg(), refs), ("PER-jane.smith", []))
+        self.assertEqual(personal_safe("Smith, Jane", self.cfg(), refs)[0], "PER-jane.smith")
+        name, notes = personal_safe("Nobody Known", self.cfg(), refs)
+        self.assertEqual(name, "PER-NobodyKnown")
+        self.assertIn("not in the users list", notes[0])
+        self.assertEqual(personal_safe("Jane Smith", self.cfg("P-{last}{first}"), refs)[0], "P-SmithJane")
+        self.assertEqual(personal_safe("Jane Smith", self.cfg("{upn}"), refs)[0], "jane.smith@corp.example.com")
+        self.assertIn("load the users list", personal_safe("Jane Smith", self.cfg(), References())[1][0])
+
+    def test_end_to_end(self):
+        rc, text = self.run_cli("convert", "-o", str(self.tmp / "out"), "--force",
+                                "-i", str(PERSONAL / "secrets-export.csv"),
+                                "--reference", str(REPORTS / "lauserslist.csv"), "-c", str(PERSONAL / "config.json"))
+        self.assertEqual(rc, 0, text)
+        safes = {r["Target_Safe"]: r for r in read_csv(self.tmp / "out" / "review" / "Safes_Review.csv")}
+        self.assertEqual(set(safes), {"PER-jane.smith", "PER-NobodyKnown", "PER-bob.jones", "PRS-FLD", "IT-SVR"})
+        self.assertEqual(safes["PER-jane.smith"]["Accounts"], "3")
+        self.assertIn("personal Safe of Jane Smith", safes["PER-jane.smith"]["Safe_Name_Issues"])
+        conv = (self.tmp / "out" / "review" / "SafeNamingConvention.csv").read_text(encoding="utf-8-sig")
+        self.assertIn("Personal Safe,\\Personal Folders,PER-{user}", conv)
+
+
 if __name__ == "__main__":
     unittest.main()

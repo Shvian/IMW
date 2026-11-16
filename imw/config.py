@@ -81,6 +81,14 @@ DEFAULT_CONFIG = {
     # Folder (and subfolder) -> Safe rules; the most specific folder wins.
     # Folder paths use "\" between levels, whatever the source used.
     "folder_rules": [],
+    # Personal Safes: folders that hold one person's secrets (Delinea's Personal Folders) get a
+    # Safe named after the person with this pattern, not from the folder name's abbreviations.
+    #   folders: [{"folder": "\\Personal Folders", "person": ""}]: with no person, each folder
+    #            directly under it is one person's, named after them (their display name); with a
+    #            person, the folder and everything under it is that person's.
+    #   template: {user} the username (the UPN before @, from the users list), {upn} the full UPN,
+    #             {first} {last} the first and last name, {name} the name as the folder gives it.
+    "personal_safes": {"template": "PER-{user}", "folders": []},
     # Optional, role oriented: access group -> Safe, checked in order; the first rule
     # matching one of the record's access groups picks its Safe. Used for records no
     # folder rule matched (or before folder rules with group_rules_first). "group" is an

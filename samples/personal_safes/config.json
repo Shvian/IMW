@@ -1,0 +1,9 @@
+{
+  "personal_safes": {
+    "template": "PER-{user}",
+    "folders": [
+      {"folder": "\\Personal Folders", "person": ""},
+      {"folder": "\\IT\\Bob's things", "person": "Bob Jones"}
+    ]
+  }
+}

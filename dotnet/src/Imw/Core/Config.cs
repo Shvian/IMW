@@ -73,6 +73,10 @@ public static class Config
   "prefix": ""
  },
  "folder_rules": [],
+ "personal_safes": {
+  "template": "PER-{user}",
+  "folders": []
+ },
  "group_rules": [],
  "group_rules_first": false,
  "fallback_strategy": "convention",

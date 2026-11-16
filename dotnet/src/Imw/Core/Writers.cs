@@ -500,6 +500,15 @@ public static class Writers
             rows.Add(new() { "Placeholder", "{" + name + "}", Or(layer.Get("default"), "(left out)"), "no row above matches",
                 label + ": default" });
         }
+        var ps = cfg.Obj("personal_safes");
+        foreach (var ro in ps?.List("folders") ?? new List<object>())
+        {
+            if (ro is not JObj r) continue;
+            var whose = Py.Truthy(r.Get("person")) ? $"{Py.Str(r["person"])}'s" : "each folder directly under it is one person's";
+            rows.Add(new() { "Personal Safe", r.Get("folder", ""), Or(ps.Get("template"), "PER-{user}"),
+                $"the folder is {Py.Str(r.Get("folder", ""))} or under it ({whose})",
+                "{user} = username from the users list, {upn}, {first}, {last}, {name}" });
+        }
         foreach (var ro in cfg.List("folder_rules") ?? new List<object>())
         {
             if (ro is not JObj r) continue;

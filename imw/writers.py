@@ -391,6 +391,12 @@ def convention_rows(plan, cfg, examples=25):
             rows.append(["Placeholder", "{%s}" % name, r.get("code") or "(left out)", when, label])
         rows.append(["Placeholder", "{%s}" % name, layer.get("default") or "(left out)", "no row above matches",
                      label + ": default"])
+    ps = cfg.get("personal_safes") or {}
+    for r in ps.get("folders") or []:
+        whose = f"{r['person']}'s" if r.get("person") else "each folder directly under it is one person's"
+        rows.append(["Personal Safe", r.get("folder", ""), ps.get("template") or "PER-{user}",
+                     f"the folder is {r.get('folder', '')} or under it ({whose})",
+                     "{user} = username from the users list, {upn}, {first}, {last}, {name}"])
     for r in cfg.get("folder_rules") or []:
         rows.append(["Exception", "Folder → Safe", r.get("safe", ""), f"the folder is {r.get('folder_prefix', '')} or under it",
                      "the most specific folder wins"])

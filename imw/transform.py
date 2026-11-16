@@ -342,6 +342,74 @@ def match_folder_rules(rec, cfg, ctx=None):
     return None, None
 
 
+PERSONAL_KEYS = ("{user}", "{upn}", "{first}", "{last}", "{name}")
+
+
+def personal_folder(rec, cfg):
+    """(person, folder rule) when the record is in a personal folder, else (None, None).
+    The most specific folder wins."""
+    folder = [f.lower() for f in rec.folder]
+    best = None
+    for row in (cfg.get("personal_safes") or {}).get("folders") or []:
+        prefix = [x.lower() for x in split_folder(row.get("folder") or "", "auto")]
+        if not prefix or folder[: len(prefix)] != prefix:
+            continue
+        person = (row.get("person") or "").strip()
+        if not person:
+            if len(rec.folder) <= len(prefix):
+                continue                        # a secret in the parent folder itself is nobody's
+            person = rec.folder[len(prefix)]
+        if best is None or len(prefix) > best[0]:
+            best = (len(prefix), person, row.get("folder") or "")
+    return (best[1], best[2]) if best else (None, None)
+
+
+def split_person(name):
+    """(first, last) from "Jane Smith" or "Smith, Jane"."""
+    name = " ".join((name or "").split())
+    if "," in name:
+        last, first = (x.strip() for x in name.split(",", 1))
+        return first.split(" ")[0] if first else "", last
+    words = name.split(" ")
+    return words[0], (words[-1] if len(words) > 1 else "")
+
+
+def _natural_order(name):
+    """"Smith, Jane" -> "Jane Smith"; other names as they are (spaces tidied)."""
+    name = " ".join((name or "").split())
+    if "," in name:
+        last, rest = (x.strip() for x in name.split(",", 1))
+        return " ".join(x for x in (rest, last) if x)
+    return name
+
+
+def personal_safe(person, cfg, refs=None):
+    """(Safe name, notes) for a person's personal Safe, from personal_safes.template."""
+    notes = []
+    upn = person if "@" in person else ""
+    if not upn and refs is not None:
+        found, why = refs.upn_for(person)
+        if not found and "," in person:
+            found, why2 = refs.upn_for(_natural_order(person))
+            why = why if not found and "pick the right one" not in why2 else why2
+        if found:
+            upn = found
+        elif why:
+            notes.append(f"CHECK: {person} is " + ("in the users list more than once" if "pick the right one" in why
+                         else "not in the users list") + ", so the personal Safe is named from the folder name")
+    if refs is not None and not refs.has_users and not upn:
+        notes.append(f"personal Safe of {person}: load the users list to name it after the username")
+    if upn:
+        user = upn.split("@", 1)[0]
+    else:
+        user = _natural_order(person.split("\\")[-1]).replace(" ", "")
+    first, last = split_person(user.replace(".", " ") if "@" in person else person)
+    tmpl = (cfg.get("personal_safes") or {}).get("template") or "PER-{user}"
+    name = (tmpl.replace("{user}", user).replace("{upn}", upn or user).replace("{first}", first)
+                .replace("{last}", last).replace("{name}", person))
+    return name, notes
+
+
 def fallback_safe(rec, cfg, ctx=None):
     strategy = cfg["fallback_strategy"]
     if strategy == "convention" and ctx:
@@ -659,6 +727,14 @@ def build_plan(records, cfg, perms=None, overrides=None, explicit=False, member_
         safe, src = None, None
         if rec.target_safe:
             safe, src = rec.target_safe, "source"
+        person = None
+        if not safe:
+            person, pfolder = personal_folder(rec, cfg)
+            if person:
+                safe, why = personal_safe(person, cfg, refs)
+                src = "personal:" + pfolder
+                p.safe_notes.append(f"personal Safe of {person}")
+                p.safe_notes.extend(why)
         rules = [lambda: match_folder_rules(rec, cfg, ctx), lambda: match_group_rules(p.grants, cfg, rec, ctx)]
         if cfg.get("group_rules_first"):
             rules.reverse()

@@ -147,6 +147,62 @@ public class DelineaReportsTests : TestBase
     }
 }
 
+public class PersonalSafesTests : TestBase
+{
+    static string P(string name) => Path.Combine(Samples, "personal_safes", name);
+    static string Users => Path.Combine(Samples, "delinea_reports", "lauserslist.csv");
+
+    static JObj PCfg(string template = "PER-{user}") => Cfg(@"{""personal_safes"": {""template"": """ + template + @""", ""folders"": [
+        {""folder"": ""\\Personal Folders"", ""person"": """"}, {""folder"": ""\\IT\\Bob's things"", ""person"": ""Bob Jones""}]}}");
+
+    static SourceRecord At(params string[] folder)
+    {
+        var r = new SourceRecord("x", "f", "x", "line 1") { Name = "n" };
+        r.Folder.AddRange(folder);
+        return r;
+    }
+
+    [Fact]
+    public void FolderAndPerson()
+    {
+        var cfg = PCfg();
+        Assert.Equal(("Jane Smith", "\\Personal Folders"), Transform.PersonalFolder(At("Personal Folders", "Jane Smith", "Lab"), cfg));
+        Assert.Equal("Jane Smith", Transform.PersonalFolder(At("personal folders", "Jane Smith"), cfg).Item1);
+        Assert.Equal(((string)null, (string)null), Transform.PersonalFolder(At("Personal Folders"), cfg));
+        Assert.Equal(("Bob Jones", "\\IT\\Bob's things"), Transform.PersonalFolder(At("IT", "Bob's things", "x"), cfg));
+        Assert.Equal(((string)null, (string)null), Transform.PersonalFolder(At("IT", "Servers"), cfg));
+    }
+
+    [Fact]
+    public void Names()
+    {
+        var refs = new References(null, Reference.ReadUsers(Users));
+        var (name, notes) = Transform.PersonalSafe("Jane Smith", PCfg(), refs);
+        Assert.Equal("PER-jane.smith", name);
+        Assert.Empty(notes);
+        Assert.Equal("PER-jane.smith", Transform.PersonalSafe("Smith, Jane", PCfg(), refs).Item1);
+        (name, notes) = Transform.PersonalSafe("Nobody Known", PCfg(), refs);
+        Assert.Equal("PER-NobodyKnown", name);
+        Assert.Contains("not in the users list", notes[0]);
+        Assert.Equal("P-SmithJane", Transform.PersonalSafe("Jane Smith", PCfg("P-{last}{first}"), refs).Item1);
+        Assert.Equal("jane.smith@corp.example.com", Transform.PersonalSafe("Jane Smith", PCfg("{upn}"), refs).Item1);
+        Assert.Contains("load the users list", Transform.PersonalSafe("Jane Smith", PCfg(), new References()).Item2[0]);
+    }
+
+    [Fact]
+    public void EndToEnd()
+    {
+        var (rc, text) = RunCli("convert", "-o", T("out"), "--force", "-i", P("secrets-export.csv"), "--reference", Users, "-c", P("config.json"));
+        Assert.True(rc == 0, text);
+        var safes = ReadCsv(T("out", "review", "Safes_Review.csv")).ToDictionary(r => r["Target_Safe"]);
+        Assert.Equal(new[] { "IT-SVR", "PER-NobodyKnown", "PER-bob.jones", "PER-jane.smith", "PRS-FLD" },
+                     safes.Keys.OrderBy(x => x, StringComparer.Ordinal));
+        Assert.Equal("3", safes["PER-jane.smith"]["Accounts"]);
+        Assert.Contains("personal Safe of Jane Smith", safes["PER-jane.smith"]["Safe_Name_Issues"]);
+        Assert.Contains("Personal Safe,\\Personal Folders,PER-{user}", ReadText(T("out", "review", "SafeNamingConvention.csv")));
+    }
+}
+
 public class DelineaReportsUiTests : UiTestBase
 {
     [Fact]
