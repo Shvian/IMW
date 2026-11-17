@@ -4,3 +4,4 @@
 samples/** -text
 # The web page files are checked byte for byte by the tests.
 dotnet/src/Imw/Ui/static/** text eol=lf
+dotnet/package/*.txt text eol=crlf

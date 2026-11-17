@@ -1,0 +1,15 @@
+IDIRA MIGRATION WORKBENCH
+
+1. Unzip this folder somewhere on the migration host, on an encrypted disk, in a folder only
+   the migration operators can read (for example C:\IMW).
+2. Double-click IMW.exe. A window opens and your browser shows the Workbench (HTTPS).
+   Sign in with your Windows password. Close the window to stop the Workbench.
+   Your work is kept in the imw_workspace folder next to IMW.exe.
+3. The browser warns once about the certificate: choose Advanced, then Continue.
+   To stop the warning, run once in this folder:  IMW.exe ui --trust-cert
+
+To try it with fake data first: start-ui.cmd --workspace sample_workspace
+(or IMW.exe ui --workspace sample_workspace). See sample_workspace\SAMPLE_DATA_README.txt.
+
+README.md explains every page, the command line and the settings.
+Nothing to install: .NET is built into IMW.exe.

@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write   # only the main-branch step uses it, to publish the "latest" download
 
 jobs:
   build:
@@ -19,9 +19,29 @@ jobs:
       - name: Tests (.NET)
         run: dotnet test dotnet/tests/Imw.Tests -c Release
       - name: Build IMW.exe
-        run: dotnet publish dotnet/src/Imw -c Release -r win-x64 -o dist
+        run: dotnet publish dotnet/src/Imw -c Release -r win-x64 -o dist/IMW
+      - name: Package (IMW.exe, launcher, README, sample workspace)
+        shell: pwsh
+        run: |
+          Remove-Item dist/IMW/*.pdb -ErrorAction SilentlyContinue
+          Copy-Item start-ui.cmd, README.md, "dotnet/package/START HERE.txt" dist/IMW/
+          Copy-Item -Recurse samples/sample_workspace dist/IMW/sample_workspace
+          Compress-Archive -Path dist/IMW -DestinationPath dist/IMW-win-x64.zip
       - uses: actions/upload-artifact@v4
         with:
           name: IMW-win-x64
-          path: dist/IMW.exe
+          path: dist/IMW
           if-no-files-found: error
+      # Every push to main replaces the "latest" release, so the download link never changes:
+      # https://github.com/<owner>/<repo>/releases/latest/download/IMW-win-x64.zip
+      - name: Publish the download (main only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag 2>$null
+          $global:LASTEXITCODE = 0
+          gh release create latest dist/IMW-win-x64.zip --target $env:GITHUB_SHA --latest `
+            --title "Idira Migration Workbench (latest build)" `
+            --notes "Built from $($env:GITHUB_SHA.Substring(0,7)) on main. Unzip, then double-click IMW.exe (see START HERE.txt)."
