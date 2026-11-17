@@ -1,4 +1,4 @@
-// Browser test of the Delinea reports flow: Load exports recognises each report, Users to decide, Review & change, Create upload files.
+// Browser test of the Delinea reports flow: Load exports recognises each report, Confirm user access, Review & change, Create upload files.
 //
 //   copy samples/delinea_reports/*.csv into <ws>/inbox, then
 //   IMW_UI_TEST_PASSWORD=test-pass IMW_UI_NO_OPEN=1 \
@@ -90,27 +90,40 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   if (!pv.includes('Web Password') || !pv.includes('Unix Account (SSH)')) throw new Error('templates from allsecrets.csv not in the platforms preview: ' + pv + ' / ' + await page.innerText('#pv-state') + ' / ' + await page.innerText('h2'));
   await shot(page, 'r3_platforms');
 
-  // 3. Review & change · C. Users to decide
-  await navTo('members-decide');
+  // 3. Review & change · A. Safes & members · Confirm user access: staged, then saved
+  if ((await page.$$('nav button.sub[data-page="members-decide"]')).length) throw new Error('Users to decide is still its own page');
+  await navTo('review-safes');
+  await page.waitForSelector('#safes-table');
+  await page.click('.tabs [data-tab="decide"]');
   await page.waitForSelector('#decide-table');
+  if (!/Confirm user access \(3 to decide\)/.test(await page.innerText('.tabs'))) throw new Error('tab name: ' + await page.innerText('.tabs'));
   if ((await page.$$('#decide-table .d-sel')).length !== 3) throw new Error('not 3 users to decide');
   if (!(await page.innerText('#decide-table')).includes('jane.smith@corp.example.com')) throw new Error('UPN not shown');
+  if (!(await page.isDisabled('#d-save'))) throw new Error('Save is enabled with nothing to save');
   await shot(page, 'r4_users_to_decide');
   await page.click('.g-dec[data-g="Unix Team"][data-d="exclude"]');
+  if (!/Save 2 decisions/.test(await page.innerText('#d-save'))) throw new Error('group choice not staged: ' + await page.innerText('#d-save'));
+  if ((await page.$$('#decide-table .pill >> text=not saved')).length !== 2) throw new Error('staged rows are not marked');
+  await page.click('#d-save');
   await page.waitForSelector('#d-msg .msg.ok');
-  if ((await page.$$('#decide-table .d-sel')).length !== 1) throw new Error('Leave all out did not decide the Unix Team users');
-  await page.check('#decide-table .d-sel');
+  if ((await page.$$('#decide-table .d-sel')).length !== 1) throw new Error('All rely on the group did not decide the Unix Team users');
+  await page.selectOption('#decide-table .d-dec', 'include');
   await page.fill('#d-reason', 'owns the web portal');
-  await page.click('#d-inc');
-  try { await page.waitForSelector('#d-msg >> text=include', { timeout: 5000 }); } catch (e) { await shot(page, 'r4_fail'); throw new Error('include failed: ' + await page.innerText('#main')); }
+  await page.click('#d-save');
+  try { await page.waitForSelector('#d-msg >> text=add as member', { timeout: 5000 }); } catch (e) { await shot(page, 'r4_fail'); throw new Error('include failed: ' + await page.innerText('#main')); }
   if (await page.$('#decide-table .d-sel')) throw new Error('a user is still undecided');
+  if (!/all decided/.test(await page.innerText('.tabs'))) throw new Error('tab count not updated');
   await page.selectOption('#d-show', 'all');
   await page.waitForSelector('#decide-table .d-sel');
   await shot(page, 'r4_users_decided');
+  // The Overview's link opens the tab
+  await navTo('overview');
+  await page.evaluate(() => go('members-decide'));
+  await page.waitForSelector('#decide-table');
 
   // 3. Review & change and 4. Create upload files: Jane is a member with her UPN, Bob as a direct user
   await navTo('review-safes');
-  await page.waitForSelector('#safes-table');
+  await page.waitForSelector('#safes-table', { state: 'attached' });
   await page.click('.tabs [data-tab="members"]');
   const members = await page.innerText('#main');
   for (const t of ['jane.smith@corp.example.com', 'bob.jones@corp.example.com']) if (!members.includes(t)) throw new Error('missing member ' + t);
@@ -124,6 +137,7 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   const out = await page.innerText('#out-msg');
   console.log('EXTRACT:', out.replace(/\n/g, ' | '));
   if (!out.includes('Users_To_Decide.csv')) throw new Error('Users_To_Decide.csv not written');
+  if (!out.includes('SafeNamingConvention.csv')) throw new Error('SafeNamingConvention.csv not written');
   await shot(page, 'r6_create');
 
   if (errors.length) throw new Error('page errors: ' + errors.join('; '));

@@ -41,11 +41,11 @@ const DIRTY = { main: false, panel: false };
 const NOT_A_CHANGE = new Set(["f-search", "s-filter", "s-nofull", "p-filter", "view", "f-safe", "f-platform", "f-source", "f-status", "allmatch",
   "p-nosafe", "s-selall", "m-selall", "selall", "reason", "m-reason", "ra-reason", "pe-reason", "o-safe", "o-platform", "o-source",
   "o-name", "o-replace", "confirm", "pa-safe", "pa-role", "role-from", "new-layer", "sv-reason",
-  "pv-filter", "pv-changed", "cols-mode", "s-cols-mode"]);
+  "pv-filter", "pv-changed", "cols-mode", "s-cols-mode", "d-show", "d-group", "d-safe", "d-reason", "d-selall"]);
 function trackDirty(e) {
   const el = e.target;
   if (!el.matches || !el.matches("input, select, textarea") || el.type === "search" || el.name === "sec" || el.name === "scope") return;
-  if (NOT_A_CHANGE.has(el.id) || ["s-sel", "sel", "m-sel", "pick", "perm"].some(c => el.classList.contains(c))) return;
+  if (NOT_A_CHANGE.has(el.id) || ["s-sel", "sel", "m-sel", "pick", "perm", "d-sel", "d-dec"].some(c => el.classList.contains(c))) return;
   if (el.closest("#drawer")) DIRTY.panel = true;
   else if (el.closest("#main") && PAGE !== "output") DIRTY.main = true;
 }
@@ -58,11 +58,12 @@ document.addEventListener("click", (e) => {
 });
 document.addEventListener("change", trackDirty);
 function leaveOk(scope) {
-  const dirty = scope === "panel" ? DIRTY.panel : DIRTY.main || DIRTY.panel;
+  const decide = scope !== "panel" && DECIDE.pending.size > 0;   // user access decisions not saved yet
+  const dirty = scope === "panel" ? DIRTY.panel : DIRTY.main || DIRTY.panel || decide;
   if (!dirty) return true;
-  const where = scope === "panel" || !DIRTY.main ? "in this panel" : "on this page";
+  const where = scope === "panel" || !(DIRTY.main || decide) ? "in this panel" : "on this page";
   if (!confirm(`You have changes ${where} that are not saved yet.\n\nLeave without saving them? Click Cancel to go back and save.`)) return false;
-  DIRTY.panel = false; if (scope !== "panel") DIRTY.main = false;
+  DIRTY.panel = false; if (scope !== "panel") { DIRTY.main = false; DECIDE.pending.clear(); }
   return true;
 }
 const saved = (scope) => { if (scope === "panel") DIRTY.panel = false; else { DIRTY.main = false; } syncSave(); };
@@ -73,12 +74,13 @@ function syncSave() {
   b.disabled = !can; b.textContent = can ? "Save & apply this page" : "Saved";
 }
 ["input", "change", "click"].forEach(ev => document.addEventListener(ev, () => setTimeout(syncSave, 0)));
-window.addEventListener("beforeunload", (e) => { if (!LOCKED && (DIRTY.main || DIRTY.panel)) { e.preventDefault(); e.returnValue = ""; } });
+window.addEventListener("beforeunload", (e) => { if (!LOCKED && (DIRTY.main || DIRTY.panel || DECIDE.pending.size)) { e.preventDefault(); e.returnValue = ""; } });
 
 // The four steps in the left menu, and the pages each one holds (shown under it while you are in it).
 const NAV_GROUP = { "rules-safes": "rules", "rules-members": "rules", "rules-dir": "rules", "rules-platforms": "rules",
-  "rules-accounts": "rules", "rules-json": "rules", "review-safes": "review", "review": "review", "members-decide": "review" };
+  "rules-accounts": "rules", "rules-json": "rules", "review-safes": "review", "review": "review" };
 function go(page) {
+  if (page === "members-decide") { if (PAGE === "review-safes" && SAFES.tab === "decide") return; SAFES.tab = "decide"; page = "review-safes"; }   // Confirm user access: a tab of Safes & members
   if (!leaveOk()) return;
   DIRTY.main = DIRTY.panel = false;
   PAGE = page; NAV_SEQ++; onTableCount = null; if (typeof SAFES !== "undefined") SAFES.panel = null;
@@ -437,7 +439,7 @@ function statusNotes() {
   let next = "";
   if (STATE.sanitized) next += `<div class="msg warn">${STATE.sanitized} accounts had forbidden characters: invisible or control characters were removed, or characters Privilege Cloud doesn't allow in Safe, platform or account names were replaced. <a href="#" data-go="review" data-review-view="sanitized">Show them</a>.</div>`;
   if (STATE.stale) next += `<div class="msg warn">Some loaded records haven't been mapped yet. Open <b>2. Mapping rules</b> and click Save &amp; apply.</div>`;
-  if (STATE.undecided) next += `<div class="msg warn">${STATE.undecided} ${STATE.undecided === 1 ? "user still needs a decision: it" : "users still need a decision: they"} may get their access through a group, so they are not uploaded as Safe members until you include them. <a href="#" data-go="members-decide">Decide on them</a>.</div>`;
+  if (STATE.undecided) next += `<div class="msg warn">${STATE.undecided} ${STATE.undecided === 1 ? "user still needs a decision: it" : "users still need a decision: they"} may get their access through a group, so they are not uploaded as Safe members until you add them. <a href="#" data-go="members-decide">Decide on them</a>.</div>`;
   return next;
 }
 
@@ -699,7 +701,7 @@ PAGES.load = async () => {
         ${picks.length && perm.length ? `<br>Permissions from ${perm.map(esc).join(", ")}.` : ""}
         <br>Rules applied.${picks.length && STATE.protector === "dpapi" ? " Passwords are encrypted in the database now, so you can securely delete the loaded exports (button above)." : ""}</div>
         ${r.results.some(x => x.sanitized) ? `<div class="msg warn">Some values held invisible or control characters (for example zero-width spaces or line breaks inside a name). They were removed and each account notes which fields changed. <a href="#" data-go="review" data-review-view="sanitized">Show them</a></div>` : ""}
-        ${STATE.undecided ? `<div class="msg warn">${STATE.undecided} ${STATE.undecided === 1 ? "user" : "users"} from the users report may get their access through a group. <a href="#" data-go="members-decide">Decide on them</a> under 3. Review &amp; change.</div>` : ""}`;
+        ${STATE.undecided ? `<div class="msg warn">${STATE.undecided} ${STATE.undecided === 1 ? "user" : "users"} from the users report may get their access through a group. <a href="#" data-go="members-decide">Decide on them</a> under 3. Review &amp; change · A. Safes &amp; members, <b>Confirm user access</b>.</div>` : ""}`;
       await PAGES.load();   // shows each file as loaded, with the message below
     } catch (e) { msg($("#load-msg"), "err", e.message); }
   };
@@ -902,45 +904,47 @@ async function rulesPage(page, intro, render) {
 }
 PAGES.rules = async () => go("rules-platforms");
 
-/* ---------------- 3. Review & change · C. Users to decide ----------------
+/* ---------------- 3. Review & change · A. Safes & members · Confirm user access ----------------
    Delinea's "What folders can all users see?" lists each user's effective access, including access
    that comes through a group. A user whose access no group on the folder explains is a Safe member
    on its own. These are the others: a group on the same folder gives the same or stronger access,
-   so the user may not need its own membership. Nothing is assumed: you include or leave out each one. */
-const DECIDE = { group: "", safe: "", show: "open", selected: new Set() };
-const DECISION_LABEL = { "": "not decided", include: "include", exclude: "leave out" };
-PAGES["members-decide"] = async () => {
-  await refresh();
-  const rows = (await api("/api/undecided")).rows;
-  const key = (r) => r.folder + "\n" + r.member;   // a line break: kept in an HTML attribute, never in a folder or name
-  const groupsOf = (r) => (r.groups || "").split(", ").filter(Boolean);
+   so the user may not need its own membership. Nothing is assumed: you choose for each one.
+   Choices are staged on the tab and kept only when you click Save decisions. */
+const DECIDE = { group: "", safe: "", show: "open", selected: new Set(), pending: new Map(), rows: [] };
+const DECISION_LABEL = { "": "not decided", include: "add as member", exclude: "rely on the group" };
+const decideKey = (r) => r.folder + "\n" + r.member;   // a line break: kept in an HTML attribute, never in a folder or name
+const decideGroups = (r) => (r.groups || "").split(", ").filter(Boolean);
+const decideNow = (r) => DECIDE.pending.has(decideKey(r)) ? DECIDE.pending.get(decideKey(r)) : r.decision;
+function stageDecision(r, decision) {
+  if (decision === r.decision) DECIDE.pending.delete(decideKey(r)); else DECIDE.pending.set(decideKey(r), decision);
+}
+function decideHtml(rows) {
   const shown = rows.filter(r => (DECIDE.show === "all" || !r.decision)
-    && (!DECIDE.group || (DECIDE.group === "(none)" ? !r.groups : groupsOf(r).includes(DECIDE.group)))
+    && (!DECIDE.group || (DECIDE.group === "(none)" ? !r.groups : decideGroups(r).includes(DECIDE.group)))
     && (!DECIDE.safe || r.safe_name === DECIDE.safe));
-  // Per likely group: how many users and folders, to decide in bulk.
+  // Per likely group: how many users and folders, to choose for all of them at once.
   const byGroup = new Map();
-  rows.forEach(r => (groupsOf(r).length ? groupsOf(r) : ["(none)"]).forEach(g => {
+  rows.forEach(r => (decideGroups(r).length ? decideGroups(r) : ["(none)"]).forEach(g => {
     const x = byGroup.get(g) || { users: new Set(), folders: new Set(), open: 0 };
-    x.users.add(r.member.toLowerCase()); x.folders.add(r.folder); if (!r.decision) x.open++; byGroup.set(g, x); }));
+    x.users.add(r.member.toLowerCase()); x.folders.add(r.folder); if (!decideNow(r)) x.open++; byGroup.set(g, x); }));
   const safes = [...new Set(rows.map(r => r.safe_name))].sort();
   const open = rows.filter(r => !r.decision).length;
-  $("#main").innerHTML = `<h2>3. Review &amp; change · C. Users to decide</h2>
-    <p class="lead">These users come from Delinea's <b>What folders can all users see?</b> report, which lists every user's access, including access they only get through a group.
-      For each user here, a group on the same folder gives the same or stronger access, so the user may not need a Safe membership of their own. The Workbench doesn't guess: include or leave out each one.</p>
-    <details class="card fold explain"><summary>How this page works</summary>
+  const opt = (v, cur) => `<option value="${v}" ${v === cur ? "selected" : ""}>${DECISION_LABEL[v]}</option>`;
+  return `<p class="muted small">These users come from Delinea's <b>What folders can all users see?</b> report, which lists every user's access, including access they only get through a group.
+      For each user here, a group on the same folder gives the same or stronger access, so the user may not need a Safe membership of their own. The Workbench doesn't guess: choose <b>Add as member</b> or <b>Rely on the group</b> for each one, then <b>Save decisions</b>.</p>
+    <details class="card fold explain"><summary>How this tab works</summary>
       <ul class="small">
         <li><b>Already added for you:</b> a user whose access is stronger than every group's on that folder, or who is on a folder no group can see. Their access can't come from a group, so they are Safe members (noted "direct access").</li>
         <li><b>Listed here:</b> every other user in that report. The <b>Groups with this access</b> column shows the groups on the same folder that give at least the same access: the user is probably a member of one of them.</li>
-        <li><b>Include</b> adds the user to that Safe as well, with their own role. <b>Leave out</b> relies on the group. Users without a decision are not uploaded, and step 4 warns until none are left.</li>
-        <li>Decisions are kept per folder and user, so they survive loading the files again. A group membership list (for example from Active Directory) is the sure way to settle them.</li></ul></details>
-    ${!rows.length ? `<div class="msg ok">Nobody needs a decision.${(STATE.inputs || []).some(i => i.permissions_path) ? "" : " (Load Delinea's “What folders can all users see?” report with your accounts to bring in users.)"}</div>` : `
-    <div class="card"><h3>By likely group <span class="muted small">(decide for all of a group's users at once)</span></h3>
+        <li><b>Add as member</b> adds the user to that Safe as well, with their own role. <b>Rely on the group</b> leaves the user out: they keep their access through the group. Users without a decision are not uploaded, and step 4 warns until none are left.</li>
+        <li>Your choices are kept only when you click <b>Save decisions</b>. They are kept per folder and user, so they survive loading the files again. A group membership list (for example from Active Directory) is the sure way to settle them.</li></ul></details>
+    <div class="card"><h3>By likely group <span class="muted small">(choose for all of a group's undecided users at once)</span></h3>
       <div class="tablewrap"><table class="small"><tr><th>Group with the same access</th><th>Users</th><th>Folders</th><th>Not decided</th><th></th></tr>
       ${[...byGroup.entries()].sort((a, b) => b[1].open - a[1].open || a[0].localeCompare(b[0])).map(([g, x]) => `<tr><td>${g === "(none)" ? '<span class="muted">no group report loaded</span>' : esc(g)}</td>
         <td>${x.users.size}</td><td>${x.folders.size}</td><td>${x.open}</td>
         <td class="nowrap"><button class="btn small g-show" data-g="${esc(g)}">Show</button>
-          <button class="btn small g-dec" data-g="${esc(g)}" data-d="exclude" title="Leave out every user this group may explain: they keep their access through the group">Leave all out</button>
-          <button class="btn small g-dec" data-g="${esc(g)}" data-d="include" title="Give every user listed for this group their own Safe membership too">Include all</button></td></tr>`).join("")}</table></div></div>
+          <button class="btn small g-dec" data-g="${esc(g)}" data-d="exclude" title="Every undecided user this group may explain keeps their access through the group. Saved when you click Save decisions.">All rely on the group</button>
+          <button class="btn small g-dec" data-g="${esc(g)}" data-d="include" title="Give every undecided user listed for this group their own Safe membership too. Saved when you click Save decisions.">Add all as members</button></td></tr>`).join("")}</table></div></div>
     <div class="card">
       <div class="row" style="margin-bottom:8px">
         <label class="inline">Show <select id="d-show"><option value="open">not decided (${open})</option><option value="all" ${DECIDE.show === "all" ? "selected" : ""}>all (${rows.length})</option></select></label>
@@ -948,46 +952,73 @@ PAGES["members-decide"] = async () => {
         <label class="inline">Safe <select id="d-safe"><option value="">any</option>${safes.map(x => `<option ${x === DECIDE.safe ? "selected" : ""}>${esc(x)}</option>`).join("")}</select></label>
         <span class="muted small">${shown.length} shown</span></div>
       <div class="tablewrap"><table id="decide-table"><tr><th><input type="checkbox" id="d-selall" title="Tick every user shown"></th><th title="The full name in the report, and the name that will be uploaded (the UPN from the users list)">User</th><th>Folder</th><th>Safe</th>
-        <th title="The user's access to the folder, as the report gives it">Access</th><th title="Groups on the same folder with the same or stronger access">Groups with this access</th><th>Accounts</th><th>Decision</th></tr>
-      ${shown.map(r => `<tr><td><input type="checkbox" class="d-sel" data-k="${esc(key(r))}" ${DECIDE.selected.has(key(r)) ? "checked" : ""}></td>
+        <th title="The user's access to the folder, as the report gives it">Access</th><th title="Groups on the same folder with the same or stronger access">Groups with this access</th><th>Accounts</th><th title="Change it here, then click Save decisions">Decision</th></tr>
+      ${shown.map(r => { const k = decideKey(r), now = decideNow(r);
+        return `<tr><td><input type="checkbox" class="d-sel" data-k="${esc(k)}" ${DECIDE.selected.has(k) ? "checked" : ""}></td>
         <td>${esc(r.member)}${r.member_name !== r.member ? `<br><span class="muted small">→ ${esc(r.member_name)}</span>` : ""}${r.notes ? ` <span class="pill REVIEW" title="${esc(r.notes)}">⚠</span>` : ""}</td>
         <td>${esc(r.folder)}</td><td>${esc(r.safe_name)}</td><td>${esc(r.permission)}</td><td>${esc(r.groups) || '<span class="muted">unknown: no group report</span>'}</td><td>${r.accounts}</td>
-        <td><span class="pill ${r.decision === "include" ? "OK" : r.decision === "exclude" ? "" : "REVIEW"}">${DECISION_LABEL[r.decision] || esc(r.decision)}</span></td></tr>`).join("")}</table></div>
-      <div class="row" style="margin-top:10px"><button class="btn primary" id="d-inc" title="Give the ticked users their own Safe membership">Include ticked</button>
-        <button class="btn" id="d-exc" title="Leave the ticked users out: they keep their access through the group">Leave ticked out</button>
-        <button class="btn" id="d-undo" title="Take the decision back: the users wait again">Undo decision</button>
-        <label class="inline">Reason (optional) <input type="text" id="d-reason" size="24" placeholder="kept in the activity log"></label>
-        <span id="d-msg"></span></div></div>`}
-    <div class="floatbar"><button class="btn" data-go="output">Next: 4. Create upload files ›</button></div>`;
-  if (!rows.length) return;
-  const redraw = () => PAGES["members-decide"]();
-  $("#d-show").onchange = () => { DECIDE.show = $("#d-show").value; redraw(); };
-  $("#d-group").onchange = () => { DECIDE.group = $("#d-group").value; redraw(); };
-  $("#d-safe").onchange = () => { DECIDE.safe = $("#d-safe").value; redraw(); };
-  document.querySelectorAll(".g-show").forEach(b => b.onclick = () => { DECIDE.group = b.dataset.g; DECIDE.show = "all"; redraw(); });
+        <td class="nowrap"><select class="d-dec" data-k="${esc(k)}">${opt("", now)}${opt("include", now)}${opt("exclude", now)}</select>${DECIDE.pending.has(k) ? ' <span class="pill REVIEW" title="Not saved yet: click Save decisions">not saved</span>' : ""}</td></tr>`; }).join("")}</table></div>
+      <div class="row" style="margin-top:10px"><span class="muted small">Ticked users:</span>
+        <button class="btn" id="d-inc" title="Give the ticked users their own Safe membership">Add as members</button>
+        <button class="btn" id="d-exc" title="Leave the ticked users out: they keep their access through the group">Rely on the group</button>
+        <button class="btn" id="d-undo" title="Take the decision back: the users wait again">Not decided</button>
+        <label class="inline">Reason (optional) <input type="text" id="d-reason" size="24" placeholder="kept in the activity log" value="${esc(DECIDE.reason || "")}"></label></div>
+      <div id="d-msg"></div></div>`;
+}
+// Draws the tab again after a filter or a staged change, and keeps the Save button and the unsaved mark in step.
+function drawDecide() {
+  const el = $("#tab-decide"); if (!el) return;
+  el.innerHTML = decideHtml(DECIDE.rows);
+  bindDecide();
+  syncDecideSave();
+}
+function syncDecideSave() {
+  const n = DECIDE.pending.size, b = $("#d-save");
+  if (b) { b.disabled = !n; b.textContent = n ? `Save ${n} ${n === 1 ? "decision" : "decisions"}` : "Decisions saved"; }
+}
+function bindDecide() {
+  const rows = DECIDE.rows, byKey = new Map(rows.map(r => [decideKey(r), r]));
+  $("#d-show").onchange = () => { DECIDE.show = $("#d-show").value; drawDecide(); };
+  $("#d-group").onchange = () => { DECIDE.group = $("#d-group").value; drawDecide(); };
+  $("#d-safe").onchange = () => { DECIDE.safe = $("#d-safe").value; drawDecide(); };
+  $("#d-reason").oninput = () => { DECIDE.reason = $("#d-reason").value; };
+  document.querySelectorAll(".g-show").forEach(b => b.onclick = () => { DECIDE.group = b.dataset.g; DECIDE.show = "all"; drawDecide(); });
   document.querySelectorAll(".d-sel").forEach(cb => cb.onchange = () => cb.checked ? DECIDE.selected.add(cb.dataset.k) : DECIDE.selected.delete(cb.dataset.k));
   $("#d-selall").onchange = () => document.querySelectorAll(".d-sel").forEach(cb => { cb.checked = $("#d-selall").checked; cb.onchange(); });
-  const decide = async (items, decision) => {
-    if (!items.length) return msg($("#d-msg"), "err", "Tick at least one user first.");
-    try {
-      const r = await api("/api/decide", { items, decision, reason: $("#d-reason") ? $("#d-reason").value : "" });
-      DECIDE.selected.clear();
-      await redraw();
-      msg($("#d-msg"), "ok", `${r.changed} ${r.changed === 1 ? "user" : "users"}: ${DECISION_LABEL[decision]}. Rules applied.`);
-    } catch (e) { msg($("#d-msg"), "err", e.message); }
+  document.querySelectorAll(".d-dec").forEach(s => s.onchange = () => { stageDecision(byKey.get(s.dataset.k), s.value); drawDecide(); });
+  const stage = (list, decision) => {
+    if (!list.length) return msg($("#d-msg"), "err", "Tick at least one user first.");
+    list.forEach(r => stageDecision(r, decision));
+    DECIDE.selected.clear(); drawDecide();
+    msg($("#d-msg"), "warn", `${list.length} ${list.length === 1 ? "user" : "users"}: ${DECISION_LABEL[decision]}. Not saved yet: click Save decisions.`);
   };
-  const ticked = () => rows.filter(r => DECIDE.selected.has(key(r))).map(r => ({ folder: r.folder, member: r.member }));
-  $("#d-inc").onclick = () => decide(ticked(), "include");
-  $("#d-exc").onclick = () => decide(ticked(), "exclude");
-  $("#d-undo").onclick = () => decide(ticked(), "");
+  const ticked = () => rows.filter(r => DECIDE.selected.has(decideKey(r)));
+  $("#d-inc").onclick = () => stage(ticked(), "include");
+  $("#d-exc").onclick = () => stage(ticked(), "exclude");
+  $("#d-undo").onclick = () => stage(ticked(), "");
   document.querySelectorAll(".g-dec").forEach(b => b.onclick = () => {
     const g = b.dataset.g;
-    const items = rows.filter(r => !r.decision && (g === "(none)" ? !r.groups : groupsOf(r).includes(g))).map(r => ({ folder: r.folder, member: r.member }));
-    if (!items.length) return msg($("#d-msg"), "ok", "Every user for this group is decided already.");
-    if (!confirm(`${b.dataset.d === "include" ? "Include" : "Leave out"} ${items.length} undecided ${items.length === 1 ? "user" : "users"} listed for ${g}?`)) return;
-    decide(items, b.dataset.d);
+    const list = rows.filter(r => !r.decision && (g === "(none)" ? !r.groups : decideGroups(r).includes(g)));
+    if (!list.length) return msg($("#d-msg"), "ok", "Every user for this group is decided already.");
+    stage(list, b.dataset.d);
   });
-};
+}
+async function saveDecisions() {
+  const byKey = new Map(DECIDE.rows.map(r => [decideKey(r), r])), byDecision = new Map();
+  for (const [k, d] of DECIDE.pending) { const r = byKey.get(k); if (!r) continue;
+    if (!byDecision.has(d)) byDecision.set(d, []); byDecision.get(d).push({ folder: r.folder, member: r.member }); }
+  if (!byDecision.size) return;
+  try {
+    const counts = [];
+    for (const [decision, items] of byDecision) {
+      const r = await api("/api/decide", { items, decision, reason: DECIDE.reason || "" });
+      counts.push(`${r.changed} ${DECISION_LABEL[decision]}`);
+    }
+    DECIDE.pending.clear(); DECIDE.reason = ""; DIRTY.main = false;
+    await PAGES["review-safes"]();
+    msg($("#d-msg"), "ok", `Decisions saved (${counts.join(", ")}). Rules applied.`);
+  } catch (e) { msg($("#d-msg"), "err", e.message); }
+}
 
 /* The floating preview on every Mapping rules page: it stays at the bottom of the window above
    Save & apply, scrolls inside, and shows what the settings on the page give as you change
@@ -1205,8 +1236,7 @@ PAGES["rules-safes"] = () => rulesPage("rules-safes",
         <div class="row"><label class="inline">Leave out folder levels <input type="text" id="conv-skip" size="24" value="${esc((conv.skip_folder_levels || []).join(", "))}" placeholder="e.g. Root"></label>
           <label class="inline">Safes with more than <input type="text" id="max-acc" size="6" value="${esc(cfg.safe_max_accounts)}"> accounts:
             <select id="split">${[["", "flag them for a look"], ["1", "split them into numbered Safes (-01, -02…)"]].map(([v, l]) => `<option value="${v}" ${(cfg.safe_split_over_max ? "1" : "") === v ? "selected" : ""}>${l}</option>`).join("")}</select></label></div></div>
-        <p class="small"><a class="btn small" href="#" data-export="convention" title="The parts of every Safe name the upload creates, as applied now: column var1 lists every value used as the first part, var2 the second and so on ({var1}-{var2}-{var3}-{var4}). Personal Safes have their own pattern and are left out. Click Save &amp; apply first to include changes on this page. The same file is written as review/SafeNamingConvention.csv with every set of upload files.">Download the naming convention (CSV)</a>
-          <span class="muted">to keep naming new Safes the same way after the migration</span></p>
+        <p class="muted small">Step 4 also writes <code>review/SafeNamingConvention.csv</code> with every set of upload files: the parts of every Safe name, to keep naming new Safes the same way after the migration.</p>
         <p class="muted small">⚠ Safe names are always cut to ${cfg.safe_name.max_length} characters, and the characters <code>${esc(cfg.safe_name.invalid_chars)}</code> become "${esc(cfg.safe_name.replacement)}". The preview at the bottom of the window shows the result as you type.</p></div>
       ${flatCard}
       <details class="card fold" data-block="codes"><summary>Codes used in names <span class="muted small" style="font-weight:400">· folder abbreviations, other words and placeholders such as {env}: most migrations leave these as they are</span></summary>
@@ -1922,6 +1952,8 @@ PAGES["review-safes"] = async () => {
   await refresh();
   if (!STATE.has_db) return msg($("#main"), "warn", "Load your exports first (step 1).");
   const d = await api("/api/safes");
+  const und = STATE.undecided_all ? (await api("/api/undecided")).rows : [];
+  DECIDE.rows = und;
   SAFES.data = d;
   const names = new Set(d.safes.map(s => s.safe_name));
   SAFES.selected = new Set([...SAFES.selected].filter(n => names.has(n)));
@@ -1946,7 +1978,9 @@ PAGES["review-safes"] = async () => {
   const membersCell = (s) => memberCount[s.safe_name]
     ? memberCount[s.safe_name] + (noFull(s) ? ` <span class="pill REVIEW" title="${esc(NO_FULL_TIP)}">no full member</span>` : "")
     : `<span class="pill REVIEW" title="Nobody from your source gets access to this Safe. ${esc(NO_FULL_TIP)}">none</span>`;
-  const tab = SAFES.tab || "safes";
+  const tab = SAFES.tab === "decide" && !und.length ? "safes" : SAFES.tab || "safes";
+  SAFES.tab = tab;
+  const undOpen = und.filter(r => !r.decision).length;
   const csvMode = SAFES.mode === "csv";
   const safeLink = (s) => `<a href="#" data-members-of="${esc(s.safe_name)}" title="Rename this Safe, change its settings or its members">${esc(s.safe_name)}</a>${s.override_json ? ' <span class="pill REVIEW" title="You changed this Safe\'s name or settings directly">changed by you</span>' : ""}${nameNote(s)}`;
   const nameNote = (s) => s.valid_safe_name !== "TRUE"
@@ -1954,10 +1988,11 @@ PAGES["review-safes"] = async () => {
     : s.issues ? ` <span class="pill REVIEW" title="${esc(s.issues)}">⚠</span>` : "";
   $("#main").innerHTML = `<h2>3. Review &amp; change · A. Safes &amp; members</h2>
     <p class="lead">The Safes the upload will create and who gets access. Click a Safe or a member to see and change it. To change how Safes are named or who gets access everywhere, use
-      2. Mapping rules (<a href="#" data-go="rules-safes">Safes</a>, <a href="#" data-go="rules-members">permissions</a>, <a href="#" data-go="rules-dir">members</a>); decide on users from the users report under <a href="#" data-go="members-decide">C. Users to decide</a>.</p>
+      2. Mapping rules (<a href="#" data-go="rules-safes">Safes</a>, <a href="#" data-go="rules-members">permissions</a>, <a href="#" data-go="rules-dir">members</a>).${und.length ? ` Users who may get their access through a group wait under <a href="#" data-go="members-decide">Confirm user access</a>.` : ""}</p>
     ${safeEditsHtml(d)}${editsHtml}
     <div class="tabs" role="tablist"><button data-tab="safes" class="${tab === "safes" ? "on" : ""}" role="tab">Safes (${d.safes.length})</button>
-      <button data-tab="members" class="${tab === "members" ? "on" : ""}" role="tab">Members (${d.people.length})</button><label class="inline small" style="margin-left:auto;align-self:center" title="Review: the usual columns. Source → upload CSV: what the export had on the left, and the Safes.csv / SafeMembers.csv columns it becomes on the right.">Columns
+      <button data-tab="members" class="${tab === "members" ? "on" : ""}" role="tab">Members (${d.people.length})</button>
+      ${und.length ? `<button data-tab="decide" class="${tab === "decide" ? "on" : ""}" role="tab" title="Users from the folder report who may get their access through a group: add them as members or rely on the group">Confirm user access (${undOpen ? `${undOpen} to decide` : "all decided"})</button>` : ""}<label class="inline small${tab === "decide" ? " hidden" : ""}" id="s-cols" style="margin-left:auto;align-self:center" title="Review: the usual columns. Source → upload CSV: what the export had on the left, and the Safes.csv / SafeMembers.csv columns it becomes on the right.">Columns
       <select id="s-cols-mode"><option value="review">Review</option><option value="csv" ${csvMode ? "selected" : ""}>Source → upload CSV</option></select></label></div>
     <div id="tab-safes" class="${tab === "safes" ? "" : "hidden"}">
       ${noFullCount ? `<div class="msg warn">${noFullCount} ${noFullCount === 1 ? "Safe has" : "Safes have"} no member with full permissions, so nobody from your source could manage ${noFullCount === 1 ? "it" : "them"} or ${noFullCount === 1 ? "its" : "their"} members after the upload.
@@ -2014,12 +2049,17 @@ PAGES["review-safes"] = async () => {
         <td>${m.search_in ? esc(m.search_in) : '<span class="muted">(all)</span>'}</td>
         <td>${m.safes.length ? m.safes.length : '<span class="pill REVIEW">no Safe</span>'}</td>
         <td class="small">${esc(m.source_member || "")}</td><td>${m.export_accounts || ""}</td></tr>`).join("")}</table></div></div>
-    <div class="floatbar"><button class="btn primary" data-go="review">Next: Accounts ›</button></div>`;
-  document.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => {
-    SAFES.tab = b.dataset.tab;
-    document.querySelectorAll("[data-tab]").forEach(x => x.classList.toggle("on", x === b));
-    $("#tab-safes").classList.toggle("hidden", SAFES.tab !== "safes"); $("#tab-members").classList.toggle("hidden", SAFES.tab !== "members");
-  });
+    ${und.length ? `<div id="tab-decide" class="${tab === "decide" ? "" : "hidden"}"></div>` : ""}
+    <div class="floatbar"><button class="btn primary${tab === "decide" ? "" : " hidden"}" id="d-save" disabled>Decisions saved</button>
+      <button class="btn${tab === "decide" ? "" : " primary"}" id="s-next" data-go="review">Next: Accounts ›</button></div>`;
+  const showTab = () => {
+    document.querySelectorAll("[data-tab]").forEach(x => x.classList.toggle("on", x.dataset.tab === SAFES.tab));
+    ["safes", "members", "decide"].forEach(t => { const el = $("#tab-" + t); if (el) el.classList.toggle("hidden", SAFES.tab !== t); });
+    $("#d-save").classList.toggle("hidden", SAFES.tab !== "decide"); $("#s-cols").classList.toggle("hidden", SAFES.tab === "decide"); $("#s-next").classList.toggle("primary", SAFES.tab !== "decide");
+  };
+  document.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { SAFES.tab = b.dataset.tab; showTab(); });
+  if (und.length) drawDecide();
+  $("#d-save").onclick = saveDecisions;
   const showInfo = () => { $("#s-selinfo").textContent = `${SAFES.selected.size} of ${d.safes.length} Safes ticked`;
     $("#s-acts").classList.toggle("hidden", !SAFES.selected.size); };
   const applyFilter = () => {
@@ -2316,6 +2356,7 @@ PAGES.output = async () => {
       <p class="small">The files go into <a class="pathlink" id="open-output" title="Open the output folder in Explorer"><code id="o-path">${esc(STATE.output)}</code></a>
         <button class="btn small" id="open-output2">Open folder</button>
         <button class="btn small" id="copy-output" title="Copy the folder path, to paste into File Explorer's address bar or a file dialog">Copy path</button></p>
+      <p class="small" title="Each Safe name is split on the separator: column var1 lists every value used as the first part, var2 the second and so on ({var1}-{var2}-{var3}-{var4}). Personal Safes have their own pattern and are left out.">Also written: <code>review/SafeNamingConvention.csv</code>, the parts of every Safe name these files create, to keep naming new Safes the same way after the migration.</p>
       <button class="btn primary" id="extract">Create files</button><div id="out-msg"></div>
     </div>
     <div class="card"><h3>Earlier outputs in <a class="pathlink" id="open-output3" title="Open this folder in Explorer"><code>${esc(STATE.output)}</code></a>
@@ -2371,7 +2412,8 @@ PAGES.output = async () => {
                                             name: $("#o-name").value, replace: $("#o-replace").checked });
       LAST_OUT = `<div class="msg ok">Created <b>${esc(r.name)}</b>: ${r.counts.safes} Safes, ${r.counts.members} members, ${r.counts.accounts} accounts${include ? " (with secrets)" : " (dry run)"}.<br>
         Folder: <a class="pathlink" data-open-out="${esc(r.name)}" title="Open this folder in Explorer"><code>${esc(r.path)}</code></a>
-        <button class="btn small" data-copy="${esc(r.path)}" title="Copy the folder path">Copy path</button><br>${r.files.map(esc).join(" · ")}</div>`;
+        <button class="btn small" data-copy="${esc(r.path)}" title="Copy the folder path">Copy path</button><br>${r.files.map(esc).join(" · ")}
+        ${r.files.some(f => /SafeNamingConvention\.csv$/.test(f)) ? `<br>The Safe naming convention is in <code>review/SafeNamingConvention.csv</code>.` : ""}</div>`;
       go("output");
     } catch (e) { msg($("#out-msg"), "err", e.message); }
   };
