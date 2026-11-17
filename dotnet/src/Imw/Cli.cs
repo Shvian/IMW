@@ -171,7 +171,7 @@ public sealed class ExitException : Exception
     public ExitException(int code) { Code = code; }
 }
 
-/// <summary>Command line: IMW.exe &lt;command&gt; ... (port of imw/cli.py).</summary>
+/// <summary>Command line: IMW.exe &lt;command&gt; ....</summary>
 public static class Cli
 {
     public const string SecretsWarning =

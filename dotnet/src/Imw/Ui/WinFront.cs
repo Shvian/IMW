@@ -5,7 +5,7 @@ using System.Text;
 namespace Imw.Ui;
 
 /// <summary>
-/// Bring a just-opened Explorer window to the front (Windows only, best effort; port of imw/ui/winfront.py).
+/// Bring a just-opened Explorer window to the front (Windows only, best effort).
 /// Windows' foreground lock stops a background program from giving focus to the window it opens, so
 /// Explorer would appear behind the browser. This finds the Explorer window showing the folder and raises it.
 /// </summary>

@@ -15,7 +15,7 @@ using Microsoft.Extensions.Hosting;
 namespace Imw.Ui;
 
 /// <summary>
-/// The local web server for the Workbench (port of make_handler / serve in imw/ui/server.py).
+/// The local web server for the Workbench.
 ///
 /// Security model
 ///   * Listens on 127.0.0.1 only, over HTTPS with a self-signed certificate made for this computer

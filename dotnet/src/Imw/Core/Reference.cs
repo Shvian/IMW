@@ -3,7 +3,7 @@ using System.Text;
 namespace Imw.Core;
 
 /// <summary>
-/// Reference files: exports and reports that hold no accounts but help map them (see imw/reference.py).
+/// Reference files: exports and reports that hold no accounts but help map them.
 /// templates: "allsecrets.csv" (Name, Secret template, Folder): each secret's template, matched on its name.
 /// users: "lauserslist.csv" (Username, Display name, ...): full name -> Username (the UPN).
 /// template_list, groups, roles: recognised so they are not read as accounts; not needed.

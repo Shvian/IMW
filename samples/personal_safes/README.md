@@ -7,5 +7,5 @@ instead of abbreviations of her name. `allsecrets.csv` gives the templates and `
 folder, so her Safe membership matches the report; the others are added as owners with a note.
 All names and passwords are made up.
 
-    python -m imw convert -i secrets-export.csv -i allsecrets.csv --reference ../delinea_reports/lauserslist.csv \
+    IMW.exe convert -i secrets-export.csv -i allsecrets.csv --reference ../delinea_reports/lauserslist.csv \
         -p whatfolderscanalluserssee.csv -c config.json -o out

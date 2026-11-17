@@ -27,11 +27,11 @@
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.14" />
   </ItemGroup>
 
-  <!-- The web pages are the same files the Python version serves (imw/ui/static), built into the exe. -->
+  <!-- The web pages (Ui/static), built into the exe. -->
   <ItemGroup>
-    <EmbeddedResource Include="../../../imw/ui/static/index.html" LogicalName="static/index.html" />
-    <EmbeddedResource Include="../../../imw/ui/static/app.js" LogicalName="static/app.js" />
-    <EmbeddedResource Include="../../../imw/ui/static/theme.js" LogicalName="static/theme.js" />
+    <EmbeddedResource Include="Ui/static/index.html" LogicalName="static/index.html" />
+    <EmbeddedResource Include="Ui/static/app.js" LogicalName="static/app.js" />
+    <EmbeddedResource Include="Ui/static/theme.js" LogicalName="static/theme.js" />
   </ItemGroup>
 
   <ItemGroup>

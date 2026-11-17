@@ -1,5 +1,3 @@
-__pycache__/
-*.pyc
 node_modules/
 # Runtime data: ledgers, audit logs, uploaded exports and reports stay on the migration server
 /workspace/

@@ -12,7 +12,7 @@ public class UiError : Exception
 }
 
 /// <summary>
-/// The Workbench's API (port of the App class in imw/ui/server.py). Every method takes the parsed JSON
+/// The Workbench's API. Every method takes the parsed JSON
 /// body and returns a JSON-like value; the web server (Server.cs) calls them one at a time under Lock.
 /// </summary>
 public sealed class UiApp

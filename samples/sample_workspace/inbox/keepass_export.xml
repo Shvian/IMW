@@ -1,0 +1,634 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<KeePassFile>
+	<Meta>
+		<Generator>KeePass</Generator>
+		<DatabaseName>IT Ops Vault</DatabaseName>
+		<RecycleBinUUID>ei0ok1PDXMya4jpks7/5PA==</RecycleBinUUID>
+	</Meta>
+	<Root>
+		<Group>
+			<UUID>8G7kcJ8XVm+svuk4ES1G2Q==</UUID>
+			<Name>IT Ops Vault</Name>
+			<Group>
+				<UUID>Uu6+hIERVf2UEClyttjBWQ==</UUID>
+				<Name>Network</Name>
+				<Group>
+					<UUID>l2L+hxUFXg620PChQ0TYFw==</UUID>
+					<Name>Firewalls</Name>
+					<Entry>
+						<UUID>UCJIpr5OEZ0YPAbdRvqSMw==</UUID>
+						<String><Key>Title</Key><Value>fw07 admin GUI</Value></String>
+						<String><Key>UserName</Key><Value>admin</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-zWhS=$wcQMuR6V</Value></String>
+						<String><Key>URL</Key><Value>https://fw07.corp.example.com/login</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 7</Value></String>
+						<History><Entry><UUID>UCJIpr5OEZ0YPAbdRvqSMw==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>6lzvL+JYTD3WN+YtME47SQ==</UUID>
+						<String><Key>Title</Key><Value>fw08 admin GUI</Value></String>
+						<String><Key>UserName</Key><Value>admin</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-$d%g632d$cnYqf</Value></String>
+						<String><Key>URL</Key><Value>https://fw08.corp.example.com/login</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 8</Value></String>
+						<History><Entry><UUID>6lzvL+JYTD3WN+YtME47SQ==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>c+8xsK9Dj7FixqXHmzQesw==</UUID>
+						<String><Key>Title</Key><Value>fw09 admin GUI</Value></String>
+						<String><Key>UserName</Key><Value>admin</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-i4248u#3eeV$%e</Value></String>
+						<String><Key>URL</Key><Value>https://fw09.corp.example.com/login</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 9</Value></String>
+						<Binary><Key>notes.txt</Key><Value Ref="0" /></Binary>
+						<History><Entry><UUID>c+8xsK9Dj7FixqXHmzQesw==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>STFFdNzDCEcUPPPRPr3meA==</UUID>
+						<String><Key>Title</Key><Value>fw19 admin GUI</Value></String>
+						<String><Key>UserName</Key><Value>admin</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-kon=stc7PAc2ja</Value></String>
+						<String><Key>URL</Key><Value>https://fw19.corp.example.com/login</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 19</Value></String>
+						<History><Entry><UUID>STFFdNzDCEcUPPPRPr3meA==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>d/EL2CYNYmW4SBxju+abiw==</UUID>
+						<String><Key>Title</Key><Value>fw24 admin GUI</Value></String>
+						<String><Key>UserName</Key><Value>admin</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-efiuKMTxDUWuqo</Value></String>
+						<String><Key>URL</Key><Value>https://fw24.corp.example.com/login</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 24</Value></String>
+						<History><Entry><UUID>d/EL2CYNYmW4SBxju+abiw==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>t4NiixcjdBYGI/J66VVNCg==</UUID>
+						<String><Key>Title</Key><Value>fw32 admin GUI</Value></String>
+						<String><Key>UserName</Key><Value>admin</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-2Fc9fyjSLbc9!i</Value></String>
+						<String><Key>URL</Key><Value>https://fw32.corp.example.com/login</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 32</Value></String>
+						<History><Entry><UUID>t4NiixcjdBYGI/J66VVNCg==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>v2bx3iJwpjcsFeDc9ugqjw==</UUID>
+						<String><Key>Title</Key><Value>fw38 admin GUI</Value></String>
+						<String><Key>UserName</Key><Value>admin</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-kWimwW+xT@ZiMf</Value></String>
+						<String><Key>URL</Key><Value>https://fw38.corp.example.com/login</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 38</Value></String>
+						<History><Entry><UUID>v2bx3iJwpjcsFeDc9ugqjw==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>jKAsOLLDSPvy0tMG+z9xfw==</UUID>
+						<String><Key>Title</Key><Value>fw40 admin GUI</Value></String>
+						<String><Key>UserName</Key><Value>admin</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-ZtFDd5+BaJST!H</Value></String>
+						<String><Key>URL</Key><Value>https://fw40.corp.example.com/login</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 40</Value></String>
+						<History><Entry><UUID>jKAsOLLDSPvy0tMG+z9xfw==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>1xvF7/YOtDwDi7bNGk5+0g==</UUID>
+						<String><Key>Title</Key><Value>fw51 admin GUI</Value></String>
+						<String><Key>UserName</Key><Value>admin</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-T*ZHxohcckkTsi</Value></String>
+						<String><Key>URL</Key><Value>https://fw51.corp.example.com/login</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 51</Value></String>
+						<History><Entry><UUID>1xvF7/YOtDwDi7bNGk5+0g==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>6uV08Yhh9z3+wyDW6f9frw==</UUID>
+						<String><Key>Title</Key><Value>fw53 admin GUI</Value></String>
+						<String><Key>UserName</Key><Value>admin</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-#8jXz49ARAkBf$</Value></String>
+						<String><Key>URL</Key><Value>https://fw53.corp.example.com/login</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 53</Value></String>
+						<History><Entry><UUID>6uV08Yhh9z3+wyDW6f9frw==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+				</Group>
+				<Group>
+					<UUID>IszbKr7cU+WBHsmrdSdu2Q==</UUID>
+					<Name>Wireless</Name>
+					<Entry>
+						<UUID>3P9SPVdEmKvKq/oYEMNqLg==</UUID>
+						<String><Key>Title</Key><Value>fw13 admin GUI</Value></String>
+						<String><Key>UserName</Key><Value>admin</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-Fm48#BSnszjvQs</Value></String>
+						<String><Key>URL</Key><Value>https://fw13.corp.example.com/login</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 13</Value></String>
+						<History><Entry><UUID>3P9SPVdEmKvKq/oYEMNqLg==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>tmSLIkP7U65ye9u3mQCMxg==</UUID>
+						<String><Key>Title</Key><Value>fw21 admin GUI</Value></String>
+						<String><Key>UserName</Key><Value>admin</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-L+qg!ANMgL3GEc</Value></String>
+						<String><Key>URL</Key><Value>https://fw21.corp.example.com/login</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 21</Value></String>
+						<History><Entry><UUID>tmSLIkP7U65ye9u3mQCMxg==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>PunfjZR6EDtvCVkHzQrHqQ==</UUID>
+						<String><Key>Title</Key><Value>fw25 admin GUI</Value></String>
+						<String><Key>UserName</Key><Value>admin</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-hf6gU7hd7Yyydi</Value></String>
+						<String><Key>URL</Key><Value>https://fw25.corp.example.com/login</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 25</Value></String>
+						<History><Entry><UUID>PunfjZR6EDtvCVkHzQrHqQ==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+				</Group>
+			</Group>
+			<Group>
+				<UUID>I8bJyvr2X5qxHHYAGtKotg==</UUID>
+				<Name>Linux</Name>
+				<Group>
+					<UUID>MB8W8vcCUqyRW31CS2FFWA==</UUID>
+					<Name>Lab Servers</Name>
+					<Entry>
+						<UUID>PdjFwU+KU2KowRX/4L1DKQ==</UUID>
+						<String><Key>Title</Key><Value>root@lab02</Value></String>
+						<String><Key>UserName</Key><Value>root</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-Wg7KZ?ad*QJf&amp;B</Value></String>
+						<String><Key>URL</Key><Value>ssh://lab02.corp.example.com:22</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 2</Value></String>
+						<String><Key>Port</Key><Value>22</Value></String>
+						<History><Entry><UUID>PdjFwU+KU2KowRX/4L1DKQ==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>m3/Z2G8F9NXO29wO9lpk7Q==</UUID>
+						<String><Key>Title</Key><Value>root@lab22</Value></String>
+						<String><Key>UserName</Key><Value>root</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-7XM-rSY5f=FHMP</Value></String>
+						<String><Key>URL</Key><Value>ssh://lab22.corp.example.com:22</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 22</Value></String>
+						<String><Key>Port</Key><Value>22</Value></String>
+						<History><Entry><UUID>m3/Z2G8F9NXO29wO9lpk7Q==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>sGfAhuFXxBLl9LALXsl39Q==</UUID>
+						<String><Key>Title</Key><Value>root@lab27</Value></String>
+						<String><Key>UserName</Key><Value>root</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-KLmS==Zo**q%Tb</Value></String>
+						<String><Key>URL</Key><Value>ssh://lab27.corp.example.com:22</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 27</Value></String>
+						<String><Key>Port</Key><Value>22</Value></String>
+						<Binary><Key>notes.txt</Key><Value Ref="0" /></Binary>
+						<History><Entry><UUID>sGfAhuFXxBLl9LALXsl39Q==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>dTIn1m4iCXs3ovjL3f2Qyg==</UUID>
+						<String><Key>Title</Key><Value>root@lab30</Value></String>
+						<String><Key>UserName</Key><Value>root</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True"></Value></String>
+						<String><Key>URL</Key><Value>ssh://lab30.corp.example.com:22</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 30</Value></String>
+						<String><Key>Port</Key><Value>22</Value></String>
+						<String><Key>SSH Private Key</Key><Value ProtectInMemory="True">-----BEGIN OPENSSH PRIVATE KEY-----
+FAKEKEYFQCAYNdgl7AhmqF/FRUk6wJPh2ktWkeiHvLlMSU3rCnO6XM+lRBVG9FYr78TFrSpJON7Ui6/e4WnpbvPUxcND3Py6keN855kxCej0/Iw9By9fs67JDJDq7X0lIHc+8a0
+-----END OPENSSH PRIVATE KEY-----</Value></String>
+						<History><Entry><UUID>dTIn1m4iCXs3ovjL3f2Qyg==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>qF+zzQAkhTQr3MKP7bLdmw==</UUID>
+						<String><Key>Title</Key><Value>root@lab31</Value></String>
+						<String><Key>UserName</Key><Value>root</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-@Q+-m4SXHDCqEQ</Value></String>
+						<String><Key>URL</Key><Value>ssh://lab31.corp.example.com:22</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 31</Value></String>
+						<String><Key>Port</Key><Value>22</Value></String>
+						<History><Entry><UUID>qF+zzQAkhTQr3MKP7bLdmw==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>UTMz4goYn2r40l7evYwCpA==</UUID>
+						<String><Key>Title</Key><Value>root@lab39</Value></String>
+						<String><Key>UserName</Key><Value>root</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-m@Euq$D538c*NE</Value></String>
+						<String><Key>URL</Key><Value>ssh://lab39.corp.example.com:22</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 39</Value></String>
+						<String><Key>Port</Key><Value>22</Value></String>
+						<History><Entry><UUID>UTMz4goYn2r40l7evYwCpA==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>gHfpIVN5fxB9PDpWDGriPw==</UUID>
+						<String><Key>Title</Key><Value>root@lab46</Value></String>
+						<String><Key>UserName</Key><Value>root</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-!jQ6ZTvFn-ip&amp;=</Value></String>
+						<String><Key>URL</Key><Value>ssh://lab46.corp.example.com:22</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 46</Value></String>
+						<String><Key>Port</Key><Value>22</Value></String>
+						<History><Entry><UUID>gHfpIVN5fxB9PDpWDGriPw==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>xcluyjMWXU5B7GKw7+Eqdw==</UUID>
+						<String><Key>Title</Key><Value>root@lab49</Value></String>
+						<String><Key>UserName</Key><Value>root</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-vepRQXMAYh-BtX</Value></String>
+						<String><Key>URL</Key><Value>ssh://lab49.corp.example.com:22</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 49</Value></String>
+						<String><Key>Port</Key><Value>22</Value></String>
+						<History><Entry><UUID>xcluyjMWXU5B7GKw7+Eqdw==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>tw17TEJCG9uSUduRmwgGYg==</UUID>
+						<String><Key>Title</Key><Value>root@lab52</Value></String>
+						<String><Key>UserName</Key><Value>root</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-e$SZ=4!yXRD=Pb</Value></String>
+						<String><Key>URL</Key><Value>ssh://lab52.corp.example.com:22</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 52</Value></String>
+						<String><Key>Port</Key><Value>22</Value></String>
+						<History><Entry><UUID>tw17TEJCG9uSUduRmwgGYg==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>pMcG38JWjmNleXniB/mR9g==</UUID>
+						<String><Key>Title</Key><Value>root@lab54</Value></String>
+						<String><Key>UserName</Key><Value>root</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-25MVA8@3iT?M4h</Value></String>
+						<String><Key>URL</Key><Value>ssh://lab54.corp.example.com:22</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 54</Value></String>
+						<String><Key>Port</Key><Value>22</Value></String>
+						<Binary><Key>notes.txt</Key><Value Ref="0" /></Binary>
+						<History><Entry><UUID>pMcG38JWjmNleXniB/mR9g==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+				</Group>
+				<Group>
+					<UUID>Q2B6xU1GXMS0eUh9dzlb0w==</UUID>
+					<Name>DMZ: Edge/Proxy</Name>
+					<Entry>
+						<UUID>UB/jtIVRhe52w5mRFu8j7Q==</UUID>
+						<String><Key>Title</Key><Value>root@lab15</Value></String>
+						<String><Key>UserName</Key><Value>root</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-fypvkapozFW?9t</Value></String>
+						<String><Key>URL</Key><Value>ssh://lab15.corp.example.com:22</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 15</Value></String>
+						<String><Key>Port</Key><Value>22</Value></String>
+						<History><Entry><UUID>UB/jtIVRhe52w5mRFu8j7Q==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>ovGMpv1OMusSYxVZqdSf9A==</UUID>
+						<String><Key>Title</Key><Value>root@lab17</Value></String>
+						<String><Key>UserName</Key><Value>root</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-98eGh@4CqfmToo</Value></String>
+						<String><Key>URL</Key><Value>ssh://lab17.corp.example.com:22</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 17</Value></String>
+						<String><Key>Port</Key><Value>22</Value></String>
+						<History><Entry><UUID>ovGMpv1OMusSYxVZqdSf9A==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>zy9rdqlVQwbi7m39mxw1kg==</UUID>
+						<String><Key>Title</Key><Value>root@lab18</Value></String>
+						<String><Key>UserName</Key><Value>root</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-!2pDJy6TF-ZnHX</Value></String>
+						<String><Key>URL</Key><Value>ssh://lab18.corp.example.com:22</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 18</Value></String>
+						<String><Key>Port</Key><Value>22</Value></String>
+						<Binary><Key>notes.txt</Key><Value Ref="0" /></Binary>
+						<History><Entry><UUID>zy9rdqlVQwbi7m39mxw1kg==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>1z3/XgQGD5IjLShIOEzgcA==</UUID>
+						<String><Key>Title</Key><Value>root@lab29</Value></String>
+						<String><Key>UserName</Key><Value>root</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-h8W7iAuVxX9m&amp;J</Value></String>
+						<String><Key>URL</Key><Value>ssh://lab29.corp.example.com:22</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 29</Value></String>
+						<String><Key>Port</Key><Value>22</Value></String>
+						<History><Entry><UUID>1z3/XgQGD5IjLShIOEzgcA==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>nqgtTlDRqdbXJwT7h5hCEA==</UUID>
+						<String><Key>Title</Key><Value>root@lab47</Value></String>
+						<String><Key>UserName</Key><Value>root</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-=e-w#S9YhN3pz#</Value></String>
+						<String><Key>URL</Key><Value>ssh://lab47.corp.example.com:22</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 47</Value></String>
+						<String><Key>Port</Key><Value>22</Value></String>
+						<History><Entry><UUID>nqgtTlDRqdbXJwT7h5hCEA==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>4Qpyt9iW8mknFLJ4DiMoVw==</UUID>
+						<String><Key>Title</Key><Value>root@lab50</Value></String>
+						<String><Key>UserName</Key><Value>root</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-CjiW4ihCkshR4t</Value></String>
+						<String><Key>URL</Key><Value>ssh://lab50.corp.example.com:22</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 50</Value></String>
+						<String><Key>Port</Key><Value>22</Value></String>
+						<History><Entry><UUID>4Qpyt9iW8mknFLJ4DiMoVw==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>0BLjB2IOlTCNNdMVausc6Q==</UUID>
+						<String><Key>Title</Key><Value>root@lab56</Value></String>
+						<String><Key>UserName</Key><Value>root</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-#Eur=RG9&amp;9&amp;+CH</Value></String>
+						<String><Key>URL</Key><Value>ssh://lab56.corp.example.com:22</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 56</Value></String>
+						<String><Key>Port</Key><Value>22</Value></String>
+						<History><Entry><UUID>0BLjB2IOlTCNNdMVausc6Q==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+				</Group>
+			</Group>
+			<Group>
+				<UUID>PL5ERmxvX8K+7w3yS1AAtA==</UUID>
+				<Name>Cloud</Name>
+				<Group>
+					<UUID>P4+l3zh+WgWp+XU95TUYgw==</UUID>
+					<Name>Azure Subscriptions</Name>
+					<Entry>
+						<UUID>oUZlOb3Xg09nbyyTPluyrQ==</UUID>
+						<String><Key>Title</Key><Value>break-glass 03</Value></String>
+						<String><Key>UserName</Key><Value>breakglass03@example.onmicrosoft.com</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-!mZ@veLE6p8?S%</Value></String>
+						<String><Key>URL</Key><Value>https://portal.azure.com</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 3</Value></String>
+						<History><Entry><UUID>oUZlOb3Xg09nbyyTPluyrQ==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>tIfuzMiwJHllG9xuZiWRow==</UUID>
+						<String><Key>Title</Key><Value>break-glass 06</Value></String>
+						<String><Key>UserName</Key><Value>breakglass06@example.onmicrosoft.com</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-fAm2mFt7D3VG@+</Value></String>
+						<String><Key>URL</Key><Value>https://portal.azure.com</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 6</Value></String>
+						<History><Entry><UUID>tIfuzMiwJHllG9xuZiWRow==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>cJxUCeoKYkxoZhjk+eULKQ==</UUID>
+						<String><Key>Title</Key><Value>break-glass 11</Value></String>
+						<String><Key>UserName</Key><Value>breakglass11@example.onmicrosoft.com</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-x7tx$*84!QB%3o</Value></String>
+						<String><Key>URL</Key><Value>https://portal.azure.com</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 11</Value></String>
+						<History><Entry><UUID>cJxUCeoKYkxoZhjk+eULKQ==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>qy5hPIZAUzIULljuKtB7Fg==</UUID>
+						<String><Key>Title</Key><Value>break-glass 12</Value></String>
+						<String><Key>UserName</Key><Value>breakglass12@example.onmicrosoft.com</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-=@+&amp;6deBzx4$uh</Value></String>
+						<String><Key>URL</Key><Value>https://portal.azure.com</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 12</Value></String>
+						<History><Entry><UUID>qy5hPIZAUzIULljuKtB7Fg==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>ulY956RNoN0nQsIt1I/zlg==</UUID>
+						<String><Key>Title</Key><Value>break-glass 16</Value></String>
+						<String><Key>UserName</Key><Value>breakglass16@example.onmicrosoft.com</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-DAzUHJvuuAUMR+</Value></String>
+						<String><Key>URL</Key><Value>https://portal.azure.com</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 16</Value></String>
+						<History><Entry><UUID>ulY956RNoN0nQsIt1I/zlg==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>7Dcc5UO3ahEBUdDkccosqA==</UUID>
+						<String><Key>Title</Key><Value>break-glass 20</Value></String>
+						<String><Key>UserName</Key><Value>breakglass20@example.onmicrosoft.com</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-fRR#8v=n=5H?2s</Value></String>
+						<String><Key>URL</Key><Value>https://portal.azure.com</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 20</Value></String>
+						<History><Entry><UUID>7Dcc5UO3ahEBUdDkccosqA==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>Kbe2gVlAMLxEXJo/GPyhDg==</UUID>
+						<String><Key>Title</Key><Value>break-glass 23</Value></String>
+						<String><Key>UserName</Key><Value>breakglass23@example.onmicrosoft.com</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-Rm$JzPe43fkW7y</Value></String>
+						<String><Key>URL</Key><Value>https://portal.azure.com</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 23</Value></String>
+						<History><Entry><UUID>Kbe2gVlAMLxEXJo/GPyhDg==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>O6Le3PNUwTG7OU+khsUUrw==</UUID>
+						<String><Key>Title</Key><Value>break-glass 26</Value></String>
+						<String><Key>UserName</Key><Value>breakglass26@example.onmicrosoft.com</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-Nio&amp;ZBRFTcT+ZB</Value></String>
+						<String><Key>URL</Key><Value>https://portal.azure.com</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 26</Value></String>
+						<History><Entry><UUID>O6Le3PNUwTG7OU+khsUUrw==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>3smrVeoL5zJH0kdZojOK9A==</UUID>
+						<String><Key>Title</Key><Value>break-glass 37</Value></String>
+						<String><Key>UserName</Key><Value>breakglass37@example.onmicrosoft.com</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-H=9zbDAvZK6Hgn</Value></String>
+						<String><Key>URL</Key><Value>https://portal.azure.com</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 37</Value></String>
+						<History><Entry><UUID>3smrVeoL5zJH0kdZojOK9A==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>lWXrN6yIHnaYTfLBxG2XZQ==</UUID>
+						<String><Key>Title</Key><Value>break-glass 42</Value></String>
+						<String><Key>UserName</Key><Value>breakglass42@example.onmicrosoft.com</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-Mf+Awjtd99pAe4</Value></String>
+						<String><Key>URL</Key><Value>https://portal.azure.com</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 42</Value></String>
+						<History><Entry><UUID>lWXrN6yIHnaYTfLBxG2XZQ==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>5A4qaKoIUHQ5rPc8LF/OkQ==</UUID>
+						<String><Key>Title</Key><Value>break-glass 48</Value></String>
+						<String><Key>UserName</Key><Value>breakglass48@example.onmicrosoft.com</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-R6?4UD&amp;7@7bp&amp;H</Value></String>
+						<String><Key>URL</Key><Value>https://portal.azure.com</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 48</Value></String>
+						<History><Entry><UUID>5A4qaKoIUHQ5rPc8LF/OkQ==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>itmRNqcj/w766K0WUhpdag==</UUID>
+						<String><Key>Title</Key><Value>break-glass 59</Value></String>
+						<String><Key>UserName</Key><Value>breakglass59@example.onmicrosoft.com</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-Du2GQU@pcW3xhh</Value></String>
+						<String><Key>URL</Key><Value>https://portal.azure.com</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 59</Value></String>
+						<History><Entry><UUID>itmRNqcj/w766K0WUhpdag==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+				</Group>
+				<Group>
+					<UUID>9JwyEp/eXtCmoqpVInXomw==</UUID>
+					<Name>AWS Accounts</Name>
+					<Entry>
+						<UUID>92YnfTpwfvzO3sVbUcUKXA==</UUID>
+						<String><Key>Title</Key><Value>break-glass 04</Value></String>
+						<String><Key>UserName</Key><Value></Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-Fb!NMtugz8kwp7</Value></String>
+						<String><Key>URL</Key><Value>https://portal.azure.com</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 4</Value></String>
+						<History><Entry><UUID>92YnfTpwfvzO3sVbUcUKXA==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>zVEfesvdqJgvctbYzz1UdQ==</UUID>
+						<String><Key>Title</Key><Value>break-glass 05</Value></String>
+						<String><Key>UserName</Key><Value>breakglass05@example.onmicrosoft.com</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-Qpn#?$9nTq?Mn@</Value></String>
+						<String><Key>URL</Key><Value>https://portal.azure.com</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 5</Value></String>
+						<History><Entry><UUID>zVEfesvdqJgvctbYzz1UdQ==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>efdSDv2HXQMbGsmfgrHPZg==</UUID>
+						<String><Key>Title</Key><Value>break-glass 10</Value></String>
+						<String><Key>UserName</Key><Value>breakglass10@example.onmicrosoft.com</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-QY-vjM4tzL!duT</Value></String>
+						<String><Key>URL</Key><Value>https://portal.azure.com</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 10</Value></String>
+						<History><Entry><UUID>efdSDv2HXQMbGsmfgrHPZg==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>4gHG3tjAXkOZitSldyqnSQ==</UUID>
+						<String><Key>Title</Key><Value>break-glass 28</Value></String>
+						<String><Key>UserName</Key><Value>breakglass28@example.onmicrosoft.com</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-Ru$#iyg*BJ6*g3</Value></String>
+						<String><Key>URL</Key><Value>https://portal.azure.com</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 28</Value></String>
+						<History><Entry><UUID>4gHG3tjAXkOZitSldyqnSQ==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>TMoVQySiDYTriBPUi4PTMw==</UUID>
+						<String><Key>Title</Key><Value>break-glass 35</Value></String>
+						<String><Key>UserName</Key><Value>breakglass35@example.onmicrosoft.com</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-ZsPHa?tjwFxpHg</Value></String>
+						<String><Key>URL</Key><Value>https://portal.azure.com</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 35</Value></String>
+						<History><Entry><UUID>TMoVQySiDYTriBPUi4PTMw==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>eqs1qy6WnC7kpuvX15YktQ==</UUID>
+						<String><Key>Title</Key><Value>break-glass 36</Value></String>
+						<String><Key>UserName</Key><Value>breakglass36@example.onmicrosoft.com</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-4buuSmf8JfitDg</Value></String>
+						<String><Key>URL</Key><Value>https://portal.azure.com</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 36</Value></String>
+						<Binary><Key>notes.txt</Key><Value Ref="0" /></Binary>
+						<History><Entry><UUID>eqs1qy6WnC7kpuvX15YktQ==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>WXSbeQlQsoL4DG4xqU3DPQ==</UUID>
+						<String><Key>Title</Key><Value>break-glass 55</Value></String>
+						<String><Key>UserName</Key><Value>breakglass55@example.onmicrosoft.com</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-p%sL8h5bUXhYip</Value></String>
+						<String><Key>URL</Key><Value>https://portal.azure.com</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 55</Value></String>
+						<History><Entry><UUID>WXSbeQlQsoL4DG4xqU3DPQ==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+					<Entry>
+						<UUID>ybCHute4iqtdNbBNk4IPtg==</UUID>
+						<String><Key>Title</Key><Value>break-glass 57</Value></String>
+						<String><Key>UserName</Key><Value>breakglass57@example.onmicrosoft.com</Value></String>
+						<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-tnS!i$SWH=K*s6</Value></String>
+						<String><Key>URL</Key><Value>https://portal.azure.com</Value></String>
+						<String><Key>Notes</Key><Value>KeePass sample 57</Value></String>
+						<History><Entry><UUID>ybCHute4iqtdNbBNk4IPtg==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+					</Entry>
+				</Group>
+			</Group>
+			<Group>
+				<UUID>x5Uf0fOtW6m/wWmZhiizeA==</UUID>
+				<Name>Vendors</Name>
+				<Entry>
+					<UUID>8pagnVntGTpjViLrUkxc0Q==</UUID>
+					<String><Key>Title</Key><Value>vendor portal 00</Value></String>
+					<String><Key>UserName</Key><Value>accounts</Value></String>
+					<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-8=*--8Rmn=xXdi</Value></String>
+					<String><Key>URL</Key><Value>https://vendor00.example.com</Value></String>
+					<String><Key>Notes</Key><Value>KeePass sample 0</Value></String>
+					<Binary><Key>notes.txt</Key><Value Ref="0" /></Binary>
+					<History><Entry><UUID>8pagnVntGTpjViLrUkxc0Q==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+				</Entry>
+				<Entry>
+					<UUID>6IhvLqY7mTwbVRe8Eb89fg==</UUID>
+					<String><Key>Title</Key><Value>vendor portal 01</Value></String>
+					<String><Key>UserName</Key><Value>accounts</Value></String>
+					<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-o=r-X9+?=SxgvS</Value></String>
+					<String><Key>URL</Key><Value>https://vendor01.example.com</Value></String>
+					<String><Key>Notes</Key><Value>KeePass sample 1</Value></String>
+					<History><Entry><UUID>6IhvLqY7mTwbVRe8Eb89fg==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+				</Entry>
+				<Entry>
+					<UUID>jZRaUa/yA8TNwpC2G7fnVA==</UUID>
+					<String><Key>Title</Key><Value>vendor portal 14</Value></String>
+					<String><Key>UserName</Key><Value>accounts</Value></String>
+					<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-Y3pG-MNp=c!eTR</Value></String>
+					<String><Key>URL</Key><Value>https://vendor14.example.com</Value></String>
+					<String><Key>Notes</Key><Value>KeePass sample 14</Value></String>
+					<History><Entry><UUID>jZRaUa/yA8TNwpC2G7fnVA==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+				</Entry>
+				<Entry>
+					<UUID>lkw3GTFtUJNbSHbGaV/7xg==</UUID>
+					<String><Key>Title</Key><Value>vendor portal 33</Value></String>
+					<String><Key>UserName</Key><Value>accounts</Value></String>
+					<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-68T5C6Qz!Eem6B</Value></String>
+					<String><Key>URL</Key><Value>https://vendor33.example.com</Value></String>
+					<String><Key>Notes</Key><Value>KeePass sample 33</Value></String>
+					<History><Entry><UUID>lkw3GTFtUJNbSHbGaV/7xg==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+				</Entry>
+				<Entry>
+					<UUID>JsfZ/Lnns4aE/Zn324isCg==</UUID>
+					<String><Key>Title</Key><Value>vendor portal 34</Value></String>
+					<String><Key>UserName</Key><Value>accounts</Value></String>
+					<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-=BZc9an&amp;3-uhW2</Value></String>
+					<String><Key>URL</Key><Value>https://vendor34.example.com</Value></String>
+					<String><Key>Notes</Key><Value>KeePass sample 34</Value></String>
+					<History><Entry><UUID>JsfZ/Lnns4aE/Zn324isCg==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+				</Entry>
+				<Entry>
+					<UUID>exmvqV1Kel/8zdMaMRRHhw==</UUID>
+					<String><Key>Title</Key><Value>vendor portal 41</Value></String>
+					<String><Key>UserName</Key><Value></Value></String>
+					<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-VtKuYiCTn7PTYd</Value></String>
+					<String><Key>URL</Key><Value>https://vendor41.example.com</Value></String>
+					<String><Key>Notes</Key><Value>KeePass sample 41</Value></String>
+					<History><Entry><UUID>exmvqV1Kel/8zdMaMRRHhw==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+				</Entry>
+				<Entry>
+					<UUID>pvtjCSQDAy0bAuSayGPqSg==</UUID>
+					<String><Key>Title</Key><Value>vendor portal 43</Value></String>
+					<String><Key>UserName</Key><Value>accounts</Value></String>
+					<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-RRKnWsgLQ3o8qk</Value></String>
+					<String><Key>URL</Key><Value>https://vendor43.example.com</Value></String>
+					<String><Key>Notes</Key><Value>KeePass sample 43</Value></String>
+					<History><Entry><UUID>pvtjCSQDAy0bAuSayGPqSg==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+				</Entry>
+				<Entry>
+					<UUID>AoIz75b6QxHl8ptbMSz8wg==</UUID>
+					<String><Key>Title</Key><Value>vendor portal 44</Value></String>
+					<String><Key>UserName</Key><Value>ops</Value></String>
+					<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-b$JmecA+DwKHDE</Value></String>
+					<String><Key>URL</Key><Value>https://vendor44.example.com</Value></String>
+					<String><Key>Notes</Key><Value>KeePass sample 44</Value></String>
+					<History><Entry><UUID>AoIz75b6QxHl8ptbMSz8wg==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+				</Entry>
+				<Entry>
+					<UUID>FC+GGlhgtAXCZ6NSX+nCmg==</UUID>
+					<String><Key>Title</Key><Value>vendor portal 45</Value></String>
+					<String><Key>UserName</Key><Value>accounts</Value></String>
+					<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-d@MtEVqQhEYe@t</Value></String>
+					<String><Key>URL</Key><Value>https://vendor45.example.com</Value></String>
+					<String><Key>Notes</Key><Value>KeePass sample 45</Value></String>
+					<Binary><Key>notes.txt</Key><Value Ref="0" /></Binary>
+					<History><Entry><UUID>FC+GGlhgtAXCZ6NSX+nCmg==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+				</Entry>
+				<Entry>
+					<UUID>cOrQ8EWefSXOuQmq4yDFxw==</UUID>
+					<String><Key>Title</Key><Value>vendor portal 58</Value></String>
+					<String><Key>UserName</Key><Value>ops</Value></String>
+					<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-#K%MUUC@GzN!AT</Value></String>
+					<String><Key>URL</Key><Value>https://vendor58.example.com</Value></String>
+					<String><Key>Notes</Key><Value>KeePass sample 58</Value></String>
+					<History><Entry><UUID>cOrQ8EWefSXOuQmq4yDFxw==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+				</Entry>
+			</Group>
+			<Group>
+				<UUID>ei0ok1PDXMya4jpks7/5PA==</UUID>
+				<Name>Recycle Bin</Name>
+				<Entry>
+					<UUID>mF6sqELMUp6KiaUS0ipJrg==</UUID>
+					<String><Key>Title</Key><Value>deleted test entry</Value></String>
+					<String><Key>UserName</Key><Value>old</Value></String>
+					<String><Key>Password</Key><Value ProtectInMemory="True">FAKE-deleted</Value></String>
+					<String><Key>URL</Key><Value></Value></String>
+					<String><Key>Notes</Key><Value></Value></String>
+					<History><Entry><UUID>mF6sqELMUp6KiaUS0ipJrg==</UUID><String><Key>Password</Key><Value>FAKE-old-password</Value></String></Entry></History>
+				</Entry>
+			</Group>
+		</Group>
+	</Root>
+</KeePassFile>

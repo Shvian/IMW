@@ -14,7 +14,7 @@ public class TlsError : Exception
 }
 
 /// <summary>
-/// HTTPS for the Workbench with a self-signed certificate (port of imw/ui/tls.py), kept in
+/// HTTPS for the Workbench with a self-signed certificate, kept in
 /// &lt;workspace&gt;/tls in the same files as the Python version, so either version can use it:
 ///
 ///   workbench.crt         the certificate (public, PEM). Trust it once with --trust-cert.

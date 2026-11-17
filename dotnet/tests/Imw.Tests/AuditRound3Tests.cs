@@ -10,7 +10,7 @@ namespace Imw.Tests;
 static class R3
 {
     public const string CfgJson = @"{""default_platform"": ""WinServerLocal"", ""safe_defaults"": {""numberOfDaysRetention"": 7, ""description"": ""Rules""}}";
-    public static readonly string AppJs = Path.Combine(TestBase.Root, "imw", "ui", "static", "app.js");
+    public static readonly string AppJs = Path.Combine(TestBase.Root, "dotnet", "src", "Imw", "Ui", "static", "app.js");
 
     public static SourceRecord Rec(string sid, params string[] folder)
     {

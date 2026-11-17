@@ -7,7 +7,7 @@ using System.Security.Principal;
 namespace Imw.Core;
 
 /// <summary>
-/// Only the Windows user who created a workspace or database can use it (port of imw/owner.py).
+/// Only the Windows user who created a workspace or database can use it.
 ///
 /// 1. Folder and file permissions (NTFS ACLs): only the owner, and SYSTEM, can open them.
 /// 2. An owner record: the workspace (.owner) and the database (meta table) record the owner's SID.

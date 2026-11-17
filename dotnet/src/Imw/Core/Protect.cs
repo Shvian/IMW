@@ -3,7 +3,7 @@ using System.Text;
 
 namespace Imw.Core;
 
-// Secret protection for values stored in the local database (port of imw/protect.py).
+// Secret protection for values stored in the local database.
 //
 // dpapi    Windows DPAPI (CryptProtectData). A value can be decrypted only by the same Windows
 //          account on the same machine (or the account's roaming profile in a domain). Each value

@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 namespace Imw.Core;
 
 /// <summary>
-/// Safe naming convention: build short, layered Safe names from abbreviations (port of imw/naming.py).
+/// Safe naming convention: build short, layered Safe names from abbreviations.
 ///
 /// Follows the usual CyberArk convention layers, most important first:
 ///   Environment (P/D/T/Q) - Location - Business unit/Application - Technology (SVR, DB,

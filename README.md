@@ -10,15 +10,11 @@
                                                         checks)
 ```
 
-The code lives in the `imw` folder (IMW = Idira Migration Workbench); run it with `python -m imw`. It was called `pam2pc` (and the project D2P) before: a workspace folder still named `pam2pc_workspace` next to it is picked up automatically, and the environment variables are now `IMW_UI_TEST_PASSWORD` and `IMW_UI_NO_OPEN`.
-
-Requirements: Python 3.8 or later, **standard library only** (Excel files included). There's nothing to `pip install` on the migration host.
-
-**No Python? Use IMW.exe.** The Workbench is also built as one Windows program, `IMW.exe` (about 52 MB, .NET 10 built in, nothing to install). It takes the same commands and options as `python -m imw` (`IMW.exe ui`, `IMW.exe convert ...`), uses the same workspace, database and config files, and writes byte-for-byte the same output files. Put `IMW.exe` next to `start-ui.cmd` and the launcher uses it instead of Python. To build it yourself (on any computer with the .NET 10 SDK): `dotnet publish dotnet/src/Imw -c Release -r win-x64 -o dist`. Every push also builds it on GitHub (Actions, workflow *Windows app*, artifact `IMW-win-x64`).
+The Workbench is one Windows program, `IMW.exe` (about 52 MB, .NET 10 built in, nothing to install). Every push builds it on GitHub (Actions, workflow *Windows app*, artifact `IMW-win-x64`). To build it yourself on any computer with the .NET 10 SDK: `dotnet publish dotnet/src/Imw -c Release -r win-x64 -o dist`. The code is C# in `dotnet/` (IMW = Idira Migration Workbench). It was called `pam2pc` (and the project D2P) before: a workspace folder still named `pam2pc_workspace` next to it is picked up automatically, and the environment variables are `IMW_UI_TEST_PASSWORD` and `IMW_UI_NO_OPEN`. The first versions were written in Python; databases, workspaces and settings files from them still work, and regular expressions in the settings use the same (Python-style) syntax.
 
 ## Easiest: the Idira Migration Workbench (menus, no SQL)
 
-Double-click `start-ui.cmd`, or run `python -m imw ui`. A page opens in your browser over HTTPS. **Sign in with your Windows password first**: only the Windows user who started the Workbench can unlock it, and Windows itself checks the password (nothing is stored).
+Put `IMW.exe` next to `start-ui.cmd` and double-click `start-ui.cmd`, or run `IMW.exe ui`. A page opens in your browser over HTTPS. **Sign in with your Windows password first**: only the Windows user who started the Workbench can unlock it, and Windows itself checks the password (nothing is stored).
 
 The **Overview** opens first. It lists the four steps with the state of each (for example "2 record types have no platform yet", "63 accounts have errors" or "3 users may get their access through a group") and a **Next** button on the step to do now, plus count tiles (will be uploaded, need a look, errors, left out by you, Safes, your changes) that each open their list. The left menu shows the four steps and the Activity log; the pages of a step appear under it while you are in that step.
 
@@ -58,7 +54,7 @@ The **Activity log** page shows the latest entries as plain sentences (for examp
 
 **Only the Windows user who created the workspace can use it.** The first start records you as the owner of the workspace folder and its database, and sets the folder's permissions so that only you (and SYSTEM) can open anything in it: the inbox exports, the database, the config and the outputs. Inherited permissions are removed, so other users of the machine, including administrators, can't read the files without taking ownership (which needs admin rights and leaves a trace in Windows). Another user who starts the Workbench or the command line on your workspace or database gets a "belongs to" message and nothing opens. While the Workbench runs, it also checks which Windows user owns each browser connection and refuses everyone but you, because `127.0.0.1` is shared by every session on the machine. A workspace must be a new or empty folder (or an existing Workbench workspace), because its permissions are locked down.
 
-**HTTPS.** The page is served over HTTPS with a certificate the Workbench makes on the computer it runs on, the first time it starts (RSA 2048, 397 days, standard library only). Its subject is the computer's name, and its alternative names (SAN) are the computer's full DNS name and host name, `localhost`, `127.0.0.1` and `::1`. If the computer is renamed, a new certificate is made at the next start. It is kept in `<workspace>\tls\`, with the private key encrypted by DPAPI for your account. The browser warns once because the certificate is self-signed: choose Advanced, then Continue. To stop the warning, start once with `python -m imw ui --trust-cert`, which adds the certificate to your own Windows user's Trusted Root store (Windows asks you to confirm). `--new-cert` makes a new one; `--no-tls` serves plain HTTP for troubleshooting only. The start-up window prints the certificate's SHA-256 fingerprint.
+**HTTPS.** The page is served over HTTPS with a certificate the Workbench makes on the computer it runs on, the first time it starts (RSA 2048, 397 days). Its subject is the computer's name, and its alternative names (SAN) are the computer's full DNS name and host name, `localhost`, `127.0.0.1` and `::1`. If the computer is renamed, a new certificate is made at the next start. It is kept in `<workspace>\tls\`, with the private key encrypted by DPAPI for your account. The browser warns once because the certificate is self-signed: choose Advanced, then Continue. To stop the warning, start once with `IMW.exe ui --trust-cert`, which adds the certificate to your own Windows user's Trusted Root store (Windows asks you to confirm). `--new-cert` makes a new one; `--no-tls` serves plain HTTP for troubleshooting only. The start-up window prints the certificate's SHA-256 fingerprint.
 
 The page is served only to this computer (`127.0.0.1`), through a one-time link that becomes a Secure, HttpOnly session cookie. Five wrong passwords in a row add a growing wait, and every sign-in, lock and failed attempt is logged. Your Windows account lockout policy also counts failed attempts. No page ever shows a secret. The UI runs as you, so DPAPI works the same as on the command line. Everything lives in the workspace folder: `migration.db`, `config.json`, `inbox\` and `output\`. More screenshots are in [docs/ui](docs/ui).
 
@@ -69,28 +65,28 @@ Sign-in needs Windows. For automated tests on other systems, set `IMW_UI_TEST_PA
 **The staging database.** Load the exports once into an SQLite file on the migration host. Work on the data there with rules, edits and SQL queries, then extract upload files whenever you need them, all at once or in waves.
 
 ```
-python -m imw init-config my_config.json                       # starter config to edit
+IMW.exe init-config my_config.json                       # starter config to edit
 
-python -m imw ingest  --db migration.db -i export.csv -p permissions.csv -p more_permissions.csv -i vault.xml
-python -m imw ingest  --db migration.db -i secrets-export.csv -i allsecrets.csv --reference lauserslist.csv \
+IMW.exe ingest  --db migration.db -i export.csv -p permissions.csv -p more_permissions.csv -i vault.xml
+IMW.exe ingest  --db migration.db -i secrets-export.csv -i allsecrets.csv --reference lauserslist.csv \
                       -p whatfolderpermissionsexistforgroups.csv -p whatfolderscanalluserssee.csv     # Delinea reports
 #   -> secrets are encrypted with Windows DPAPI as they are stored; securely delete the exports now
-python -m imw map     --db migration.db -c my_config.json      # apply the rules (rerun after config changes)
-python -m imw query   --db migration.db --report list          # built-in reports
-python -m imw query   --db migration.db --report invalid-safes
-python -m imw query   --db migration.db "SELECT target_safe, COUNT(*) FROM accounts GROUP BY 1"
-python -m imw set     --db migration.db --where "folder LIKE '\Unfiled%'" --migrate N --reason "out of scope"
-python -m imw set     --db migration.db -r delinea:export:1042 --safe "APP-Payments" --platform WinDomain
-python -m imw set     --db migration.db --from-review edited/Accounts_Review.csv
-python -m imw extract --db migration.db -o wave1 --where "target_safe LIKE 'WIN-%'"                     # dry run
-python -m imw extract --db migration.db -o wave1 --where "target_safe LIKE 'WIN-%'" --include-secrets --force
+IMW.exe map     --db migration.db -c my_config.json      # apply the rules (rerun after config changes)
+IMW.exe query   --db migration.db --report list          # built-in reports
+IMW.exe query   --db migration.db --report invalid-safes
+IMW.exe query   --db migration.db "SELECT target_safe, COUNT(*) FROM accounts GROUP BY 1"
+IMW.exe set     --db migration.db --where "folder LIKE '\Unfiled%'" --migrate N --reason "out of scope"
+IMW.exe set     --db migration.db -r delinea:export:1042 --safe "APP-Payments" --platform WinDomain
+IMW.exe set     --db migration.db --from-review edited/Accounts_Review.csv
+IMW.exe extract --db migration.db -o wave1 --where "target_safe LIKE 'WIN-%'"                     # dry run
+IMW.exe extract --db migration.db -o wave1 --where "target_safe LIKE 'WIN-%'" --include-secrets --force
 ```
 
 **One-shot: `convert`.** This does everything in memory in a single command and keeps nothing between runs. It's handy for quick looks and small jobs.
 
 ```
-python -m imw convert -i export.csv -p permissions.csv -c my_config.json -o run1          # dry run
-python -m imw convert ... -o run2 --overrides run1/review/Accounts_Review.csv --include-secrets
+IMW.exe convert -i export.csv -p permissions.csv -c my_config.json -o run1          # dry run
+IMW.exe convert ... -o run2 --overrides run1/review/Accounts_Review.csv --include-secrets
 ```
 
 ## The staging database
@@ -131,7 +127,7 @@ To add a source, see [Adding a source adapter](#adding-a-source-adapter).
 - **Export files** (`-i`), described above.
 - **Permissions CSV** (`-p`, optional). Use it for sources whose export has no access data, such as a Delinea CSV export and KeePass (a Delinea XML export carries its own; a permissions file only fills in records that have none there). It has one grant per row, with the columns `Folder Path, Secret Name, Secret ID, Group, Permission` and an optional `Member Type`. A row with an ID or name applies to that record. A row with only a folder applies to that folder and its subfolders, and the nearest folder wins. Record-level rows take precedence. Repeat `-p` to merge several permissions files; a group listed twice for the same folder or record counts once. Build it by hand, or save one of Secret Server's folder-permission reports as CSV and use it as it is: *What folder permissions exist for groups?* (best, as it keeps the groups), *What folder permissions exist?*, *What folders can a user see?* or *What folders can all users see?*. Their group or user, domain, and secret or folder permission columns are recognised; a secret permission column wins over a folder one, a cell listing several rights keeps the strongest, and inherited rows are read like assigned ones (they repeat the parent's access). Load the user report together with the group report: then only users whose access no group explains become Safe members.
 - **Delinea reference reports** (`--reference`, or as `-i`: they are recognised from their columns and not read as accounts). *All secrets with their template* (`allsecrets.csv`: Name, Secret template, Folder) gives each secret its template, matched on the secret name; Folder only settles a name that appears with different templates. Use it when the secrets export has no template column: a secret not in it gets no platform and an error. The *users list* (`lauserslist.csv`: Username, Display name, ...) turns the full names in the folder reports into the Username (the UPN), which is what is uploaded. The groups list, the template list and the role reports are recognised and skipped (not needed). With *What folders can all users see?* and the group report together, a user is a Safe member only where no group on the folder explains its access; the others wait for your decision (see **Confirm user access** above, or `review/Users_To_Decide.csv` with `convert`). Synthetic examples of every report are in `samples/delinea_reports/`.
-- **Config** (`-c`, optional). It is JSON and only needs the keys you change; everything else uses the defaults. `init-config` writes a starter file with every key; the comments in `imw/config.py` explain each one.
+- **Config** (`-c`, optional). It is JSON and only needs the keys you change; everything else uses the defaults. `init-config` writes a starter file with every key; the sections below explain them.
 - **Overrides** (`--overrides`, `convert` only). This is an edited copy of `review/Accounts_Review.csv`. Only the values you *changed* in `Migrate`, `Target_Safe`, `Platform_ID` and `Account_Name` are applied, matched by `Record_ID`.
 
 ## How records are mapped
@@ -175,7 +171,7 @@ A code that already appears earlier in the name is not repeated. When a name is 
 All of this is set under `safe_convention`:
 - `template` and `template_no_folders`
 - `layers`: the placeholders and their value rows
-- `abbreviations`: folder names or words with your code, which win over the built-in list in `imw/naming.py`
+- `abbreviations`: folder names or words with your code, which win over the built-in list in `dotnet/src/Imw/Core/Naming.cs`
 - `skip_folder_levels`
 - `default_environment`, `environment_words` and `platform_codes`: older settings, still read
 
@@ -263,12 +259,11 @@ What you still need to do:
 
 ## Adding a source adapter
 
-1. Create `imw/adapters/<name>.py` with a class that subclasses `Adapter`. Give it these members:
-   - `name`, `description` and `extensions`
-   - `sniff(path)`, which returns a score from 0 to 100
-   - `read(path, cfg, encoding)`, which yields `SourceRecord` objects (see `imw/model.py`)
-2. For tabular data, reuse `adapters/rows.record_from_row()`. It already handles aliases, secrets, attachments, access columns and the extra columns.
-3. Register the class in `ADAPTERS` in `imw/adapters/__init__.py`, put a sample in `samples/` and add tests.
+1. Create `dotnet/src/Imw/Adapters/<Name>.cs` with a class that subclasses `Adapter` (`Adapters/Base.cs`). Give it a name, a description and its file extensions, and override:
+   - `Sniff(path)`, which returns a score from 0 to 100
+   - `Read(path, cfg, encoding)`, which returns `SourceRecord` objects (see `Core/Model.cs`)
+2. For tabular data, reuse `Rows.RecordFromRow()` in `Adapters/Rows.cs`. It already handles aliases, secrets, attachments, access columns and the extra columns.
+3. Register the class in `Adapter.All` in `Adapters/Base.cs`, put a sample in `samples/` and add tests to `dotnet/tests/Imw.Tests`.
 
 The rules, validation and writers need no changes: they only see the common model.
 
@@ -276,10 +271,9 @@ The rules, validation and writers need no changes: they only see the common mode
 
 | Path | What it is |
 |---|---|
-| `imw/` | The converter: `adapters/`, `config.py`, `model.py`, `transform.py`, `writers.py`, `store.py` (staging database), `protect.py` (DPAPI), `ui/` (Workbench), `xlsx.py`, `cli.py` |
-| `dotnet/` | The same Workbench in C# for .NET 10, built into `IMW.exe`: `src/Imw` (the program), `tests/Imw.Tests` (`dotnet test`, the Python tests ported to xUnit), `tests/parity` (scripts that run both versions on the same inputs and compare every output file and UI answer) |
-| `samples/` | Sample exports for every source, with matching configs |
-| `tests/` | `python -m unittest discover -s tests`, plus `tests/ui_browser_test.js` (Playwright) for the UI |
+| `dotnet/src/Imw` | The Workbench in C# for .NET 10, built into `IMW.exe`: `Adapters/` (source formats), `Core/` (settings, model, rules, writers, staging database, DPAPI, Excel), `Ui/` (the web server and `Ui/static`, the pages built into the exe), `Cli.cs` |
+| `dotnet/tests/Imw.Tests` | `dotnet test dotnet/tests/Imw.Tests` (xUnit) |
+| `dotnet/tests/ui` | Browser tests (Node.js + Playwright): `dotnet build dotnet/src/Imw`, then `node dotnet/tests/ui/run.js` |
+| `samples/` | Sample exports for every source, with matching configs, and `sample_workspace/`, a ready-to-try workspace (copy it, then `IMW.exe ui --workspace <copy>`) |
 | `docs/ui/` | UI screenshots |
-| `start-ui.cmd` | Double-click launcher for the Workbench on Windows |
-| `tools/` | A synthetic Delinea data generator, for volume testing |
+| `start-ui.cmd` | Double-click launcher for `IMW.exe ui` |

@@ -16,9 +16,6 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
       - name: Tests (.NET)
         run: dotnet test dotnet/tests/Imw.Tests -c Release
       - name: Build IMW.exe
@@ -28,9 +25,3 @@ jobs:
           name: IMW-win-x64
           path: dist/IMW.exe
           if-no-files-found: error
-      - name: Tests (Python)
-        run: python -m unittest discover -s tests
-      - name: Same output as the Python version
-        run: |
-          dotnet build dotnet/src/Imw -c Debug
-          python dotnet/tests/parity/run_parity.py

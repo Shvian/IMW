@@ -1,0 +1,472 @@
+Active Directory Account
+Secret ID,Secret Name,Folder Path,Domain,Username,Password,Notes
+20003,svc_scan8@corp,\Infrastructure\Windows\Domain Controllers,corp.example.com,svc_scan8,FAKE-+HdnSh33+LX!4m,Sample record 2
+20051,svc_deploy52@corp,\Infrastructure\Windows\Domain Controllers,corp.example.com,svc_deploy52,FAKE-3My-XUvnW?XJP2,Sample record 50
+20094,adm_backup7@corp,\Infrastructure\Windows\Domain Controllers,corp.example.com,adm_backup7,FAKE-UrAbp9P%syi2Ry,Sample record 93
+20096,adm_iis21@corp,\Infrastructure\Windows\Domain Controllers,corp.example.com,adm_iis21,FAKE-f&QxUteHZ!U9Vk,Sample record 95
+20133,adm_sql19@corp,\Infrastructure\Windows\Domain Controllers,corp.example.com,adm_sql19,FAKE-KH=6uJ9BYXzoA9,Sample record 132
+20143,svc_deploy10@corp,\Infrastructure\Windows\Domain Controllers,corp.example.com,svc_deploy10,FAKE-Uk2kJ-jw@TENb7,Sample record 142
+20179,svc_iis37@corp,\Infrastructure\Windows\Domain Controllers,corp.example.com,svc_iis37,FAKE-RLdfh=HhKuNFdY,Sample record 178
+20202,svc_sccm16@corp,\Infrastructure\Windows\Domain Controllers,corp.example.com,svc_sccm16,FAKE-eF5jFV$C&PNZU@,Sample record 201
+20216,svc_sccm14@corp,\Infrastructure\Windows\Domain Controllers,corp.example.com,svc_sccm14,FAKE-En9TaprbJ4DXBx,Sample record 215
+20226,svc_iis58@corp,\Infrastructure\Windows\Domain Controllers,corp.example.com,svc_iis58,FAKE-gCDQLMbV%tK?vr,Sample record 225
+20230,svc_sql33@corp,\Infrastructure\Windows\Domain Controllers,corp.example.com,svc_sql33,FAKE-od#aZcqjSWHe$u,Sample record 229
+20236,adm_deploy10@corp,\Infrastructure\Windows\Domain Controllers,corp.example.com,adm_deploy10,FAKE-srYua6HAfvBiFE,Sample record 235
+20242,svc_deploy51@corp,\Infrastructure\Windows\Domain Controllers,corp.example.com,svc_deploy51,FAKE-gif?YfYbQ$dk7=,Sample record 241
+20250,svc_iis27@corp,\Infrastructure\Windows\Domain Controllers,corp.example.com,svc_iis27,FAKE-az5t&WrzakdAsr,Sample record 249
+20262,adm_sql24@corp,\Infrastructure\Windows\Domain Controllers,corp.example.com,adm_sql24,FAKE-xTwyiUWWVVQRWq,Sample record 261
+20277,svc_sccm51@corp,\Infrastructure\Windows\Domain Controllers,corp.example.com,svc_sccm51,FAKE-ByQstSEacCfoNb,Sample record 276
+20279,adm_sccm16@corp,\Infrastructure\Windows\Domain Controllers,corp.example.com,adm_sccm16,FAKE-7htgzE?pk%&$BG,Sample record 278
+20319,svc_sql38@corp,\Infrastructure\Windows\Domain Controllers,corp.example.com,svc_sql38,FAKE-8v#xS2Jo6noRd8,Sample record 318
+20331,adm_iis1@corp,\Infrastructure\Windows\Domain Controllers,corp.example.com,adm_iis1,FAKE-=kTdxQyuR=Z7iM,Sample record 330
+20337,adm_sccm39@corp,\Infrastructure\Windows\Domain Controllers,corp.example.com,adm_sccm39,FAKE-imD5k@FkT$cchU,Sample record 336
+20338,adm_sql32@corp,\Infrastructure\Windows\Domain Controllers,corp.example.com,adm_sql32,FAKE-5xA86H-P+F4T+*,Sample record 337
+20342,svc_deploy19@corp,\Infrastructure\Windows\Domain Controllers,corp.example.com,svc_deploy19,FAKE-$sHgg!i%92QfZx,Sample record 341
+20352,adm_iis36@corp,\Infrastructure\Windows\Domain Controllers,corp.example.com,adm_iis36,FAKE-*Ex8S!S@tA*VBu,Sample record 351
+20367,svc_sccm55@corp,\Infrastructure\Windows\Domain Controllers,corp.example.com,svc_sccm55,FAKE-eRsA?6X@BLYfeY,Sample record 366
+20389,adm_scan29@corp,\Infrastructure\Windows\Domain Controllers,corp.example.com,adm_scan29,FAKE-jpWzxfM#PQd?iE,Sample record 388
+20393,adm_backup39@corp,\Infrastructure\Windows\Domain Controllers,corp.example.com,adm_backup39,FAKE-sZtV$FdUPKzx*L,Sample record 392
+
+Windows Account
+Secret ID,Secret Name,Folder Path,Machine,Username,Password,Notes
+20006,Administrator@app226,\Infrastructure\Windows\Member Servers\Legacy 2012R2,app226.corp.example.com,,FAKE-QuGPAVNxDKczVi,Sample record 5
+20009,Administrator@bat412,\Applications\Payments\Prod,bat412.corp.example.com,Administrator,FAKE-b?+wDDm%jav!vx,Sample record 8
+20010,Administrator@app053,\Infrastructure\Windows\Member Servers\Legacy 2012R2,app053.corp.example.com,Administrator,FAKE-%buc&A&vLR2b&Y,Sample record 9
+20015,Administrator@srv453,\Unfiled,srv453.corp.example.com,Administrator,FAKE-hamFN-!DJ9s-=b,Sample record 14
+20023,svc_app@bat380,\Infrastructure\Windows\Member Servers\Legacy 2012R2,bat380.corp.example.com,svc_app,FAKE-8WHLz-nhoF#ZWk,Sample record 22
+20027,Administrator@bat270,\Infrastructure\Windows\Member Servers\Legacy 2012R2,bat270.corp.example.com,Administrator,FAKE-%iKjgcf#+zK&nF,Sample record 26
+20030,svc_app@app383,\Infrastructure\Windows\Member Servers\Legacy 2012R2,app383.corp.example.com,svc_app,FAKE-xS=mQxf+*3DWA*,Sample record 29
+20032,Administrator@web200,\Infrastructure\Windows\Member Servers\Legacy 2012R2,web200.corp.example.com,Administrator,FAKE-x7mGmPGnVhk8=r,Sample record 31
+20036,Administrator@db460,\Infrastructure\Windows\Member Servers\Legacy 2012R2,db460.corp.example.com,Administrator,FAKE-24!8qCSE7%*AK3,Sample record 35
+20040,svc_app@srv357,\Unfiled,srv357.corp.example.com,svc_app,FAKE-6x3bAo-Jc+bqaf,Sample record 39
+20044,localadmin@bat018,\Infrastructure\Windows\Member Servers\Legacy 2012R2,bat018.corp.example.com,localadmin,FAKE-sW7PKjLcN6+!Yf,Sample record 43
+20049,Administrator@sw248,\Unfiled,sw248.corp.example.com,Administrator,FAKE-5N3VMW3k5nq6Gq,Sample record 48
+20052,Administrator@app155,\Unfiled,app155.corp.example.com,Administrator,FAKE-F&rG2MWe4b%ZdF,Sample record 51
+20053,localadmin@sw081,\Applications\Payments\Prod,sw081.corp.example.com,localadmin,FAKE-wRVhaFEsR2#q6q,Sample record 52
+20056,Administrator@bat487,\Applications\Payments\Prod,bat487.corp.example.com,Administrator,FAKE-DJQaS*nXeJviWs,Sample record 55
+20058,svc_app@app406,\Applications\Payments\Prod,app406.corp.example.com,svc_app,FAKE-Q@Gx!?Pi3yjzyU,Sample record 57
+20061,billing@portal.vendor1.example.com,\Unfiled,app069.corp.example.com,Administrator,FAKE-hV!NJUk4jBHv9?,Sample record 60
+20062,Administrator@app085,\Unfiled,app085.corp.example.com,Administrator,FAKE-FHD4ZgWHPBbU5b,Sample record 61
+20066,Administrator@sw467,\Infrastructure\Windows\Member Servers\Legacy 2012R2,sw467.corp.example.com,Administrator,FAKE-UEDQPWvUDDFTFJ,Sample record 65
+20067,svc_app@srv439,\Infrastructure\Windows\Member Servers,srv439.corp.example.com,svc_app,FAKE-bJ2PhccQEEMn&N,Sample record 66
+20071,Administrator@web404,\Infrastructure\Windows\Member Servers\Legacy 2012R2,web404.corp.example.com,Administrator,FAKE-swN43M7Dycpj7-,Sample record 70
+20073,Administrator@web356,\Applications\Payments\Prod,web356.corp.example.com,Administrator,FAKE--o$CUi4Ah86ffZ,Sample record 72
+20076,Administrator@web032,\Applications\Payments\Prod,web032.corp.example.com,Administrator,FAKE-K66wjPep4@e3$d,Sample record 75
+20083,Administrator@web154,\Infrastructure\Windows\Member Servers,web154.corp.example.com,Administrator,FAKE-AFa%H-zULdF#YN,Sample record 82
+20086,svc_app@sw031,\Unfiled,sw031.corp.example.com,svc_app,FAKE-y9%XUQxW6&2!kt,Sample record 85
+20093,Administrator@db164,\Infrastructure\Windows\Member Servers\Legacy 2012R2,db164.corp.example.com,Administrator,FAKE-M-3Z!WygeYEiwH,Sample record 92
+20095,localadmin@web087,\Unfiled,web087.corp.example.com,,FAKE-gUB$aEWeKyT!N2,Sample record 94
+20098,Administrator@bat459,\Infrastructure\Windows\Member Servers,bat459.corp.example.com,Administrator,FAKE-&nRibx8jggN2o6,Sample record 97
+20100,svc_app@app360,\Infrastructure\Windows\Member Servers,app360.corp.example.com,svc_app,FAKE-Aw?!?KRwhszHoP,Sample record 99
+20101,Administrator@web263,\Unfiled,web263.corp.example.com,Administrator,FAKE-@TChMeZXPqiDCN,Sample record 100
+20105,Administrator@db222,\Infrastructure\Windows\Member Servers\Legacy 2012R2,db222.corp.example.com,Administrator,FAKE--CeT63#FFEkkEN,Sample record 104
+20110,svc_app@sw447,\Infrastructure\Windows\Member Servers\Legacy 2012R2,sw447.corp.example.com,svc_app,FAKE-9H?29wP?eV6uwT,Sample record 109
+20116,Administrator@web028,\Infrastructure\Windows\Member Servers,web028.corp.example.com,Administrator,FAKE-heFWYrA#p6i+Jh,Sample record 115
+20117,Administrator@bat368,\Applications\Payments\Prod,bat368.corp.example.com,Administrator,FAKE-5q4*ChMYXwzZAo,Sample record 116
+20118,Administrator@sw186,\Applications\Payments\Prod,sw186.corp.example.com,Administrator,FAKE-t2t4JR7vh2a$nv,Sample record 117
+20125,Administrator@sw311,\Infrastructure\Windows\Member Servers,sw311.corp.example.com,Administrator,FAKE-hQErcvM63em@Mv,Sample record 124
+20130,localadmin@srv240,\Infrastructure\Windows\Member Servers,srv240.corp.example.com,localadmin,FAKE-LtjP*8*asBwMni,Sample record 129
+20137,Administrator@web069,\Infrastructure\Windows\Member Servers\Legacy 2012R2,web069.corp.example.com,Administrator,FAKE-=P#3Xa%MTyH4gG,Sample record 136
+20141,Administrator@sw248,\Unfiled,sw248.corp.example.com,Administrator,FAKE-EKZ3%W!3f?Kxt@,Sample record 140
+20145,Administrator@sw189,\Unfiled,sw189.corp.example.com,Administrator,FAKE-gvVTcA#4!3pXJU,Sample record 144
+20148,svc_app@srv038,\Infrastructure\Windows\Member Servers,srv038.corp.example.com,svc_app,FAKE-TAakBsDdssD*4u,Sample record 147
+20150,Administrator@srv480,\Applications\Payments\Prod,srv480.corp.example.com,Administrator,FAKE-TRH-cZjxVYW@Dv,Sample record 149
+20162,Administrator@srv104,\Unfiled,srv104.corp.example.com,Administrator,FAKE-7oyF9zxFo58iwg,Sample record 161
+20163,Administrator@sw067,\Applications\Payments\Prod,sw067.corp.example.com,Administrator,FAKE-yJctKL!z3@6+DP,Sample record 162
+20165,Administrator@web061,\Applications\Payments\Prod,web061.corp.example.com,Administrator,FAKE-eKBP+Md#Hbt&H6,Sample record 164
+20170,svc_app@app346,\Unfiled,app346.corp.example.com,svc_app,FAKE-dWUc?N$NbMG6ei,Sample record 169
+20172,Administrator@db195,\Infrastructure\Windows\Member Servers,db195.corp.example.com,Administrator,FAKE-oeMb$VZ8t4QEwR,Sample record 171
+20174,Administrator@db394,\Unfiled,db394.corp.example.com,Administrator,FAKE-pENAvaVpGYtv!&,Sample record 173
+20183,svc_app@web211,\Unfiled,web211.corp.example.com,svc_app,FAKE-#UtdLw3$EotMkZ,Sample record 182
+20186,Administrator@web187,\Unfiled,web187.corp.example.com,Administrator,FAKE-HRz!q=V#Es&TAk,Sample record 185
+20190,Administrator@db180,\Unfiled,db180.corp.example.com,Administrator,FAKE-U?5nTduJ5J-Ag8,Sample record 189
+20191,svc_app@app294,\Applications\Payments\Prod,app294.corp.example.com,svc_app,FAKE-SVeg-RnEznS2mJ,Sample record 190
+20198,Administrator@app436,\Unfiled,app436.corp.example.com,Administrator,FAKE-@i=2cwiCam?82W,Sample record 197
+20201,localadmin@bat451,\Unfiled,bat451.corp.example.com,localadmin,FAKE-UR+zJgfA3eEhNb,Sample record 200
+20204,Administrator@web209,\Applications\Payments\Prod,web209.corp.example.com,Administrator,FAKE-LCHDT8HZo9iTip,Sample record 203
+20212,Administrator@sw299,\Infrastructure\Windows\Member Servers\Legacy 2012R2,sw299.corp.example.com,Administrator,FAKE-HJoBkSwxYTyiyx,Sample record 211
+20217,localadmin@app034,\Unfiled,,localadmin,FAKE-y=*dda%bq#kesE,Sample record 216
+20222,svc_app@app345,\Unfiled,app345.corp.example.com,svc_app,FAKE-B9%uZ$sf8Mc54T,Sample record 221
+20224,svc_app@sw233,\Unfiled,sw233.corp.example.com,svc_app,FAKE-wv8rY&CW3yQoch,Sample record 223
+20233,Administrator@web351,\Infrastructure\Windows\Member Servers\Legacy 2012R2,web351.corp.example.com,Administrator,FAKE-pJu8?LU3NGEnT@,Sample record 232
+20243,Administrator@web484,\Infrastructure\Windows\Member Servers,web484.corp.example.com,Administrator,FAKE-9MJ6Ur#Xdu5hbf,Sample record 242
+20249,Administrator@web281,\Infrastructure\Windows\Member Servers,web281.corp.example.com,Administrator,FAKE-!9Cu3=UG?U+Y2W,Sample record 248
+20254,Administrator@web245,\Infrastructure\Windows\Member Servers,web245.corp.example.com,Administrator,FAKE-MLEd$%LouZTRZ-,Sample record 253
+20256,Administrator@db350,\Unfiled,db350.corp.example.com,Administrator,FAKE-2f$&@bjW?Rr4XT,Sample record 255
+20257,svc_app@web253,\Unfiled,web253.corp.example.com,svc_app,FAKE-yN+tWuNyzQT+nt,Sample record 256
+20258,Administrator@sw281,\Applications\Payments\Prod,sw281.corp.example.com,Administrator,FAKE-rDrc#Rn#yx&bYx,Sample record 257
+20265,svc_app@web387,\Infrastructure\Windows\Member Servers\Legacy 2012R2,web387.corp.example.com,svc_app,FAKE-K=!hVYq8sP=7XF,Sample record 264
+20266,Administrator@srv434,\Unfiled,srv434.corp.example.com,Administrator,FAKE-Hn-FtGP?a=4Xfc,Sample record 265
+20273,billing@portal.vendor1.example.com,\Infrastructure\Windows\Member Servers,sw151.corp.example.com,,FAKE-!y?%h=zoo4Ei&s,Sample record 272
+20280,Administrator@web117,\Applications\Payments\Prod,web117.corp.example.com,Administrator,FAKE-%2WPj9Mq$dAJMM,Sample record 279
+20282,Administrator@app278,\Unfiled,app278.corp.example.com,Administrator,FAKE-JYZj-TX=roT&QT,Sample record 281
+20285,Administrator@srv012,\Infrastructure\Windows\Member Servers\Legacy 2012R2,srv012.corp.example.com,Administrator,FAKE-GWompMc9mAHnfq,Sample record 284
+20286,localadmin@bat283,\Infrastructure\Windows\Member Servers\Legacy 2012R2,bat283.corp.example.com,localadmin,FAKE-Uz$z#bemk=hTq3,Sample record 285
+20287,Administrator@app049,\Infrastructure\Windows\Member Servers,app049.corp.example.com,Administrator,FAKE-9y$=v-*Dw4cWv+,Sample record 286
+20288,Administrator@app269,\Applications\Payments\Prod,,Administrator,FAKE-7Z%-cbhwNjmvR&,Sample record 287
+20294,svc_app@db023,\Infrastructure\Windows\Member Servers\Legacy 2012R2,db023.corp.example.com,svc_app,FAKE-qWQMJpDyY3-6RR,Sample record 293
+20307,Administrator@db294,\Infrastructure\Windows\Member Servers,db294.corp.example.com,Administrator,FAKE-RC*U4V$kv4WaMt,Sample record 306
+20310,Administrator@app229,\Infrastructure\Windows\Member Servers,app229.corp.example.com,Administrator,FAKE-J!DC&5-M5fTG5g,Sample record 309
+20312,Administrator@srv252,\Applications\Payments\Prod,srv252.corp.example.com,Administrator,FAKE-4P+8-DQ%pF6mA%,Sample record 311
+20315,localadmin@db079,\Applications\Payments\Prod,db079.corp.example.com,localadmin,FAKE-YnyC@k+GRWA3Js,Sample record 314
+20322,Administrator@db449,\Unfiled,db449.corp.example.com,Administrator,FAKE-7C$5bMMeqzb6y#,Sample record 321
+20326,svc_app@sw207,\Infrastructure\Windows\Member Servers,srv250.corp.example.com,svc_app,FAKE-4my!fkZ$ZW#vT3,Sample record 325
+20327,svc_app@app156,\Infrastructure\Windows\Member Servers\Legacy 2012R2,app156.corp.example.com,svc_app,FAKE-mgNt2frBB98yp+,Sample record 326
+20329,Administrator@srv241,\Unfiled,srv241.corp.example.com,Administrator,FAKE-s%AjoT9cn*Zbq3,Sample record 328
+20340,Administrator@bat138,\Infrastructure\Windows\Member Servers,bat138.corp.example.com,Administrator,FAKE-+6GSt76J8g?x?3,Sample record 339
+20353,localadmin@bat425,\Unfiled,bat425.corp.example.com,localadmin,FAKE-yD+FR%KM4sfj!L,Sample record 352
+20357,Administrator@sw385,\Applications\Payments\Prod,sw385.corp.example.com,Administrator,FAKE-uttqUYCJ$re-PA,Sample record 356
+20365,Administrator@bat154,\Infrastructure\Windows\Member Servers,bat154.corp.example.com,Administrator,FAKE-PD2@69wC!UEW$r,Sample record 364
+20369,Administrator@srv443,\Unfiled,srv443.corp.example.com,Administrator,FAKE-EcES@f63gkvVu#,Sample record 368
+20371,Administrator@db480,\Applications\Payments\Prod,db480.corp.example.com,Administrator,FAKE-j4Q6fiz5N7@ZWT,Sample record 370
+20375,svc_app@web255,\Infrastructure\Windows\Member Servers,web255.corp.example.com,svc_app,FAKE--D%WqpP*&KKX99,Sample record 374
+20382,Administrator@db238,\Infrastructure\Windows\Member Servers,db238.corp.example.com,Administrator,FAKE-f2i!ViQTh-d!XP,Sample record 381
+20397,Administrator@db038,\Infrastructure\Windows\Member Servers,db038.corp.example.com,Administrator,FAKE-H+jeHuCum=bPNw,Sample record 396
+20400,localadmin@srv032,\Infrastructure\Windows\Member Servers,srv032.corp.example.com,localadmin,,Sample record 399
+
+Unix Account (SSH)
+Secret ID,Secret Name,Folder Path,Machine,Username,Password,Port,Notes
+20004,svc_app@web443,\Infrastructure\Linux\Batch: Nightly/Weekly Jobs,,svc_app,FAKE-6wzfVLYVffB*Zj,22,Sample record 3
+20011,root@bat171,\Applications\Storefront\Prod,bat171.corp.example.com,root,FAKE-3$4LWXSDV$U%vV,22,Sample record 10
+20012,root@srv008,\Infrastructure\Linux\Batch: Nightly/Weekly Jobs,srv008.corp.example.com,root,,22,Sample record 11
+20013,root@web447,\Infrastructure\Linux\Batch: Nightly/Weekly Jobs,web447.corp.example.com,root,FAKE-dDido-gsj6SHw#,22,Sample record 12
+20014,root@sw067,\Applications\Storefront\Prod,sw067.corp.example.com,root,FAKE-@=C9ZAVYU%RHs?,22,Sample record 13
+20017,svc_app@srv109,\Applications\Storefront\Prod,srv109.corp.example.com,svc_app,FAKE-RVxUiT$eN3*WeW,22,Sample record 16
+20018,svc_app@sw207,\Applications\Storefront\Prod,sw207.corp.example.com,svc_app,FAKE-6bwrMxCu#9C2t?,22,Sample record 17
+20038,root@bat392,\Applications\Storefront\Prod,bat392.corp.example.com,root,FAKE-NKp@a2jeABp#mr,22,Sample record 37
+20045,root@web236,\Infrastructure\Linux\Batch: Nightly/Weekly Jobs,web236.corp.example.com,root,FAKE-Roomkyijb9hZhg,22,Sample record 44
+20046,root@db453,\Infrastructure\Linux\Batch: Nightly/Weekly Jobs,db453.corp.example.com,root,FAKE-sJ3ih-@fN$EPA%,22,Sample record 45
+20055,svc_app@srv066,\Infrastructure\Linux\Web Tier,srv066.corp.example.com,svc_app,FAKE-8xM9-=FFSLr=LG,22,Sample record 54
+20063,svc_app@sw090,\Applications\Storefront\Prod,sw090.corp.example.com,svc_app,FAKE-JpG&Az8$L!YePj,22,Sample record 62
+20068,root@srv406,\Infrastructure\Linux\Batch: Nightly/Weekly Jobs,srv406.corp.example.com,root,FAKE-oru7jCvinGys-%,22,Sample record 67
+20074,svc_app@web222,\Infrastructure\Linux\Web Tier,web222.corp.example.com,svc_app,FAKE-jN6h4Wi7&#C5?Z,22,Sample record 73
+20081,svc_app@bat065,\Applications\Storefront\Prod,bat065.corp.example.com,svc_app,FAKE-Nxu%@cn8u7iGoo,22,Sample record 80
+20085,root@bat389,\Infrastructure\Linux\Batch: Nightly/Weekly Jobs,bat389.corp.example.com,root,FAKE-o+#iGEBHBL2qqX,22,Sample record 84
+20091,root@db306,\Infrastructure\Linux\Batch: Nightly/Weekly Jobs,db306.corp.example.com,root,FAKE-vm?CNEc*djm7N!,22,Sample record 90
+20092,root@db432,\Infrastructure\Linux\Batch: Nightly/Weekly Jobs,db432.corp.example.com,root,FAKE-ubZzLDGEy#*J3R,22,Sample record 91
+20097,root@web127,\Applications\Storefront\Prod,web127.corp.example.com,root,FAKE-DkotXj*Pr#&QV=,22,Sample record 96
+20103,deploy@srv063,\Infrastructure\Linux\Web Tier,srv063.corp.example.com,deploy,FAKE-TffU$3XC26@E3G,22,Sample record 102
+20112,deploy@web437,\Infrastructure\Linux\Web Tier,web437.corp.example.com,deploy,FAKE-#nwow3@2sA+z9p,22,Sample record 111
+20115,svc_app@bat122,\Infrastructure\Linux\Batch: Nightly/Weekly Jobs,bat122.corp.example.com,svc_app,FAKE-mXEkNJva!2CGe3,22,Sample record 114
+20121,root@srv348,\Infrastructure\Linux\Batch: Nightly/Weekly Jobs,srv348.corp.example.com,root,FAKE-k2DUqB2MYfsaPJ,22,Sample record 120
+20124,svc_app@app388,\Applications\Storefront\Prod,app388.corp.example.com,svc_app,FAKE-VzFqYf+?i8vAQn,22,Sample record 123
+20126,svc_app@web477,\Applications\Storefront\Prod,web477.corp.example.com,svc_app,FAKE--!=Gc7=S*aFjYW,22,Sample record 125
+20140,root@srv250,\Infrastructure\Linux\Web Tier,srv250.corp.example.com,root,FAKE-KjZVozUik9BDuV,22,Sample record 139
+20144,svc_app@db406,\Infrastructure\Linux\Web Tier,db406.corp.example.com,svc_app,FAKE-gUKpux=hv4tHus,22,Sample record 143
+20152,root@web484,\Applications\Storefront\Prod,web484.corp.example.com,root,FAKE-DiCj8gfwcs7mp+,22,Sample record 151
+20159,root@bat236,\Infrastructure\Linux\Batch: Nightly/Weekly Jobs,bat236.corp.example.com,root,FAKE-Fszx7R5VizPxw?,22,Sample record 158
+20166,root@web419,\Infrastructure\Linux\Batch: Nightly/Weekly Jobs,web419.corp.example.com,root,FAKE-Usta?AZm?jMr2i,22,Sample record 165
+20168,svc_app@db477,\Infrastructure\Linux\Batch: Nightly/Weekly Jobs,db477.corp.example.com,svc_app,FAKE-b#GrBJ5sEme9ob,22,Sample record 167
+20176,root@bat357,\Applications\Storefront\Prod,bat357.corp.example.com,root,FAKE-6wKyWxXMtA&pVj,22,Sample record 175
+20177,root@srv451,\Infrastructure\Linux\Web Tier,srv451.corp.example.com,root,FAKE-QV+kRs$hWF-ixb,22,Sample record 176
+20187,root@app301,\Infrastructure\Linux\Batch: Nightly/Weekly Jobs,app301.corp.example.com,root,FAKE-3YmgoD65Lz+xms,22,Sample record 186
+20197,root@srv379,\Infrastructure\Linux\Web Tier,srv379.corp.example.com,root,FAKE-w6D#PuPVx%*Lur,22,Sample record 196
+20199,root@app071,\Applications\Storefront\Prod,app071.corp.example.com,root,FAKE-QdzDBM$FcKsu$*,22,Sample record 198
+20207,svc_app@srv423,\Infrastructure\Linux\Web Tier,srv423.corp.example.com,svc_app,FAKE-7uxJR#Wd@Gh5?M,22,Sample record 206
+20209,root@bat036,\Infrastructure\Linux\Batch: Nightly/Weekly Jobs,bat036.corp.example.com,root,FAKE-3pKJJBKxKUQ+=m,22,Sample record 208
+20214,svc_app@srv245,\Infrastructure\Linux\Web Tier,srv245.corp.example.com,svc_app,FAKE-$#SK!rNcmxJR%&,22,Sample record 213
+20218,deploy@app176,\Applications\Storefront\Prod,app176.corp.example.com,deploy,FAKE-CyWgAVj#%2TjgR,22,Sample record 217
+20220,ap_team@billing.vendor5.example.com,\Applications\Storefront\Prod,srv027.corp.example.com,deploy,FAKE-PCoKnYT6K@zp=Q,22,Sample record 219
+20228,root@app310,\Infrastructure\Linux\Batch: Nightly/Weekly Jobs,app310.corp.example.com,root,FAKE-V72oCfqK%NJVa!,22,Sample record 227
+20234,svc_app@bat037,\Infrastructure\Linux\Web Tier,bat037.corp.example.com,svc_app,FAKE-W5XgY27uxRh#QM,22,Sample record 233
+20240,deploy@sw490,\Infrastructure\Linux\Batch: Nightly/Weekly Jobs,sw490.corp.example.com,deploy,FAKE-XZCQxGHc-C-d=$,22,Sample record 239
+20241,root@sw110,\Infrastructure\Linux\Batch: Nightly/Weekly Jobs,sw110.corp.example.com,root,FAKE-V9D7Tjmf6d=$GM,22,Sample record 240
+20247,root@db020,\Infrastructure\Linux\Batch: Nightly/Weekly Jobs,db020.corp.example.com,root,FAKE-HWRECsXQ$WPZbw,22,Sample record 246
+20252,root@web142,\Infrastructure\Linux\Web Tier,web142.corp.example.com,root,FAKE-89iL!yNE+pdJjm,22,Sample record 251
+20263,deploy@sw255,\Infrastructure\Linux\Web Tier,sw255.corp.example.com,deploy,FAKE-$BHg7TgAgwgM&2,22,Sample record 262
+20264,root@db244,\Applications\Storefront\Prod,db244.corp.example.com,root,FAKE-eG!-gEZbJjLtMu,22,Sample record 263
+20267,deploy@db339,\Applications\Storefront\Prod,db339.corp.example.com,deploy,FAKE-Mg$Ae3Nb5Mnxth,22,Sample record 266
+20270,root@db123,\Infrastructure\Linux\Web Tier,db123.corp.example.com,root,FAKE-ekvXx5mW99YASM,22,Sample record 269
+20271,root@app327,\Applications\Storefront\Prod,app327.corp.example.com,root,FAKE-jQQzMeAVFwLqr9,22,Sample record 270
+20275,svc_app@srv224,\Applications\Storefront\Prod,srv224.corp.example.com,svc_app,FAKE-fuu%PZ*Pybk*FS,22,Sample record 274
+20299,root@srv220,\Infrastructure\Linux\Web Tier,srv220.corp.example.com,root,FAKE-dm+oZ8Cn#spm=L,22,Sample record 298
+20300,svc_app@sw254,\Infrastructure\Linux\Web Tier,sw254.corp.example.com,svc_app,FAKE-fyQr=-oqyh5=mg,22,Sample record 299
+20301,root@web132,\Applications\Storefront\Prod,web132.corp.example.com,root,FAKE-TSBLiYxja4$YNp,22,Sample record 300
+20302,deploy@app244,\Infrastructure\Linux\Web Tier,app244.corp.example.com,deploy,FAKE-Fa337byn44=3a2,22,Sample record 301
+20303,svc_app@sw399,\Infrastructure\Linux\Batch: Nightly/Weekly Jobs,sw399.corp.example.com,svc_app,,22,Sample record 302
+20308,svc_app@app416,\Applications\Storefront\Prod,app416.corp.example.com,svc_app,FAKE-sG-y-PEtijm8@!,22,Sample record 307
+20321,root@db211,\Infrastructure\Linux\Batch: Nightly/Weekly Jobs,db211.corp.example.com,root,FAKE-ns!$n&TYi-C5Dm,22,Sample record 320
+20323,root@db200,\Applications\Storefront\Prod,db200.corp.example.com,root,FAKE-eJq?Q!5v6Xg-7t,22,Sample record 322
+20335,deploy@bat435,\Infrastructure\Linux\Web Tier,bat435.corp.example.com,deploy,FAKE-eNuVParxL5PFp2,22,Sample record 334
+20341,svc_app@web134,\Infrastructure\Linux\Batch: Nightly/Weekly Jobs,web134.corp.example.com,svc_app,FAKE-pM9CsQ3+!YRxEg,22,Sample record 340
+20343,deploy@db304,\Infrastructure\Linux\Web Tier,db304.corp.example.com,deploy,FAKE-UH7dJ9%SNB65h-,22,Sample record 342
+20344,deploy@sw118,\Infrastructure\Linux\Web Tier,sw118.corp.example.com,deploy,FAKE-udsM9Z?tJsCQi5,22,Sample record 343
+20346,svc_app@app036,\Applications\Storefront\Prod,app036.corp.example.com,svc_app,FAKE-MdPo+shomvGQFC,22,Sample record 345
+20362,root@web108,\Infrastructure\Linux\Web Tier,web108.corp.example.com,,FAKE-fPfeN9Qs8r%W4%,22,Sample record 361
+20364,root@app014,\Applications\Storefront\Prod,app014.corp.example.com,root,FAKE-bv5scwajbAhs-H,22,Sample record 363
+20377,root@app495,\Infrastructure\Linux\Batch: Nightly/Weekly Jobs,app495.corp.example.com,root,FAKE-ye4t2S9?FgtEUJ,22,Sample record 376
+20380,root@srv426,\Infrastructure\Linux\Batch: Nightly/Weekly Jobs,srv426.corp.example.com,root,FAKE-b+Ve&k$AP3jg=n,22,Sample record 379
+20381,root@db305,\Infrastructure\Linux\Web Tier,db305.corp.example.com,root,FAKE-iXgT=#T%BUcvqn,22,Sample record 380
+20384,deploy@web297,\Infrastructure\Linux\Web Tier,web297.corp.example.com,deploy,FAKE-sMsMR4PuGgjGtw,22,Sample record 383
+20385,deploy@bat406,\Infrastructure\Linux\Web Tier,bat406.corp.example.com,deploy,FAKE-h*RddSATBBKYjj,22,Sample record 384
+20396,svc_app@bat082,\Infrastructure\Linux\Web Tier,bat082.corp.example.com,svc_app,FAKE-oeiB5yxKk*8=!J,22,Sample record 395
+
+Unix Account (SSH Key Rotation)
+Secret ID,Secret Name,Folder Path,Machine,Username,Private Key,Private Key Passphrase,Notes
+20002,root@srv298,\Infrastructure\Linux\Deploy Keys,srv298.corp.example.com,root,"-----BEGIN OPENSSH PRIVATE KEY-----
+FAKEKEYozBfGIy2EJAPnjR/rohtxlB3lex0XEw/yy6yxz4Uk0yGfuBXunJJm/oSHoNrKsFXJu59awr2qxPDjpLK4NFQV7FZmH+UzHQR1xfxRXmyqhAPu7NPpZP+rtJySLdi46tY
+-----END OPENSSH PRIVATE KEY-----",,Sample record 1
+20042,root@web231,\Infrastructure\Linux\Deploy Keys,web231.corp.example.com,root,"-----BEGIN OPENSSH PRIVATE KEY-----
+FAKEKEY4lC7HP8U7ipUMC+n74a/dwhPqrlg1l/8VHErGwAURxRZa/TiH4/2wjVhW8TST9LNbhYMtHkyX4rrcjFSXbzleQehaT/PoMRnCmAIdhDN6w9BMb8Q5ptWXEVV9fSdC0O/
+-----END OPENSSH PRIVATE KEY-----",,Sample record 41
+20072,root@web453,\Infrastructure\Linux\Deploy Keys,web453.corp.example.com,root,"-----BEGIN OPENSSH PRIVATE KEY-----
+FAKEKEYO/F1IIiYwbDAmqUIWZRThSfe13Opjb1SK3ZwsMVBlDsgVXak4rI8gTFETcG009eeJ7kn+T+5U5qFWSk8U/QwQvn0uv4aKvaoGjJiJvsly027TG9GMhuj6RtHNOJjdggD
+-----END OPENSSH PRIVATE KEY-----",,Sample record 71
+20077,deploy@app476,\Infrastructure\Linux\Deploy Keys,app476.corp.example.com,deploy,"-----BEGIN OPENSSH PRIVATE KEY-----
+FAKEKEYz8yiMXikj7g50PYlWqqj1NHL0Gl3/0vCjKYgx9V4WsjZOkS0YK9A+22tL3sAzrjMR1s+p01Senxtn6MVqOVcJ+1N2mIOFdOQ51PI8SOH1FiilQOoAjXzEqdLQJsZlCTa
+-----END OPENSSH PRIVATE KEY-----",,Sample record 76
+20084,deploy@srv216,\Infrastructure\Linux\Deploy Keys,srv216.corp.example.com,deploy,"-----BEGIN OPENSSH PRIVATE KEY-----
+FAKEKEY6u6nA17f0iPJT4+1QtxNL2sIUQVukKSU7+kNf5GFCtMexs9rk7LrZ3IRA65jmJf+8Kj7J3nFaYwaFaR4NuUmoANtAQKvqx/899sWN94fIXgERriRPnO7vi/sDF3Gv7ax
+-----END OPENSSH PRIVATE KEY-----",,Sample record 83
+20099,root@srv427,\Infrastructure\Linux\Deploy Keys,srv427.corp.example.com,root,"-----BEGIN OPENSSH PRIVATE KEY-----
+FAKEKEY+ksk+qMEcc6BV4IjcQDK1fGGSS9cbwrpaDdGki4j1y6FxTq2LDKZFNQW45u7fsJGLDQjnKu1oM8xlU4zAhCxu4Vo17jqDoTPWFVI16Pd8n4XA2jpw3oi36pEPy+Q1Pxd
+-----END OPENSSH PRIVATE KEY-----",,Sample record 98
+20113,deploy@sw156,\Infrastructure\Linux\Deploy Keys,sw156.corp.example.com,deploy,"-----BEGIN OPENSSH PRIVATE KEY-----
+FAKEKEYb5NglDsW0utUUvjXm9Y+9VM0+G3k6fQCBgxBkOV/TOuJxk+Jnv9vhNOEuq9uY3ZbCpitWXPyAq0RhjoZaF+AZqaP7ZIn4TD2a3xmcMSf5v+WV7GHv9AXK1xRXfoT00+D
+-----END OPENSSH PRIVATE KEY-----",,Sample record 112
+20114,admin@support.vendor1.example.com,\Infrastructure\Linux\Deploy Keys,srv336.corp.example.com,ansible,"-----BEGIN OPENSSH PRIVATE KEY-----
+FAKEKEYV9Lv/YLj+GuhKIZK0II1geQwaS4PoZCaG1qR/qGiuQqxaQLJAE61sI0B6k1l1xmWA6sHMix/xI2RRN+l5YiD/ySTMmmaHyUohMKCGwcZEyvyhX3Sd5xuzswPpgOvxZRS
+-----END OPENSSH PRIVATE KEY-----",,Sample record 113
+20149,ansible@srv443,\Infrastructure\Linux\Deploy Keys,srv443.corp.example.com,ansible,"-----BEGIN OPENSSH PRIVATE KEY-----
+FAKEKEYywsWoJxVxn78mWZB8HbfAwbsUZCn/FAOap21udVUKBcEJzUkh8TXF1vQXGxYia6W3Y4nqPuak1Q6vZ5C0LZ6wwjGpU+mxYz6tHSPR1yFh/BGIUACjnkZp8/G+lwm/aA6
+-----END OPENSSH PRIVATE KEY-----",,Sample record 148
+20155,ansible@web350,\Infrastructure\Linux\Deploy Keys,web350.corp.example.com,ansible,"-----BEGIN OPENSSH PRIVATE KEY-----
+FAKEKEYF2pWpOuqt2XhVfrlCJU8M8qgsAMJIoGYO5Nushq6BQz95FEQ4Bwe9Xz4IoZtAC05r4oloryLgP4ch1rWf/XrE1n4N9r3+OI5uxJFtC0DQ0QR9wsyggxoyo7zXEQCU7AK
+-----END OPENSSH PRIVATE KEY-----",,Sample record 154
+20182,root@web345,\Infrastructure\Linux\Deploy Keys,web345.corp.example.com,root,"-----BEGIN OPENSSH PRIVATE KEY-----
+FAKEKEYfyJC1LHvTecNvnfVyc2ulypvYtOjyPDeg0y/9ZeIp/KhHRH3yMnNQMDW2Ds9MpZ1jzzgfpPo7q/jtQxkqchly6CuxvFX02Fn8hY6p6zWylapmOfWbcpOAUx9mgTzHODP
+-----END OPENSSH PRIVATE KEY-----",,Sample record 181
+20188,deploy@sw254,\Infrastructure\Linux\Deploy Keys,sw254.corp.example.com,deploy,"-----BEGIN OPENSSH PRIVATE KEY-----
+FAKEKEYy4hY5CMzhM7gDylOvYUrrk/oDZZM+GLG91z2sS9FT+TxeTKeUu1wZxuuQlxkUWLL9nhEHDTt6J9zgNZooyjH5FALJkfBiXipj9mracATRmRct+plh89J2aEfQnPFAwqI
+-----END OPENSSH PRIVATE KEY-----",,Sample record 187
+20203,ansible@sw263,\Infrastructure\Linux\Deploy Keys,sw263.corp.example.com,ansible,"-----BEGIN OPENSSH PRIVATE KEY-----
+FAKEKEYG4LJ9ONh6uEAEtkHjqXSFYCPnpyYysyJE7QNqYudSnVlqwGPvjUGL9SBz9Z1NR+1prw1q237HJz5FouFWq0YFro92eHZ+xkWXkZNT8NLJX6bk/pVxDEBFBMLHa6xxJk2
+-----END OPENSSH PRIVATE KEY-----",,Sample record 202
+20213,deploy@sw340,\Infrastructure\Linux\Deploy Keys,sw340.corp.example.com,deploy,"-----BEGIN OPENSSH PRIVATE KEY-----
+FAKEKEY3z/oyypJwmHuwwc5pjHiOMNi2l09pOR4Q94BDBmpYNZePEgHeHB8HRx1jrZ9F2cefHrsLOg7bXAPHjARRFxxeD3vVo4OEoI4e743kJze//bt22AcD/Fuhg49hSuC3VA2
+-----END OPENSSH PRIVATE KEY-----",,Sample record 212
+20238,deploy@db450,\Infrastructure\Linux\Deploy Keys,db450.corp.example.com,deploy,"-----BEGIN OPENSSH PRIVATE KEY-----
+FAKEKEY2/D0vt+tiqfpDMve14z6dPJWeMh2yL/e1ja6V1w/EBkeU+IG58sGOl4SnRF/vQ0y3HajZk/NevRgT6Oh4+WTeFHmWLvWT73fWpLqG5mW/9TlhBF7cmoD4fSqOjU1XIpc
+-----END OPENSSH PRIVATE KEY-----",FAKE-RE$8DS7MZ@o=wN,Sample record 237
+20244,root@web183,\Infrastructure\Linux\Deploy Keys,web183.corp.example.com,root,"-----BEGIN OPENSSH PRIVATE KEY-----
+FAKEKEYb01PKaI3chUkMZZQH4FLL2p613DE+Zd8efFGeIQyeJeCJYArOxJas2L3EWcZWrtsVVq0sNdkpSZ33dWSjAEK2ci6elqCobbrrWbzbp5MKI2nqb+8AfOvJaBdrdpmylOX
+-----END OPENSSH PRIVATE KEY-----",FAKE-euW4ZnQTDs&9+m,Sample record 243
+20281,ansible@db003,\Infrastructure\Linux\Deploy Keys,db003.corp.example.com,ansible,"-----BEGIN OPENSSH PRIVATE KEY-----
+FAKEKEYaYF0SuuzWYRe+7YrGYKHfh1fStyKNTjgY1vZVZqdj5BGSMIVnvS3XtcdXaj7iKRTI1Ss2B1WKWoF9OVcOGYAKf+pMqqIclxnQjssyrR1KtTqX9C7DgdgOOP1Uq5mrAp/
+-----END OPENSSH PRIVATE KEY-----",,Sample record 280
+20292,deploy@bat158,\Infrastructure\Linux\Deploy Keys,bat158.corp.example.com,deploy,"-----BEGIN OPENSSH PRIVATE KEY-----
+FAKEKEYQIzPu80ZD9aS3uUMMj80FUFA1RZDfS5AAEzqdjlfPsnguWkdwTndAh1Uvxtzsn3HBf45NVkJUMFjaabuiGQ5T2oSnvLOg79wrW+VxIfUwXlGLdNo5+TSaDapDI83dvOT
+-----END OPENSSH PRIVATE KEY-----",FAKE-h=RLy8BBj*Wa%S,Sample record 291
+20339,root@app399,\Infrastructure\Linux\Deploy Keys,app399.corp.example.com,root,"-----BEGIN OPENSSH PRIVATE KEY-----
+FAKEKEYZ83gIYDg7mtHRBU9HXXtpV2RGePZgoiDLv2ENyMEF1Q7UDofDGsuCBfrenve4Kiy4Lo2wmhNwLqiNCSOrph2xngqCliO0zXNVfrnHrs1cBseub++VaWFx/GElI8l66+l
+-----END OPENSSH PRIVATE KEY-----",,Sample record 338
+20345,ansible@bat257,\Infrastructure\Linux\Deploy Keys,bat257.corp.example.com,ansible,"-----BEGIN OPENSSH PRIVATE KEY-----
+FAKEKEY1whyH1KPNCvdTomeJub6g0RB6ZWvRnLIuSdLQ7NwNuibKpYxcSHgNrlVLGXRwk5n2nn7ZSfGXecMbNPrpUAt+uqGVa40YftF0yIg4ulc/7LRdYOGmDQjLaRW/K7Fi0MA
+-----END OPENSSH PRIVATE KEY-----",,Sample record 344
+20347,root@sw133,\Infrastructure\Linux\Deploy Keys,sw133.corp.example.com,root,"-----BEGIN OPENSSH PRIVATE KEY-----
+FAKEKEYFNKhld1uMT19+4vAzld0C9n7TkH92cQeZafHW8jjjUy1Gb8y887a+pqkta5SSEZFnBY7/McLFZxhWZMvp29W7kQ/oCrdofWohIJLLZPf5RyNLAc9XoODeSKN87pr5JR3
+-----END OPENSSH PRIVATE KEY-----",,Sample record 346
+20348,deploy@srv191,\Infrastructure\Linux\Deploy Keys,srv191.corp.example.com,deploy,"-----BEGIN OPENSSH PRIVATE KEY-----
+FAKEKEYBKZR1iQGmg/ILyBNS9HZ3bD3G4GvKMvkaKYniqhLUSwicipyZy4gTWIijVKNPWdezMkWh1Sb7nTdv+sYw8CJjcmgkt4ekUGcGCbgVFLdaASJGRkutO/La8vy4UJRDiW/
+-----END OPENSSH PRIVATE KEY-----",,Sample record 347
+20363,ansible@db195,\Infrastructure\Linux\Deploy Keys,db195.corp.example.com,ansible,"-----BEGIN OPENSSH PRIVATE KEY-----
+FAKEKEYL4kZraAYc4/rfhoSvz2ry17aIBWcrcJpePp4YK8jnN1sfy/udkmMGOWZ/uWOKFRfOZih0L08P3Kw0f/bZIDwfm+JpsndJDQ6WNX7VBASTh55Lr52offu4at3AGcSlAmF
+-----END OPENSSH PRIVATE KEY-----",,Sample record 362
+20370,root@web136,\Infrastructure\Linux\Deploy Keys,web136.corp.example.com,root,"-----BEGIN OPENSSH PRIVATE KEY-----
+FAKEKEYdw/bTTeKOntN6OeTqqOUlcrJjV2mALv7isq6IBIc/ji8qKMh2AUpfikBikJdYdE0ewDQQq8+21MiakNcU1IlBIHWT7yYfqkApjsU5nh1qDTV0XvkIh/xgHSP/R4BUS+e
+-----END OPENSSH PRIVATE KEY-----",FAKE-az@JCbpKQX9vQb,Sample record 369
+
+SQL Server Account
+Secret ID,Secret Name,Folder Path,Server,Username,Password,Port,Database,Notes
+20008,Administrator@app226,\Databases\SQL Production,sw186.corp.example.com,sa,FAKE-D@pMj?xXwe-tea,1433,RPT01,Sample record 7
+20016,dbadmin@web261,\Databases\SQL Production Reporting Replicas EU East,web261.corp.example.com,dbadmin,FAKE-&-h?jb!T6R39rK,1433,RPT01,Sample record 15
+20022,dbadmin@web055,\Databases\SQL Production Reporting Replicas EU West,web055.corp.example.com,dbadmin,FAKE-8+3-qdfubT4vGS,1433,FINPROD,Sample record 21
+20025,sa@app259,\Databases\SQL Production,app259.corp.example.com,sa,FAKE-MjMU4F3CppfL@V,1433,master,Sample record 24
+20028,sa@srv308,\Databases\SQL Production,srv308.corp.example.com,sa,FAKE-tipTB&H*kNd*o?,1433,CRM,Sample record 27
+20033,svc_sql@db402,\Databases\SQL Production,db402.corp.example.com,svc_sql,FAKE-D4cLG5!Tn*GSX%,1433,master,Sample record 32
+20035,sa@sw104,\Databases\SQL Production Reporting Replicas EU East,sw104.corp.example.com,sa,FAKE-525@czkuH+mxS-,1433,RPT01,Sample record 34
+20039,sa@web270,\Databases\SQL Production Reporting Replicas EU West,web270.corp.example.com,sa,FAKE-hD5qHCa+6Lif7y,1433,RPT01,Sample record 38
+20047,svc_sql@web469,\Databases\SQL Production Reporting Replicas EU West,web469.corp.example.com,svc_sql,FAKE-FofRGaaKy=Y!jA,1433,FINPROD,Sample record 46
+20054,dbadmin@web200,\Databases\SQL Production Reporting Replicas EU West,web200.corp.example.com,dbadmin,FAKE-y!-9YCA*$g!#Y%,1433,master,Sample record 53
+20057,svc_sql@web074,\Databases\SQL Production Reporting Replicas EU East,web074.corp.example.com,svc_sql,FAKE--&cj-gryEbZ4Wm,1433,CRM,Sample record 56
+20064,sa@bat020,\Databases\SQL Production Reporting Replicas EU West,bat020.corp.example.com,sa,FAKE-tjGk8?jodL-BXj,1433,RPT01,Sample record 63
+20065,svc_sql@app383,\Databases\SQL Production,app383.corp.example.com,svc_sql,FAKE-a2tgz%%@AD8fqd,1433,master,Sample record 64
+20078,svc_sql@app398,\Databases\SQL Production Reporting Replicas EU West,app398.corp.example.com,svc_sql,FAKE-vVc4XMpb+d@L9Q,1433,FINPROD,Sample record 77
+20079,sa@web120,\Databases\SQL Production Reporting Replicas EU East,web120.corp.example.com,sa,FAKE-%+H&$U*h+XAWs$,1433,master,Sample record 78
+20088,dbadmin@web081,\Databases\SQL Production Reporting Replicas EU East,web081.corp.example.com,dbadmin,FAKE-FnUUm+vL*zbfqH,1433,master,Sample record 87
+20090,sa@app099,\Databases\SQL Production,app099.corp.example.com,sa,FAKE-Zoxw4?VhF+yPy$,1433,FINPROD,Sample record 89
+20102,dbadmin@db010,\Databases\SQL Production,db010.corp.example.com,dbadmin,FAKE-$?g9PvNYFkR$+-,1433,CRM,Sample record 101
+20106,sa@srv267,\Databases\SQL Production Reporting Replicas EU East,srv267.corp.example.com,sa,FAKE-8gFnQqvXRH=kL$,1433,RPT01,Sample record 105
+20111,svc_sql@sw313,\Databases\SQL Production,sw313.corp.example.com,svc_sql,FAKE-?N%kS5PA5R+3V6,1433,CRM,Sample record 110
+20119,svc_sql@web018,\Databases\SQL Production Reporting Replicas EU West,web018.corp.example.com,svc_sql,FAKE-DuVgSMbkS9$gWy,1433,CRM,Sample record 118
+20120,svc_sql@bat208,\Databases\SQL Production,bat208.corp.example.com,svc_sql,FAKE-cp%-cf!Sj9yh4=,1433,RPT01,Sample record 119
+20127,sa@sw134,\Databases\SQL Production Reporting Replicas EU West,sw134.corp.example.com,sa,FAKE-HXwv5MbqTT*&gg,1433,FINPROD,Sample record 126
+20131,dbadmin@srv071,\Databases\SQL Production Reporting Replicas EU West,srv071.corp.example.com,dbadmin,FAKE-DD3UoyZ@XPqszZ,1433,CRM,Sample record 130
+20136,sa@app496,\Databases\SQL Production Reporting Replicas EU West,app496.corp.example.com,sa,FAKE-QeiNa@i*f#eQ=L,1433,master,Sample record 135
+20142,sa@db458,\Databases\SQL Production,db458.corp.example.com,sa,FAKE-FdXx$t$2wrAt&t,1433,RPT01,Sample record 141
+20147,sa@sw012,\Databases\SQL Production Reporting Replicas EU East,sw012.corp.example.com,sa,FAKE-kgCdG4!bn-NbgH,1433,RPT01,Sample record 146
+20151,svc_sql@web441,\Databases\SQL Production Reporting Replicas EU West,web441.corp.example.com,svc_sql,FAKE-dv2#dsDPBJ4vHf,1433,master,Sample record 150
+20153,sa@sw405,\Databases\SQL Production,sw405.corp.example.com,sa,FAKE-&kTpnMtA*hWr!d,1433,FINPROD,Sample record 152
+20154,sa@bat185,\Databases\SQL Production,bat185.corp.example.com,sa,FAKE-9Z8TpDQVBTpV-w,1433,FINPROD,Sample record 153
+20157,dbadmin@bat313,\Databases\SQL Production Reporting Replicas EU East,bat313.corp.example.com,dbadmin,FAKE-zgbQMEG4s9r#A%,1433,master,Sample record 156
+20169,svc_sql@sw313,\Databases\SQL Production,sw313.corp.example.com,svc_sql,FAKE-49ccHZ8RGTK+ZB,1433,RPT01,Sample record 168
+20173,dbadmin@bat481,\Databases\SQL Production,bat481.corp.example.com,dbadmin,FAKE-@Ko*vC+Mb*mpMb,1433,RPT01,Sample record 172
+20175,svc_sql@db381,\Databases\SQL Production Reporting Replicas EU West,db381.corp.example.com,svc_sql,FAKE-YQpJ#NQW3$EEF=,1433,FINPROD,Sample record 174
+20181,svc_sql@app352,\Databases\SQL Production,app352.corp.example.com,svc_sql,FAKE-JA&E+@tJJbGx5M,1433,CRM,Sample record 180
+20192,sa@sw110,\Databases\SQL Production Reporting Replicas EU East,sw110.corp.example.com,sa,FAKE-qNxLxC?KRsdA#T,1433,master,Sample record 191
+20193,svc_sql@sw031,\Databases\SQL Production Reporting Replicas EU East,sw031.corp.example.com,svc_sql,FAKE-EF$Q&eout@fdcn,1433,FINPROD,Sample record 192
+20194,dbadmin@app015,\Databases\SQL Production Reporting Replicas EU West,app015.corp.example.com,dbadmin,FAKE-k7yJmMQ42=5eHy,1433,CRM,Sample record 193
+20195,svc_sql@srv329,\Databases\SQL Production Reporting Replicas EU East,srv329.corp.example.com,svc_sql,FAKE-T8##auaQ4XnaK?,1433,FINPROD,Sample record 194
+20200,sa@srv125,\Databases\SQL Production,srv125.corp.example.com,sa,FAKE-wzPNSb9#9JG%X4,1433,RPT01,Sample record 199
+20206,sa@db407,\Databases\SQL Production Reporting Replicas EU West,db407.corp.example.com,sa,,1433,RPT01,Sample record 205
+20208,sa@app148,\Databases\SQL Production,app148.corp.example.com,sa,FAKE-j8RY9Xn3huiDMc,1433,CRM,Sample record 207
+20215,sa@app261,\Databases\SQL Production Reporting Replicas EU East,app261.corp.example.com,sa,FAKE-=D%Ef+TxU2sFyZ,1433,RPT01,Sample record 214
+20219,sa@web077,\Databases\SQL Production Reporting Replicas EU East,web077.corp.example.com,sa,FAKE-?TsHXf7XL!5ieV,1433,CRM,Sample record 218
+20223,dbadmin@db377,\Databases\SQL Production Reporting Replicas EU West,db377.corp.example.com,dbadmin,FAKE-xz+xSedkQE=T46,1433,FINPROD,Sample record 222
+20225,svc_sql@db393,\Databases\SQL Production,db393.corp.example.com,svc_sql,FAKE-iWJ#FbB5kDJAYL,1433,RPT01,Sample record 224
+20235,dbadmin@bat482,\Databases\SQL Production Reporting Replicas EU East,bat482.corp.example.com,dbadmin,FAKE-2%eZn$3bSa*P=u,1433,RPT01,Sample record 234
+20239,sa@bat310,\Databases\SQL Production Reporting Replicas EU West,bat310.corp.example.com,sa,FAKE-ex8WzK6bspt=Z*,1433,FINPROD,Sample record 238
+20248,svc_sql@db062,\Databases\SQL Production,db062.corp.example.com,svc_sql,FAKE-s35i!f&DYXZVvH,1433,master,Sample record 247
+20251,sa@sw173,\Databases\SQL Production Reporting Replicas EU East,sw173.corp.example.com,sa,FAKE-*mL*FV7L6o-7AM,1433,RPT01,Sample record 250
+20255,sa@db085,\Databases\SQL Production Reporting Replicas EU East,db085.corp.example.com,sa,FAKE-e%eijHeWpJ29dN,1433,master,Sample record 254
+20259,svc_sql@sw098,\Databases\SQL Production,sw098.corp.example.com,svc_sql,FAKE-ohJ6BcKc=-RgQn,1433,FINPROD,Sample record 258
+20260,dbadmin@bat298,\Databases\SQL Production,bat298.corp.example.com,dbadmin,FAKE-AkG7MmrB=6vZBb,1433,RPT01,Sample record 259
+20261,sa@srv108,\Databases\SQL Production Reporting Replicas EU West,srv108.corp.example.com,sa,FAKE-k=s24DJ7Qk=U7x,1433,FINPROD,Sample record 260
+20268,svc_sql@bat344,\Databases\SQL Production Reporting Replicas EU East,bat344.corp.example.com,svc_sql,FAKE-eE468JVLKHajNz,1433,master,Sample record 267
+20269,dbadmin@app051,\Databases\SQL Production Reporting Replicas EU East,app051.corp.example.com,dbadmin,FAKE-+!oJ%SUJ&8SDZF,1433,FINPROD,Sample record 268
+20272,sa@db266,\Databases\SQL Production,db266.corp.example.com,sa,FAKE-&uSyw=em-S-C68,1433,RPT01,Sample record 271
+20274,svc_sql@bat232,\Databases\SQL Production,bat232.corp.example.com,svc_sql,FAKE-q#xMxcf8ixCkHu,1433,CRM,Sample record 273
+20278,dbadmin@app242,\Databases\SQL Production Reporting Replicas EU West,app242.corp.example.com,dbadmin,FAKE-sREs?M=#Rgd9q6,1433,CRM,Sample record 277
+20283,dbadmin@db155,\Databases\SQL Production Reporting Replicas EU East,db155.corp.example.com,dbadmin,FAKE-be9rSx+!XHPLE=,1433,RPT01,Sample record 282
+20284,dbadmin@srv091,\Databases\SQL Production Reporting Replicas EU East,srv091.corp.example.com,dbadmin,FAKE-CCf9M#gZbruDSu,1433,CRM,Sample record 283
+20290,svc_sql@srv080,\Databases\SQL Production,srv080.corp.example.com,svc_sql,FAKE-Y=Vre82mVNZaW%,1433,RPT01,Sample record 289
+20296,svc_sql@app226,\Databases\SQL Production,app226.corp.example.com,svc_sql,FAKE-mxV?X7VkgRC6LE,1433,master,Sample record 295
+20298,sa@bat042,\Databases\SQL Production Reporting Replicas EU West,bat042.corp.example.com,sa,FAKE-a?KTo69igrGN5q,1433,FINPROD,Sample record 297
+20305,sa@web173,\Databases\SQL Production,web173.corp.example.com,sa,FAKE-@VUetnpLkc3B8e,1433,master,Sample record 304
+20313,svc_sql@db296,\Databases\SQL Production Reporting Replicas EU West,db296.corp.example.com,svc_sql,FAKE-zPoGtqg4D8#U&p,1433,FINPROD,Sample record 312
+20317,sa@sw278,\Databases\SQL Production Reporting Replicas EU East,sw278.corp.example.com,sa,FAKE-TyVhCRbqAqsNn$,1433,RPT01,Sample record 316
+20324,svc_sql@web162,\Databases\SQL Production Reporting Replicas EU East,web162.corp.example.com,svc_sql,FAKE-!E+=cGWHvpLdg+,1433,CRM,Sample record 323
+20328,sa@sw361,\Databases\SQL Production Reporting Replicas EU West,sw361.corp.example.com,sa,FAKE-pcv&wzLBD2r+c8,1433,RPT01,Sample record 327
+20333,dbadmin@srv101,\Databases\SQL Production Reporting Replicas EU West,srv101.corp.example.com,dbadmin,FAKE-@gS+v+yHaf7?%a,1433,FINPROD,Sample record 332
+20349,svc_sql@bat064,\Databases\SQL Production Reporting Replicas EU East,bat064.corp.example.com,svc_sql,FAKE-vuV##Fups=NrHw,1433,master,Sample record 348
+20351,sa@srv349,\Databases\SQL Production Reporting Replicas EU West,srv349.corp.example.com,sa,FAKE-9AgGeBgVzVW@3&,1433,CRM,Sample record 350
+20355,svc_sql@app114,\Databases\SQL Production Reporting Replicas EU West,app114.corp.example.com,svc_sql,FAKE-C4mnHB@6p2pX%#,1433,master,Sample record 354
+20360,dbadmin@sw175,\Databases\SQL Production Reporting Replicas EU East,sw175.corp.example.com,dbadmin,FAKE-%i5bLDHU9uZ55o,1433,master,Sample record 359
+20361,sa@srv350,\Databases\SQL Production,srv350.corp.example.com,sa,FAKE-SSi9YADxrCH8jg,1433,RPT01,Sample record 360
+20366,sa@sw240,\Databases\SQL Production Reporting Replicas EU East,sw240.corp.example.com,sa,FAKE-nuvCJK9A@6Q&MR,1433,CRM,Sample record 365
+20372,dbadmin@app328,\Databases\SQL Production Reporting Replicas EU East,app328.corp.example.com,dbadmin,FAKE-U@c+XcgZU3K%vr,1433,FINPROD,Sample record 371
+20373,dbadmin@srv303,\Databases\SQL Production Reporting Replicas EU West,srv303.corp.example.com,dbadmin,FAKE-CDNLPyg6@uy37W,1433,FINPROD,Sample record 372
+20379,deploy@sw340,\Databases\SQL Production,web408.corp.example.com,sa,FAKE--iKRNw+e%L&yiV,1433,master,Sample record 378
+20386,svc_sql@srv049,\Databases\SQL Production,srv049.corp.example.com,svc_sql,FAKE-gAZb6-?EQNeYGL,1433,FINPROD,Sample record 385
+
+Oracle Account
+Secret ID,Secret Name,Folder Path,Server,Username,Password,Port,Database,Notes
+20005,oracle@srv075,\Databases\Oracle Finance,srv075.corp.example.com,oracle,FAKE-yrS=G#3343P&4H,1521,RPT01,Sample record 4
+20019,system@sw492,\Databases\Oracle Finance,sw492.corp.example.com,system,FAKE-QfPLjkFZkS7j4V,1521,master,Sample record 18
+20021,system@sw389,\Databases\Oracle Finance,sw389.corp.example.com,system,FAKE-o!-YkvCiEBC-a=,1521,master,Sample record 20
+20069,system@sw382,\Databases\Oracle Finance,sw382.corp.example.com,system,FAKE-5D8?Nv%GdMnX8A,1521,RPT01,Sample record 68
+20070,oracle@srv003,\Databases\Oracle Finance,srv003.corp.example.com,oracle,FAKE-*N*Z+v=jWndf+X,1521,FINPROD,Sample record 69
+20080,oracle@web192,\Databases\Oracle Finance,web192.corp.example.com,oracle,FAKE-6KZxDCFtN=&*UE,1521,RPT01,Sample record 79
+20087,svc_ora@db032,\Databases\Oracle Finance,db032.corp.example.com,svc_ora,FAKE-tBVq7hz2zf!nAs,1521,CRM,Sample record 86
+20108,oracle@srv125,\Databases\Oracle Finance,srv125.corp.example.com,oracle,FAKE-ea=23BwWgss*kn,1521,RPT01,Sample record 107
+20109,system@srv396,\Databases\Oracle Finance,srv396.corp.example.com,system,,1521,RPT01,Sample record 108
+20135,svc_ora@db272,\Databases\Oracle Finance,db272.corp.example.com,svc_ora,FAKE-Dae!LUy6x@g93j,1521,FINPROD,Sample record 134
+20146,oracle@bat158,\Databases\Oracle Finance,,oracle,FAKE-uKaLYpw$w7J*rY,1521,CRM,Sample record 145
+20160,system@web340,\Databases\Oracle Finance,web340.corp.example.com,system,FAKE-m3o!Q!&Y?VASx*,1521,RPT01,Sample record 159
+20167,oracle@srv125,\Databases\Oracle Finance,sw203.corp.example.com,svc_ora,FAKE-Gqphz8iqbSGcy$,1521,master,Sample record 166
+20178,system@web285,\Databases\Oracle Finance,web285.corp.example.com,system,FAKE-Sg-gNBPG*cfMXV,1521,CRM,Sample record 177
+20180,oracle@db044,\Databases\Oracle Finance,db044.corp.example.com,oracle,FAKE-ZBr55EMhU=XVvT,1521,RPT01,Sample record 179
+20189,oracle@db309,\Databases\Oracle Finance,db309.corp.example.com,oracle,FAKE-jhJN5QqXYR43u4,1521,master,Sample record 188
+20227,oracle@web383,\Databases\Oracle Finance,web383.corp.example.com,oracle,FAKE-jtHLjWjMJGjStu,1521,master,Sample record 226
+20231,svc_ora@web162,\Databases\Oracle Finance,web162.corp.example.com,svc_ora,FAKE-qHrMoGs=gVYh$D,1521,RPT01,Sample record 230
+20289,svc_ora@web304,\Databases\Oracle Finance,web304.corp.example.com,svc_ora,FAKE-dr8ApiTSXoN8$8,1521,master,Sample record 288
+20293,svc_ora@web365,\Databases\Oracle Finance,web365.corp.example.com,svc_ora,FAKE-cU3AoCz9s?fuJS,1521,FINPROD,Sample record 292
+20297,svc_ora@sw226,\Databases\Oracle Finance,sw226.corp.example.com,svc_ora,FAKE-JPP4p-CzxS%MCD,1521,RPT01,Sample record 296
+20314,system@bat008,\Databases\Oracle Finance,bat008.corp.example.com,system,FAKE-sHhDXjgze@sUNh,1521,master,Sample record 313
+20356,system@web021,\Databases\Oracle Finance,web021.corp.example.com,system,FAKE-$sZ-D*YfkyQtAw,1521,CRM,Sample record 355
+20374,system@app111,\Databases\Oracle Finance,app111.corp.example.com,system,FAKE-39f8%eK*75kp8j,1521,master,Sample record 373
+20378,svc_ora@db214,\Databases\Oracle Finance,db214.corp.example.com,svc_ora,FAKE-*nz-ybm?fe*kY*,1521,FINPROD,Sample record 377
+20387,oracle@db375,\Databases\Oracle Finance,db375.corp.example.com,oracle,FAKE-4w%EgJ!Hy8$z7Z,1521,FINPROD,Sample record 386
+20390,svc_ora@bat331,\Databases\Oracle Finance,bat331.corp.example.com,svc_ora,FAKE-**6%C?wnE$G*3A,1521,CRM,Sample record 389
+20398,svc_ora@srv277,\Databases\Oracle Finance,srv277.corp.example.com,svc_ora,FAKE-R$hxmGhJd27qy@,1521,CRM,Sample record 397
+
+Web Password
+Secret ID,Secret Name,Folder Path,URL,Username,Password,Attachment,Notes
+20007,billing@portal.vendor2.example.com,\Web\Vendor Portals,https://portal.vendor2.example.com/login,billing,FAKE-*$&&qLUPuj&W?C,,Sample record 6
+20024,admin@billing.vendor9.example.com,"\Applications\HR Portal ""Self-Service""",https://billing.vendor9.example.com/login,admin,FAKE-shEqdwZAtzL%m-,,Sample record 23
+20029,ap_team@support.vendor4.example.com,"\Applications\HR Portal ""Self-Service""",https://support.vendor4.example.com/login,ap_team,FAKE-qL%Co#K-!k2ccK,vendor_contract.pdf,Sample record 28
+20031,ops@billing.vendor6.example.com,"\Applications\HR Portal ""Self-Service""",https://billing.vendor6.example.com/login,ops,FAKE-zrRtAsu3RbBoiy,,Sample record 30
+20037,ap_team@portal.vendor3.example.com,"\Applications\HR Portal ""Self-Service""",https://portal.vendor3.example.com/login,ap_team,FAKE-V?P#LFASfEpSi@,vendor_contract.pdf,Sample record 36
+20041,admin@portal.vendor8.example.com,"\Applications\HR Portal ""Self-Service""",https://portal.vendor8.example.com/login,admin,FAKE-Ze*6HU3GdDU6GH,vendor_contract.pdf,Sample record 40
+20048,admin@billing.vendor3.example.com,\Web\Vendor Portals,https://billing.vendor3.example.com/login,admin,FAKE-FciEcBs5yZqKcE,,Sample record 47
+20050,ap_team@billing.vendor4.example.com,\Web\Vendor Portals,https://billing.vendor4.example.com/login,ap_team,FAKE-34cA8W7QM4x#WS,,Sample record 49
+20059,ap_team@billing.vendor4.example.com,\Web\Vendor Portals,https://billing.vendor4.example.com/login,ap_team,FAKE-YGo?iqrAEeVo86,,Sample record 58
+20060,billing@portal.vendor1.example.com,\Web\Vendor Portals,https://portal.vendor1.example.com/login,billing,FAKE-CGAwpP?we5pTcx,,Sample record 59
+20082,admin@support.vendor5.example.com,\Web\Vendor Portals,https://support.vendor5.example.com/login,admin,FAKE--vc+RtarpSMF44,,Sample record 81
+20089,admin@support.vendor1.example.com,"\Applications\HR Portal ""Self-Service""",https://support.vendor1.example.com/login,admin,FAKE-2#MwJf3?j?s&-b,vendor_contract.pdf,Sample record 88
+20104,ops@billing.vendor7.example.com,\Web\Vendor Portals,https://billing.vendor7.example.com/login,ops,FAKE-s4Gs?Uwh7BxP@Z,,Sample record 103
+20107,ops@billing.vendor7.example.com,"\Applications\HR Portal ""Self-Service""",https://billing.vendor7.example.com/login,ops,FAKE-nmhMn#e2bx#p&%,,Sample record 106
+20122,admin@portal.vendor2.example.com,\Web\Vendor Portals,https://portal.vendor2.example.com/login,admin,FAKE-qMenS4nw4$SmYD,,Sample record 121
+20123,admin@billing.vendor1.example.com,\Web\Vendor Portals,https://billing.vendor1.example.com/login,admin,FAKE-$h4wNZoQkeF4FW,,Sample record 122
+20128,admin@support.vendor5.example.com,"\Applications\HR Portal ""Self-Service""",https://support.vendor5.example.com/login,admin,FAKE-TUgtR7XV$4cQoB,,Sample record 127
+20129,ap_team@portal.vendor5.example.com,\Web\Vendor Portals,https://portal.vendor5.example.com/login,ap_team,FAKE-pbQq!QWs9$xoXK,vendor_contract.pdf,Sample record 128
+20134,billing@portal.vendor9.example.com,\Web\Vendor Portals,https://portal.vendor9.example.com/login,billing,FAKE-s?#7V4LHtp6y&T,,Sample record 133
+20138,ops@billing.vendor5.example.com,\Web\Vendor Portals,https://billing.vendor5.example.com/login,ops,FAKE-RT7MbQwXxuBiRg,,Sample record 137
+20139,admin@support.vendor8.example.com,\Web\Vendor Portals,https://support.vendor8.example.com/login,admin,FAKE-FwNwsQEhiwa!C9,,Sample record 138
+20156,admin@support.vendor7.example.com,"\Applications\HR Portal ""Self-Service""",https://support.vendor7.example.com/login,admin,FAKE-k47r62V225UAg-,,Sample record 155
+20161,billing@billing.vendor1.example.com,\Web\Vendor Portals,https://billing.vendor1.example.com/login,billing,FAKE-bAjHYqmsigj9M@,vendor_contract.pdf,Sample record 160
+20164,billing@billing.vendor8.example.com,"\Applications\HR Portal ""Self-Service""",https://billing.vendor8.example.com/login,billing,FAKE-YJ93*T=Bfb4Fot,,Sample record 163
+20171,ops@portal.vendor3.example.com,"\Applications\HR Portal ""Self-Service""",https://portal.vendor3.example.com/login,ops,FAKE-FW!ofrVqjsdVf3,,Sample record 170
+20184,ops@portal.vendor4.example.com,"\Applications\HR Portal ""Self-Service""",https://portal.vendor4.example.com/login,,FAKE-FzZ2ktVxXev3q+,,Sample record 183
+20196,ops@billing.vendor4.example.com,"\Applications\HR Portal ""Self-Service""",https://billing.vendor4.example.com/login,ops,FAKE-oCCJwc6BjwWrwq,,Sample record 195
+20205,billing@portal.vendor3.example.com,\Web\Vendor Portals,https://portal.vendor3.example.com/login,billing,FAKE-9W%smhB5CufwtA,vendor_contract.pdf,Sample record 204
+20210,ap_team@billing.vendor5.example.com,"\Applications\HR Portal ""Self-Service""",https://billing.vendor5.example.com/login,ap_team,FAKE-35Y9N#uscD2ePc,,Sample record 209
+20211,admin@support.vendor1.example.com,\Web\Vendor Portals,https://support.vendor1.example.com/login,admin,FAKE-aKMWqjZFU&NH2i,,Sample record 210
+20221,admin@support.vendor9.example.com,"\Applications\HR Portal ""Self-Service""",https://support.vendor9.example.com/login,admin,FAKE-a8KizZig5x@iKH,vendor_contract.pdf,Sample record 220
+20229,ap_team@support.vendor8.example.com,"\Applications\HR Portal ""Self-Service""",https://support.vendor8.example.com/login,ap_team,FAKE-8TBadP#gj-7?tH,vendor_contract.pdf,Sample record 228
+20245,ap_team@billing.vendor9.example.com,\Web\Vendor Portals,https://billing.vendor9.example.com/login,ap_team,FAKE-s&Qti2jCy2JxBm,vendor_contract.pdf,Sample record 244
+20253,billing@support.vendor5.example.com,\Web\Vendor Portals,https://support.vendor5.example.com/login,billing,FAKE-#r4%RFUoGSwzhj,vendor_contract.pdf,Sample record 252
+20291,billing@portal.vendor1.example.com,"\Applications\HR Portal ""Self-Service""",https://portal.vendor1.example.com/login,billing,FAKE-b9EP8dqfYvyP&J,,Sample record 290
+20295,billing@billing.vendor2.example.com,"\Applications\HR Portal ""Self-Service""",https://billing.vendor2.example.com/login,billing,FAKE-8fzbs&z3?mQF!j,,Sample record 294
+20304,ap_team@portal.vendor2.example.com,"\Applications\HR Portal ""Self-Service""",https://portal.vendor2.example.com/login,ap_team,FAKE-Yxk#%tqyZYXMV@,,Sample record 303
+20306,billing@portal.vendor2.example.com,"\Applications\HR Portal ""Self-Service""",https://portal.vendor2.example.com/login,billing,FAKE-f4igDN$6-Mh!nd,,Sample record 305
+20309,admin@portal.vendor3.example.com,"\Applications\HR Portal ""Self-Service""",https://portal.vendor3.example.com/login,admin,FAKE-QhScTc+tat!&FY,vendor_contract.pdf,Sample record 308
+20318,admin@billing.vendor3.example.com,"\Applications\HR Portal ""Self-Service""",https://billing.vendor3.example.com/login,admin,FAKE-WcKAM4LSh#G5!Q,,Sample record 317
+20325,ap_team@portal.vendor2.example.com,"\Applications\HR Portal ""Self-Service""",https://portal.vendor2.example.com/login,ap_team,FAKE-YcMzV@pxJUs7eR,vendor_contract.pdf,Sample record 324
+20332,admin@support.vendor9.example.com,"\Applications\HR Portal ""Self-Service""",https://support.vendor9.example.com/login,admin,FAKE-Fu6jZ%+tThjNgh,,Sample record 331
+20336,admin@billing.vendor9.example.com,"\Applications\HR Portal ""Self-Service""",https://billing.vendor9.example.com/login,admin,FAKE-Da*YLcv7aJL@FS,,Sample record 335
+20350,admin@billing.vendor5.example.com,\Web\Vendor Portals,https://billing.vendor5.example.com/login,admin,FAKE-TKqLa8FF@nZ5MT,,Sample record 349
+20354,billing@support.vendor5.example.com,"\Applications\HR Portal ""Self-Service""",https://support.vendor5.example.com/login,billing,FAKE-@v*d8K5R=vS7cg,,Sample record 353
+20358,admin@billing.vendor5.example.com,\Web\Vendor Portals,https://billing.vendor5.example.com/login,admin,FAKE-DKjxKziCv6DoiC,,Sample record 357
+20359,ap_team@portal.vendor9.example.com,\Web\Vendor Portals,,ap_team,FAKE-@#NuKivNUK#!gY,,Sample record 358
+20376,admin@support.vendor6.example.com,\Web\Vendor Portals,https://support.vendor6.example.com/login,admin,FAKE-2T#CMxnVwrs5+A,,Sample record 375
+20391,ap_team@support.vendor9.example.com,\Web\Vendor Portals,https://support.vendor9.example.com/login,ap_team,FAKE-%whWM3DyzP-FE2,,Sample record 390
+20392,ap_team@support.vendor3.example.com,"\Applications\HR Portal ""Self-Service""",https://support.vendor3.example.com/login,ap_team,FAKE-FvRMXaMk$5uUZw,,Sample record 391
+
+Cisco Account (SSH)
+Secret ID,Secret Name,Folder Path,Host,Username,Password,Enable Password,Notes
+20001,admin@app203,\Infrastructure\Network\Core Switches,app203.corp.example.com,admin,FAKE-KNxH-dEM86JgM7,FAKE-HReH3GeFTo6URq,Sample record 0
+20020,admin@srv143,\Infrastructure\Network\Core Switches,srv143.corp.example.com,admin,FAKE-Z7KkCMjLeJjR#B,FAKE-u6kSF@gQWjGZbq,Sample record 19
+20026,admin@bat254,\Infrastructure\Network\Core Switches,bat254.corp.example.com,admin,FAKE-nUF=7-T@-CfLDF,FAKE-TxPz!GCh*jA#J-,Sample record 25
+20034,enable@db153,\Infrastructure\Network\Core Switches,db153.corp.example.com,enable,FAKE-j4gp&3RXWKc-+e,FAKE-!t!7TahMYuMrgy,Sample record 33
+20043,admin@db153,\Infrastructure\Network\Core Switches,db153.corp.example.com,admin,FAKE-JDfP%$2i8+S+ZB,FAKE-pVgsr#xL=b3Wh5,Sample record 42
+20075,enable@srv200,\Infrastructure\Network\Core Switches,,enable,FAKE-PEidWb?vN#c%=C,FAKE-y?u5#cZ3=RwHim,Sample record 74
+20132,admin@app189,\Infrastructure\Network\Core Switches,app189.corp.example.com,admin,FAKE-yigHFP4Gd+7+Wp,FAKE-LUfWT94MF9&ady,Sample record 131
+20158,enable@sw280,\Infrastructure\Network\Core Switches,sw280.corp.example.com,enable,FAKE-gzwJ3@ksKejj%v,FAKE-?&eUJ@x@c@XxgY,Sample record 157
+20185,admin@sw405,\Infrastructure\Network\Core Switches,sw405.corp.example.com,admin,FAKE-W3@BAYPh#iwN=z,FAKE-Ti6K=t9koxqz?H,Sample record 184
+20232,enable@srv402,\Infrastructure\Network\Core Switches,srv402.corp.example.com,enable,FAKE-%@qKPJ28&Ji=e!,FAKE-r&6y!rGP#MmTES,Sample record 231
+20237,enable@app435,\Infrastructure\Network\Core Switches,app435.corp.example.com,enable,FAKE-kxpyw3znQfB5hG,FAKE-XVqi-sz8qTguHv,Sample record 236
+20246,enable@db421,\Infrastructure\Network\Core Switches,db421.corp.example.com,enable,FAKE-WzCKacHTUqfeH8,FAKE-jRPUMV8aF+27MY,Sample record 245
+20276,enable@web445,\Infrastructure\Network\Core Switches,web445.corp.example.com,enable,FAKE-n6VrVZWwmHhtEY,FAKE-G77aVy=RQk9=3i,Sample record 275
+20311,enable@db323,\Infrastructure\Network\Core Switches,db323.corp.example.com,enable,FAKE-63H-BsE8betBDN,FAKE-H7*+yNzrB2j5J+,Sample record 310
+20316,enable@srv080,\Infrastructure\Network\Core Switches,srv080.corp.example.com,enable,FAKE-TpFR#-U*RdVqfA,FAKE-GjNZ9?sSZr3U!m,Sample record 315
+20320,admin@web145,\Infrastructure\Network\Core Switches,web145.corp.example.com,admin,FAKE-&pzMR!J97i+j3P,FAKE-f-W=8aA&zuzRL3,Sample record 319
+20330,enable@srv050,\Infrastructure\Network\Core Switches,srv050.corp.example.com,enable,FAKE-vaUY5nQyUNpi=5,FAKE-k#nuiBetfsb8ju,Sample record 329
+20334,enable@srv044,\Infrastructure\Network\Core Switches,srv044.corp.example.com,enable,FAKE-vR*V=@YN?VzSpd,FAKE-t%L&u3cvC**bb-,Sample record 333
+20368,admin@db201,\Infrastructure\Network\Core Switches,db201.corp.example.com,admin,FAKE-v8S-+bp?Abu5c!,FAKE-fqFu2f52KMNPqR,Sample record 367
+20383,enable@web166,\Infrastructure\Network\Core Switches,web166.corp.example.com,enable,FAKE-ZZVm4B&NJL7WeP,FAKE-fgGsMK2?wNE?S=,Sample record 382
+20388,admin@sw243,\Infrastructure\Network\Core Switches,sw243.corp.example.com,admin,FAKE-VC-jr+$MnQiS=D,FAKE-e2+gwtiTpyhqKD,Sample record 387
+20394,admin@bat465,\Infrastructure\Network\Core Switches,bat465.corp.example.com,admin,FAKE-U+sipe#m6qfWWo,FAKE-&xzJk&HkqPLN*V,Sample record 393
+20395,enable@srv361,\Infrastructure\Network\Core Switches,srv361.corp.example.com,enable,FAKE-&c?ZK%SqoQ=$+S,FAKE-2CvzFi=KyW*gn9,Sample record 394
+20399,admin@app005,\Infrastructure\Network\Core Switches,app005.corp.example.com,admin,FAKE-+Kax-%BacHr=?W,FAKE-SyTwa$YuJs&bo&,Sample record 398
+

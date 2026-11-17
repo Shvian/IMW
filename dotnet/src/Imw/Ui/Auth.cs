@@ -11,7 +11,7 @@ public class AuthError : Exception
 }
 
 /// <summary>
-/// Sign-in for the Workbench: only the Windows user who started the tool can unlock it (port of imw/ui/auth.py).
+/// Sign-in for the Workbench: only the Windows user who started the tool can unlock it.
 /// On Windows the password is checked by Windows itself (LogonUserW); nothing is stored. A password only
 /// counts if Windows logs on that same account (same SID). Elsewhere there is no sign-in, except a test
 /// password for automated tests (IMW_UI_TEST_PASSWORD), which must never be used with real data.

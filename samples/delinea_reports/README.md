@@ -1,7 +1,7 @@
 # Delinea report samples (synthetic)
 
 Made-up data in the layouts of real Delinea Secret Server exports and reports (header rows as
-they come out of Secret Server, values invented). Used by tests/test_delinea_reports.py.
+they come out of Secret Server, values invented). Used by dotnet/tests/Imw.Tests/DelineaReportsTests.cs.
 
 | File | What it is | Used for |
 |---|---|---|

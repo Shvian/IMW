@@ -1,0 +1,79 @@
+Folder Path,Secret Name,Secret ID,Group,Permission,Member Type
+\Infrastructure\Windows\Domain Controllers,,,CORP\PAM-Windows-Admins,Owner,Group
+\Infrastructure\Windows\Domain Controllers,,,CORP\Helpdesk,List,Group
+\Infrastructure\Windows\Domain Controllers,,,CORP\Security-Audit,View,Group
+\Infrastructure\Windows\Domain Controllers,,,CORP\asmith-adm,Edit,User
+\Infrastructure\Windows\Member Servers,,,CORP\PAM-Windows-Admins,Owner,Group
+\Infrastructure\Windows\Member Servers,,,CORP\Helpdesk,List,Group
+\Infrastructure\Windows\Member Servers,,,CORP\Security-Audit,View,Group
+\Infrastructure\Windows\Member Servers,,,CORP\asmith-adm,Edit,User
+\Infrastructure\Windows\Member Servers\Legacy 2012R2,,,CORP\PAM-Windows-Admins,Owner,Group
+\Infrastructure\Windows\Member Servers\Legacy 2012R2,,,CORP\Helpdesk,List,Group
+\Infrastructure\Windows\Member Servers\Legacy 2012R2,,,CORP\Security-Audit,View,Group
+\Infrastructure\Windows\Member Servers\Legacy 2012R2,,,CORP\asmith-adm,Edit,User
+\Infrastructure\Linux\Web Tier,,,CORP\PAM-Unix-Admins,Owner,Group
+\Infrastructure\Linux\Web Tier,,,CORP\Helpdesk,List,Group
+\Infrastructure\Linux\Web Tier,,,CORP\Security-Audit,View,Group
+\Infrastructure\Linux\Web Tier,,,EMEA\kmuller,Edit,User
+\Infrastructure\Linux\Web Tier,,,EMEA\Linux-Ops-EU,Edit,Group
+\Infrastructure\Linux\Batch: Nightly/Weekly Jobs,,,CORP\PAM-Unix-Admins,Owner,Group
+\Infrastructure\Linux\Batch: Nightly/Weekly Jobs,,,CORP\Helpdesk,List,Group
+\Infrastructure\Linux\Batch: Nightly/Weekly Jobs,,,CORP\Security-Audit,View,Group
+\Infrastructure\Linux\Batch: Nightly/Weekly Jobs,,,EMEA\kmuller,Edit,User
+\Infrastructure\Linux\Batch: Nightly/Weekly Jobs,,,EMEA\Linux-Ops-EU,Edit,Group
+\Infrastructure\Linux\Deploy Keys,,,CORP\PAM-Unix-Admins,Owner,Group
+\Infrastructure\Linux\Deploy Keys,,,CORP\Helpdesk,List,Group
+\Infrastructure\Linux\Deploy Keys,,,CORP\Security-Audit,View,Group
+\Infrastructure\Linux\Deploy Keys,,,EMEA\kmuller,Edit,User
+\Infrastructure\Linux\Deploy Keys,,,EMEA\Linux-Ops-EU,Edit,Group
+\Databases\SQL Production,,,CORP\PAM-DBA,Owner,Group
+\Databases\SQL Production,,,CORP\Helpdesk,List,Group
+\Databases\SQL Production,,,CORP\Security-Audit,View,Group
+\Databases\SQL Production,,,APAC\wtan,Edit,User
+\Databases\SQL Production,,,APAC\DBA-Oncall,Edit,Group
+\Databases\SQL Production Reporting Replicas EU West,,,CORP\PAM-DBA,Owner,Group
+\Databases\SQL Production Reporting Replicas EU West,,,CORP\Helpdesk,List,Group
+\Databases\SQL Production Reporting Replicas EU West,,,CORP\Security-Audit,View,Group
+\Databases\SQL Production Reporting Replicas EU West,,,APAC\wtan,Edit,User
+\Databases\SQL Production Reporting Replicas EU West,,,APAC\DBA-Oncall,Edit,Group
+\Databases\SQL Production Reporting Replicas EU East,,,CORP\PAM-DBA,Owner,Group
+\Databases\SQL Production Reporting Replicas EU East,,,CORP\Helpdesk,List,Group
+\Databases\SQL Production Reporting Replicas EU East,,,CORP\Security-Audit,View,Group
+\Databases\SQL Production Reporting Replicas EU East,,,APAC\wtan,Edit,User
+\Databases\SQL Production Reporting Replicas EU East,,,APAC\DBA-Oncall,Edit,Group
+\Databases\Oracle Finance,,,CORP\PAM-DBA,Owner,Group
+\Databases\Oracle Finance,,,CORP\Helpdesk,List,Group
+\Databases\Oracle Finance,,,CORP\Security-Audit,View,Group
+\Databases\Oracle Finance,,,APAC\wtan,Edit,User
+\Databases\Oracle Finance,,,APAC\DBA-Oncall,Edit,Group
+\Infrastructure\Network\Core Switches,,,CORP\PAM-Network,Owner,Group
+\Infrastructure\Network\Core Switches,,,CORP\Helpdesk,List,Group
+\Infrastructure\Network\Core Switches,,,CORP\Security-Audit,View,Group
+\Infrastructure\Network\Core Switches,,,CORP\jdoe-net,Edit,User
+\Web\Vendor Portals,,,CORP\PAM-Web-Ops,Owner,Group
+\Web\Vendor Portals,,,CORP\Helpdesk,List,Group
+\Web\Vendor Portals,,,CORP\Security-Audit,View,Group
+\Web\Vendor Portals,,,EMEA\Helpdesk-EU,List,Group
+\Applications\Payments\Prod,,,CORP\APP-Payments-Owners,Owner,Group
+\Applications\Payments\Prod,,,CORP\Helpdesk,List,Group
+\Applications\Payments\Prod,,,CORP\Security-Audit,View,Group
+\Applications\Payments\Prod,,,EMEA\pkhan,Edit,User
+\Applications\Payments\Prod,,,EMEA\Helpdesk-EU,List,Group
+\Applications\Storefront\Prod,,,CORP\APP-Storefront-Owners,Owner,Group
+\Applications\Storefront\Prod,,,CORP\Helpdesk,List,Group
+\Applications\Storefront\Prod,,,CORP\Security-Audit,View,Group
+\Applications\Storefront\Prod,,,APAC\lnguyen,Edit,User
+\Applications\Storefront\Prod,,,EMEA\Helpdesk-EU,List,Group
+"\Applications\HR Portal ""Self-Service""",,,CORP\APP-HRPortal-Owners,Owner,Group
+"\Applications\HR Portal ""Self-Service""",,,CORP\Helpdesk,List,Group
+"\Applications\HR Portal ""Self-Service""",,,CORP\Security-Audit,View,Group
+"\Applications\HR Portal ""Self-Service""",,,EMEA\Helpdesk-EU,List,Group
+\Infrastructure\Linux,,,CORP\PAM-Windows-Admins,View,Group
+\Web\Vendor Portals,billing@portal.vendor2.example.com,20007,CORP\APP-Payments-Owners,Edit,Group
+\Web\Vendor Portals,billing@portal.vendor2.example.com,20007,CORP\mlee,View,User
+"\Applications\HR Portal ""Self-Service""",admin@billing.vendor9.example.com,20024,CORP\APP-Payments-Owners,Edit,Group
+"\Applications\HR Portal ""Self-Service""",admin@billing.vendor9.example.com,20024,CORP\mlee,View,User
+"\Applications\HR Portal ""Self-Service""",ap_team@support.vendor4.example.com,20029,CORP\APP-Payments-Owners,Edit,Group
+"\Applications\HR Portal ""Self-Service""",ap_team@support.vendor4.example.com,20029,CORP\mlee,View,User
+"\Applications\HR Portal ""Self-Service""",ops@billing.vendor6.example.com,20031,CORP\APP-Payments-Owners,Edit,Group
+"\Applications\HR Portal ""Self-Service""",ops@billing.vendor6.example.com,20031,CORP\mlee,View,User

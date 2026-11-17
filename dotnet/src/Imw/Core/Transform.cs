@@ -3,7 +3,7 @@ using Imw.Adapters;
 
 namespace Imw.Core;
 
-// Target rules: Safe mapping, Safe names, platforms, members and validation (port of imw/transform.py).
+// Target rules: Safe mapping, Safe names, platforms, members and validation.
 // Everything here is source-independent; it only sees SourceRecord objects.
 
 public sealed class AccountPlan

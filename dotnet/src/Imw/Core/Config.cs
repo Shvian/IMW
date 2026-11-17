@@ -62,7 +62,7 @@ public static class Config
     const string V1Template = "{env}-{folder}-{tech}-{flavor}-{acct}";
     public const int ConfigVersion = 4;
 
-    // The built-in defaults, exactly as the Python version defines them (imw/config.py DEFAULT_CONFIG).
+    // The built-in defaults.
     const string DefaultJson = """
 {
  "config_version": 4,

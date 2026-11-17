@@ -5,8 +5,8 @@ using Imw.Adapters;
 namespace Imw.Core;
 
 /// <summary>
-/// Local staging database (SQLite). Port of imw/store.py, with the same tables, so a database made by
-/// either version opens in the other.
+/// Local staging database (SQLite), with the same tables as the earlier Python version, so a database made by
+/// that version still opens.
 ///
 ///   ingest   load exports into the database once (secrets encrypted with DPAPI)
 ///   map      apply the config rules; results go into plan_* tables you can query

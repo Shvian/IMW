@@ -1,0 +1,65 @@
+{
+  "_comment": "Starter rules for the sample pack. Edit them on the Mapping rules page.",
+  "config_version": 2,
+  "folder_rules": [
+    {
+      "folder_prefix": "\\Cloud",
+      "safe": "CLD-BG-{flavor}-{acct}"
+    }
+  ],
+  "safe_convention": {
+    "default_environment": "P",
+    "abbreviations": {
+      "Self-Service": "SS",
+      "HR Portal": "HR",
+      "Unfiled": "UNF"
+    }
+  },
+  "custom_roles": {
+    "List only": [
+      "listAccounts"
+    ],
+    "Helpdesk": [
+      "listAccounts",
+      "useAccounts",
+      "retrieveAccounts",
+      "viewAuditLog"
+    ]
+  },
+  "platform_map": {
+    "Active Directory Account": "WinDomain",
+    "Windows Account": "WinServerLocal",
+    "Unix Account (SSH)": "UnixSSH",
+    "Unix Account (SSH Key Rotation)": "UnixSSHKeys",
+    "SQL Server Account": "MSSql",
+    "Oracle Account": "Oracle",
+    "Web Password": "GenericWebApp"
+  },
+  "platform_rules": [
+    {
+      "field": "folder",
+      "pattern": "(?i)^\\\\Linux",
+      "platform": "UnixSSH"
+    },
+    {
+      "field": "folder",
+      "pattern": "(?i)^\\\\(Network|Vendors)",
+      "platform": "GenericWebApp"
+    },
+    {
+      "field": "folder",
+      "pattern": "(?i)^\\\\Cloud",
+      "platform": "AzureWebAccount"
+    }
+  ],
+  "directory_map": {
+    "CORP": "corp.example.com",
+    "EMEA": "emea.corp.example.com",
+    "APAC": "apac.corp.example.com",
+    "*": "Vault"
+  },
+  "account_property_map": {
+    "Port": "Port",
+    "Database": "Database"
+  }
+}

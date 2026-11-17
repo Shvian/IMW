@@ -2,7 +2,7 @@ using System.Security.Cryptography;
 
 namespace Imw.Core;
 
-/// <summary>Output files: review CSVs (no secrets) and upload CSVs (API body fields). Port of imw/writers.py.</summary>
+/// <summary>Output files: review CSVs (no secrets) and upload CSVs (API body fields).</summary>
 public static class Writers
 {
     public const string Version = "2.0.0";
