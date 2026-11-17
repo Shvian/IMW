@@ -199,7 +199,6 @@ public class PersonalSafesTests : TestBase
                      safes.Keys.OrderBy(x => x, StringComparer.Ordinal));
         Assert.Equal("3", safes["P-jane.smith"]["Accounts"]);
         Assert.Contains("personal Safe of Jane Smith", safes["P-jane.smith"]["Safe_Name_Issues"]);
-        Assert.Contains("Personal Safe,\\Personal Folders,P-{user}", ReadText(T("out", "review", "SafeNamingConvention.csv")));
     }
 
     [Fact]
@@ -215,6 +214,10 @@ public class PersonalSafesTests : TestBase
         Assert.Contains("the folder report gives it Owner", jane["Notes"]);
         Assert.Contains("added by the Workbench", members[("P-bob.jones", "bob.jones@corp.example.com")]["Notes"]);
         Assert.Single(members.Keys, k => k.Item1 == "P-jane.smith");
+        var conv = ReadText(T("out", "review", "SafeNamingConvention.csv"));
+        Assert.StartsWith("var1,var2", conv);
+        Assert.Contains("IT", conv);
+        Assert.DoesNotContain("jane.smith", conv);
         Assert.DoesNotContain("Jane Smith", ReadCsv(T("out", "review", "Users_To_Decide.csv")).Select(d => d["Source_Member"]));
         File.WriteAllText(T("noowner.json"), @"{""personal_safes"": {""owner_role"": """", ""folders"": [{""folder"": ""\\Personal Folders""}]}}");
         args[args.IndexOf(P("config.json"))] = T("noowner.json");

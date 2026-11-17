@@ -1,4 +1,4 @@
-// Browser test of the Delinea reports flow: Add files recognises each report, Users to decide, Review & create.
+// Browser test of the Delinea reports flow: Load exports recognises each report, Users to decide, Review & change, Create upload files.
 //
 //   copy samples/delinea_reports/*.csv into <ws>/inbox, then
 //   IMW_UI_TEST_PASSWORD=test-pass IMW_UI_NO_OPEN=1 \
@@ -36,12 +36,12 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   await page.fill('#login-pw', PASSWORD);
   await page.click('#login-go');
   await page.waitForSelector('#main h2 >> text=Welcome');
-  // Five steps in the menu, Activity log off it
+  // The four steps in the menu, and the Activity log
   const steps = await page.$$eval('#nav > button:not(.sub)', bs => bs.map(b => b.innerText.replace(/\s+/g, ' ').trim()));
   console.log('MENU:', steps.join(' | '));
-  if (steps.join('|') !== '⌂ Overview|1 Add files|2 Platforms|3 Safes|4 Members|5 Review & create') throw new Error('menu is not the five steps: ' + steps);
+  if (steps.join('|') !== '⌂ Overview|1 Load exports|2 Mapping rules|3 Review & change|4 Create upload files|≡ Activity log') throw new Error('menu is not the four steps: ' + steps);
 
-  // 1. Add files: every report recognised
+  // 1. Load exports: every report recognised, and the recommended files listed per source
   await navTo('load');
   await page.waitForSelector('#go-load');
   const want = { 'secrets-export.csv': 'accounts', 'allsecrets.csv': 'templates', 'lauserslist.csv': 'users',
@@ -55,6 +55,15 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
     if (want[name] !== got) throw new Error(`${name} recognised as ${got}, not ${want[name]}`);
     if ((await (await r.$('.pick')).isChecked()) !== (got !== 'skip')) throw new Error(`${name}: wrong Load tick`);
   }
+  // Recommended files per source: folded, one section per source, the files in the inbox marked "here"
+  if (await page.$eval('#recommended', d => d.open)) throw new Error('recommended files are not folded');
+  await page.click('#recommended > summary');
+  if ((await page.$$('#recommended details.rec-src')).length !== 4) throw new Error('not one section per source');
+  await page.click('#recommended details.rec-src >> nth=0 >> summary');
+  const rec = await page.innerText('#recommended');
+  for (const t of ['secrets-export.csv', 'allsecrets.csv', 'lauserslist.csv', 'KeePass', 'Spreadsheet']) if (!rec.includes(t)) throw new Error('recommended files lack ' + t);
+  if ((rec.match(/✓/g) || []).length < 5) throw new Error('files in the inbox are not marked: ' + rec);
+  await shot(page, 'r1_recommended');
   const checklist = await page.innerText('.checklist');
   console.log('CHECKLIST:', checklist.replace(/\n/g, ' | '));
   await shot(page, 'r1_add_files');
@@ -74,14 +83,14 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   if (!/3 users may get their access through a group/.test(ov)) throw new Error('Overview does not name the users to decide: ' + ov);
   await shot(page, 'r2_overview');
 
-  // 2. Platforms: templates from allsecrets.csv
+  // 2. Mapping rules · D. Platforms: templates from allsecrets.csv
   await navTo('rules-platforms');
   await page.waitForFunction(() => /Web Password/.test(document.querySelector('#pv-out')?.innerText || ''), null, { timeout: 10000 }).catch(() => {});
   const pv = await page.innerText('#pv-out');
   if (!pv.includes('Web Password') || !pv.includes('Unix Account (SSH)')) throw new Error('templates from allsecrets.csv not in the platforms preview: ' + pv + ' / ' + await page.innerText('#pv-state') + ' / ' + await page.innerText('h2'));
   await shot(page, 'r3_platforms');
 
-  // 4. Members · Users to decide
+  // 3. Review & change · C. Users to decide
   await navTo('members-decide');
   await page.waitForSelector('#decide-table');
   if ((await page.$$('#decide-table .d-sel')).length !== 3) throw new Error('not 3 users to decide');
@@ -99,7 +108,7 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   await page.waitForSelector('#decide-table .d-sel');
   await shot(page, 'r4_users_decided');
 
-  // 5. Review & create: Jane is a member with her UPN, Bob as a direct user
+  // 3. Review & change and 4. Create upload files: Jane is a member with her UPN, Bob as a direct user
   await navTo('review-safes');
   await page.waitForSelector('#safes-table');
   await page.click('.tabs [data-tab="members"]');

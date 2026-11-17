@@ -51,7 +51,7 @@ from ..transform import (target_for, PERM_GROUP_COLUMNS, PERM_ROLE_COLUMNS, PERM
 from .auth import get_authenticator
 from .tls import fingerprint, server_context, trust_certificate
 from .winfront import bring_to_front
-from ..writers import CONVENTION_HEADER, convention_rows
+from ..writers import convention_rows
 from ..owner import claim_workspace, peer_is_owner
 
 log = logging.getLogger("imw.ui")
@@ -297,7 +297,7 @@ class App:
     # -- helpers ----------------------------------------------------------
     def store(self, create=False):
         if not self.db_path.exists() and not create:
-            raise UiError("No data yet. Start with step 1, Add files.", 409)
+            raise UiError("No data yet. Start with step 1, Load exports.", 409)
         protector = None
         if create and not self.db_path.exists():
             if self.protector_flag:
@@ -602,7 +602,7 @@ class App:
     def api_rules_values(self, body):
         """The distinct values of one account detail in the loaded records, with how many
         accounts have each and a suggested 1-4 letter code, so a Safe name placeholder can be
-        built from them (3. Safes: "Build Safe names from account details").
+        built from them (Mapping rules A: "Build Safe names from account details").
         field: column:<source column>, address_domain, type or platform."""
         field = str(body.get("field") or "").strip()
         if not (field.startswith("column:") and field[7:].strip()) and field not in self.VALUE_FIELDS:
@@ -1178,7 +1178,7 @@ class App:
         try:
             if what == "convention":
                 cfg = self.config()
-                cols, rows = CONVENTION_HEADER, convention_rows(st.plan(cfg), cfg)
+                cols, rows = convention_rows(st.plan(cfg), cfg)
             elif what == "audit":
                 cols, rows = st.query("SELECT id, ts, user, host, action, detail FROM audit ORDER BY id")
             else:

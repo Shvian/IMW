@@ -31,7 +31,7 @@ public static class Config
 
     public static JObj PresetsJson() => new(PermissionPresets.Select(kv => new KeyValuePair<string, object>(kv.Key, kv.Value.Cast<object>().ToList())));
 
-    // The suggested standard member groups (4. Members · Roles: "Use the suggested set").
+    // The suggested standard member groups (Mapping rules B: "Use the suggested set").
     public static List<object> StandardMemberSet() => new()
     {
         Json.O(("name", "{safe}-Owners"), ("member_type", "Group"), ("role", "Full"), ("search_in", "")),

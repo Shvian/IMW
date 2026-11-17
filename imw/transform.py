@@ -1168,7 +1168,7 @@ def _safes(plans, cfg=None, safe_overrides=None):
             s["issues"].add(f"{n} of its accounts have no access groups in the source")
         elif n and not standard:
             s["issues"].add("no access groups in the source for any of its accounts; "
-                            "Standard member groups (4. Members · Roles) can give it members")
+                            "Standard member groups (Mapping rules B) can give it members")
     if limit:
         for s in safes.values():
             if s["accounts"] > limit:

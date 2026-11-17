@@ -1,4 +1,4 @@
-// Browser test of personal Safes: 3. Safes offers to mark \Personal Folders, and Save & apply names them after the person.
+// Browser test of personal Safes: 2. Mapping rules · A. Safes offers to mark \Personal Folders, and Save & apply names them after the person.
 //
 //   copy samples/personal_safes/*.csv and samples/delinea_reports/lauserslist.csv into <ws>/inbox, then
 //   IMW_UI_TEST_PASSWORD=test-pass IMW_UI_NO_OPEN=1 \
@@ -42,7 +42,7 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   await page.waitForSelector('#rules-msg .msg.ok', { timeout: 10000 });
   await shot(page, 'p2_marked');
 
-  // After: Review & create lists the personal Safe with its note
+  // After: Review & change lists the personal Safe with its note
   await page.click('nav button[data-page="review-safes"]');
   await page.waitForSelector('#safes-table');
   const safes = await page.innerText('#safes-table');

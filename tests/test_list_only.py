@@ -167,25 +167,23 @@ class StandardMembers(Base):
 
 
 class NamingConventionFile(Base):
-    def test_rows_in_plain_words(self):
+    def test_parts_of_the_safe_names(self):
         cfg = config_from_dict({"standard_members": {"members": STANDARD_MEMBER_SET},
                                 "safe_convention": {"template_no_folders": "{env}-{site}-{tech}",
-                                                    "abbreviations": {"Storefront": "SF"},
                                                     "layers": {"site": {"label": "Site", "default": "X", "rules": [
                                                         {"field": "column:Site", "pattern": "^Boston$", "code": "BOS"}]}}}})
         plan = build_plan(records(cfg), cfg)
+        self.assertEqual(set(plan.safes), {"BOS-SVR", "BOS-DB", "BOS-DOM", "X-SVR", "X-DB", "X-DOM"})
         path = write_convention(plan, cfg, self.tmp)
-        rows = read_csv(path)
-        got = {(r["Section"], r["Item"], r["Code_Or_Value"], r["Applies_When"]) for r in rows}
-        self.assertIn(("Pattern", "Safes for accounts without folders", "{env}-{site}-{tech}", "the account has no folder"), got)
-        self.assertIn(("Placeholder", "{site}", "BOS", "the Site column is Boston"), got)
-        self.assertIn(("Placeholder", "{site}", "X", "no row above matches"), got)
-        self.assertIn(("Placeholder", "{tech}", "DOM", "the platform ID is WinDomain"), got)
-        self.assertIn(("Abbreviation", "Storefront", "SF", "a folder name or word"), got)
-        self.assertIn(("Limit", "Maximum length", "28", "always"), got)
-        self.assertIn(("Member group", "{safe}-Owners", "Full", "Safes with no members from the source"), got)
-        self.assertTrue(any(r["Section"] == "Example" and r["Applies_When"] == "accounts without folders" for r in rows))
-        self.assertEqual(sum(1 for r in convention_rows(plan, cfg) if r[0] == "Abbreviation" and r[1] == "Storefront"), 1)
+        self.assertEqual(path.read_text(encoding="utf-8-sig").splitlines(), ["var1,var2", "BOS,DB", "X,DOM", ",SVR"])
+        self.assertEqual(convention_rows(plan, cfg)[0], ["var1", "var2"])
+        # Only Safes the upload creates count
+        for p in plan.accounts:
+            if p.safe.startswith("X-"):
+                p.migrate = "N"
+        from imw.transform import rebuild_totals
+        rebuild_totals(plan, cfg)
+        self.assertEqual(convention_rows(plan, cfg)[1], [["BOS", "DB"], ["", "DOM"], ["", "SVR"]])
 
 
 class ListOnlyUi(test_ui.UiServer):
@@ -234,7 +232,8 @@ class ListOnlyUi(test_ui.UiServer):
         self.assertIn("review/SafeNamingConvention.csv", files)
         st, text = self.req("GET", "/api/export/convention.csv")
         self.assertEqual(st, 200)
-        self.assertIn("{safe}-Owners", text.decode("utf-8-sig"))
+        self.assertTrue(text.decode("utf-8-sig").startswith("var1,"))
+        self.assertIn("LA", text.decode("utf-8-sig"))
 
 
 # Only this class's own tests: the server tests it builds on run in test_ui.

@@ -40,7 +40,7 @@ KINDS = OrderedDict([
     ("groups", "List of groups (not needed)"),
     ("roles", "Secret Server role report (not needed)"),
 ])
-# What each kind adds, in plain words for the Add files page.
+# What each kind adds, in plain words for the Load exports page.
 KIND_HELP = {
     "templates": "Gives each secret its template, which picks its platform. Needed when the secrets "
                  "export has no template column.",

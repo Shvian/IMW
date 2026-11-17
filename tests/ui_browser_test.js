@@ -64,8 +64,8 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   await page.click('#theme');
   await shot(page, '00_welcome');
 
-  // 1. Add files (both permissions files recognised, ticked and merged)
-  await page.click('nav >> text=Add files');
+  // 1. Load exports (both permissions files recognised, ticked and merged)
+  await page.click('nav >> text=Load exports');
   await page.waitForSelector('#go-load');
   for (const r of await page.$$('#main div.card table tr')) {
     const t = await r.innerText();
@@ -94,7 +94,7 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   }
   if (!(await page.$('#del-loaded'))) throw new Error('no button to securely delete the loaded exports');
   // load the same KeePass file again: the Overview must say it is the same content
-  await page.click('nav >> text=Add files');
+  await page.click('nav >> text=Load exports');
   await page.waitForFunction(() => document.querySelector('#go-load') && !document.querySelector('#load-msg').textContent);
   for (const cb of await page.$$('.pick')) if (await cb.isChecked()) await cb.uncheck();
   for (const r of await page.$$('#main div.card table tr')) if ((await r.innerText()).includes('keepass_export.xml')) await (await r.$('.pick')).check();
@@ -133,11 +133,11 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   await page.waitForSelector('#rules-msg .msg.ok');
   if ((await page.$eval('nav', e => getComputedStyle(e).position)) !== 'sticky') throw new Error('left nav does not stay in view');
 
-  if (!(await page.innerText('#rules-next')).includes('Users to decide')) throw new Error('member names do not lead to Users to decide');
-  if (!(await page.innerText('h2')).includes('4. Members · Names')) throw new Error('the member names page is not 4. Members · Names');
+  if (!(await page.innerText('#rules-next')).includes('D. Platforms')) throw new Error('C. Safe members does not lead to D. Platforms');
+  if (!(await page.innerText('h2')).includes('C. Safe members')) throw new Error('the member names page is not C. Safe members');
   await navTo('rules-safes');
   await page.waitForSelector('text=Safe from access groups');
-  if (!(await page.innerText('h2')).includes('3. Safes')) throw new Error('3. Safes did not open');
+  if (!(await page.innerText('h2')).includes('A. Safes')) throw new Error('A. Safes did not open');
   if (!(await page.isDisabled('#save'))) throw new Error('Save & apply enabled with nothing changed');
   if (await page.inputValue('#fallback') !== 'convention') throw new Error('folder naming is not the default');
   rows = await addRow('t-gr');
@@ -203,7 +203,7 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
 
   await page.click('#rules-next');                       // Next goes to the next sub-page
   await page.waitForSelector('#roles table', { state: 'attached' });
-  if (!(await page.innerText('h2')).includes('4. Members · Roles')) throw new Error('Next did not open 4. Members · Roles');
+  if (!(await page.innerText('h2')).includes('B. Safe permissions')) throw new Error('Next did not open B. Safe permissions');
   await page.waitForSelector('#roles table', { state: 'attached' });
   await page.waitForSelector('#pv-out table');           // members preview: source member -> SafeMembers.csv
   await page.selectOption('#role-from', 'Read only');
@@ -237,7 +237,7 @@ const PASSWORD = process.env.IMW_UI_TEST_PASSWORD || 'test-pass';
   DISMISS = true;
   await navTo('rules-accounts');
   if (!/not saved/.test(DIALOGS[DIALOGS.length - 1] || '')) throw new Error('no unsaved-changes warning when leaving a page');
-  if (!(await page.innerText('h2')).includes('2. Platforms')) throw new Error('Cancel on the unsaved warning still left the page');
+  if (!(await page.innerText('h2')).includes('D. Platforms')) throw new Error('Cancel on the unsaved warning still left the page');
   await page.fill('#defplat', '');
   await shot(page, '02e_platforms');
   await page.click('#save');

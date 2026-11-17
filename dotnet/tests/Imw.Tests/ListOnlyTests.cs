@@ -197,24 +197,20 @@ public class StandardMembers : TestBase
 public class NamingConventionFile : TestBase
 {
     [Fact]
-    public void RowsInPlainWords()
+    public void PartsOfTheSafeNames()
     {
         var cfg = Cfg("{\"standard_members\": {\"members\": " + ListOnly.Std + "}, " +
-                      "\"safe_convention\": {\"template_no_folders\": \"{env}-{site}-{tech}\", \"abbreviations\": {\"Storefront\": \"SF\"}, " +
+                      "\"safe_convention\": {\"template_no_folders\": \"{env}-{site}-{tech}\", " +
                       "\"layers\": {\"site\": {\"label\": \"Site\", \"default\": \"X\", \"rules\": [" +
                       "{\"field\": \"column:Site\", \"pattern\": \"^Boston$\", \"code\": \"BOS\"}]}}}}");
         var plan = Transform.BuildPlan(ListOnly.Records(cfg), cfg);
-        var rows = ReadCsv(Writers.WriteConvention(plan, cfg, Tmp));
-        var got = rows.Select(r => (r["Section"], r["Item"], r["Code_Or_Value"], r["Applies_When"])).ToHashSet();
-        Assert.Contains(("Pattern", "Safes for accounts without folders", "{env}-{site}-{tech}", "the account has no folder"), got);
-        Assert.Contains(("Placeholder", "{site}", "BOS", "the Site column is Boston"), got);
-        Assert.Contains(("Placeholder", "{site}", "X", "no row above matches"), got);
-        Assert.Contains(("Placeholder", "{tech}", "DOM", "the platform ID is WinDomain"), got);
-        Assert.Contains(("Abbreviation", "Storefront", "SF", "a folder name or word"), got);
-        Assert.Contains(("Limit", "Maximum length", "28", "always"), got);
-        Assert.Contains(("Member group", "{safe}-Owners", "Full", "Safes with no members from the source"), got);
-        Assert.Contains(rows, r => r["Section"] == "Example" && r["Applies_When"] == "accounts without folders");
-        Assert.Equal(1, Writers.ConventionRows(plan, cfg).Count(r => Py.Str(r[0]) == "Abbreviation" && Py.Str(r[1]) == "Storefront"));
+        Assert.Equal(new[] { "BOS-DB", "BOS-DOM", "BOS-SVR", "X-DB", "X-DOM", "X-SVR" }, plan.Safes.Keys.OrderBy(x => x, StringComparer.Ordinal));
+        var path = Writers.WriteConvention(plan, cfg, Tmp);
+        Assert.Equal(new[] { "var1,var2", "BOS,DB", "X,DOM", ",SVR" }, ReadText(path).Replace("\r\n", "\n").Split('\n', StringSplitOptions.RemoveEmptyEntries));
+        foreach (var p in plan.Accounts) if (p.Safe.StartsWith("X-", StringComparison.Ordinal)) p.Migrate = "N";
+        Transform.RebuildTotals(plan, cfg);
+        var rows = Writers.ConventionRows(plan, cfg).Item2.Select(r => string.Join(",", r.Select(Py.Str))).ToList();
+        Assert.Equal(new[] { "BOS,DB", ",DOM", ",SVR" }, rows);
     }
 }
 
@@ -266,6 +262,8 @@ public class ListOnlyUi : UiTestBase
         Assert.Contains("review/SafeNamingConvention.csv", files);
         var (st4, text, _) = Req("GET", "/api/export/convention.csv");
         Assert.Equal(200, st4);
-        Assert.Contains("{safe}-Owners", Encoding.UTF8.GetString((byte[])text).TrimStart('\ufeff'));
+        var conv = Encoding.UTF8.GetString((byte[])text).TrimStart('\ufeff');
+        Assert.StartsWith("var1,", conv);
+        Assert.Contains("LA", conv);
     }
 }

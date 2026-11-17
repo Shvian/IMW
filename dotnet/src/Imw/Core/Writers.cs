@@ -369,203 +369,32 @@ public static class Writers
         return path;
     }
 
-    // ----------------------------------------------------------------- naming convention document
+    // ----------------------------------------------------------------- naming convention: Safe name parts
 
-    public static readonly string[] ConventionHeader = { "Section", "Item", "Code_Or_Value", "Applies_When", "Notes" };
-    static readonly Dictionary<string, string> FieldWords = new()
+    /// <summary>(header, rows): the parts of every Safe name the upload creates. Each name is split on the
+    /// separator, and column varN lists every value used as its Nth part. Personal Safes follow their own
+    /// pattern and are left out.</summary>
+    public static (List<object>, List<List<object>>) ConventionRows(Plan plan, JObj cfg)
     {
-        ["folder_word"] = "a word in any folder level", ["folder_level"] = "a whole folder level",
-        ["folder"] = "the folder path", ["platform"] = "the platform ID", ["username"] = "the username",
-        ["address"] = "the address", ["address_domain"] = "the address's domain", ["name"] = "the account name",
-        ["type"] = "the record type", ["source"] = "the source", ["env"] = "the {env} code",
-        ["tech"] = "the {tech} code", ["flavor"] = "the {flavor} code", ["acct"] = "the {acct} code",
-    };
-
-    /// <summary>Python s[a:b] on a string (negative b counts from the end).</summary>
-    static string Slice(string s, int a, int b)
-    {
-        if (b < 0) b = Math.Max(0, s.Length + b);
-        b = Math.Min(b, s.Length);
-        return a >= b ? "" : s.Substring(a, b - a);
-    }
-
-    static string Literal(string t)
-    {
-        var out_ = new System.Text.StringBuilder();
-        int i = 0;
-        while (i < t.Length)
-        {
-            char c = t[i];
-            if (c == '\\' && i + 1 < t.Length && !Py.IsAlnum(t[i + 1]))
-            {
-                out_.Append(t[i + 1]);
-                i += 2;
-                continue;
-            }
-            if (".*+?^${}()|[]\\".IndexOf(c) >= 0) return null;
-            out_.Append(c);
-            i++;
-        }
-        return out_.ToString();
-    }
-
-    /// <summary>A rule pattern in words: ^Boston$ -> 'is Boston', ^svc -> 'starts with svc'.</summary>
-    public static string PlainPattern(object pattern)
-    {
-        var p = PyRe.Sub(@"^\(\?i\)", "", Py.Truthy(pattern) ? Py.Str(pattern) : "");
-        var alts = p.Split('|');
-        if (alts.Length > 1 && alts.All(a => a.StartsWith('^') && a.EndsWith('$') && !string.IsNullOrEmpty(Literal(Slice(a, 1, -1)))))
-        {
-            var vals = alts.Select(a => Literal(Slice(a, 1, -1))).ToList();
-            return vals.Count > 1 ? "is one of " + string.Join(", ", vals) : $"is {vals[0]}";
-        }
-        if (p.StartsWith("^(", StringComparison.Ordinal) && p.EndsWith(")$", StringComparison.Ordinal)
-            && Slice(p, 2, -2).Split('|').All(a => !string.IsNullOrEmpty(Literal(a))))
-        {
-            var vals = Slice(p, 2, -2).Split('|').Select(Literal).ToList();
-            return vals.Count > 1 ? "is one of " + string.Join(", ", vals) : $"is {vals[0]}";
-        }
-        foreach (var (test, words, core) in new[]
-                 {
-                     (p.StartsWith('^') && p.EndsWith('$'), "is", Slice(p, 1, -1)),
-                     (p.StartsWith('^'), "starts with", Slice(p, 1, p.Length)),
-                     (p.EndsWith('$'), "ends with", Slice(p, 0, -1)),
-                     (true, "contains", p),
-                 })
-        {
-            if (test && core.Length > 0 && Literal(core) != null) return $"{words} {Literal(core)}";
-        }
-        return $"matches the pattern {p}";
-    }
-
-    static string N(long n, string word) => $"{n} {word}{(n == 1 ? "" : "s")}";
-
-    static string FieldWordsFor(object field)
-    {
-        var f = field == null ? "None" : Py.Str(field);
-        if (f.StartsWith("column:", StringComparison.Ordinal)) return $"the {f.Substring(7)} column";
-        return field is string s && FieldWords.TryGetValue(s, out var w) ? w : f;
-    }
-
-    static object Or(object a, object b) => Py.Or(a, b);
-
-    /// <summary>Every rule that names Safes (and their standard member groups), in plain words, so the same
-    /// convention can name new Safes once Privilege Cloud is live.</summary>
-    public static List<List<object>> ConventionRows(Plan plan, JObj cfg, int examples = 25)
-    {
-        var conv = cfg.Obj("safe_convention") ?? new JObj();
-        var sn = cfg.Obj("safe_name");
-        var sep = conv.ContainsKey("separator") ? conv["separator"] : "-";
-        var sepS = sep == null ? "None" : Py.Str(sep);
-        var rep = sn.Get("replacement");
-        var repOrDash = Py.Truthy(rep) ? Py.Str(rep) : "-";
-        var rows = new List<List<object>>
-        {
-            new() { "Pattern", "Safes for accounts with folders", Or(conv.Get("template"), "{folder}"),
-                "the account is in a folder", "each placeholder becomes a short code; codes are joined with " + Py.Repr(sep) },
-            new() { "Pattern", "Safes for accounts without folders", Or(conv.Get("template_no_folders"), ""),
-                "the account has no folder", "" },
-            new() { "Pattern", "Naming", cfg.Get("fallback_strategy", "convention"), "no exception below applies",
-                "convention = the patterns above; folder_leaf / folder_path = the folder name as is; unmapped = UNMAPPED" },
-            new() { "Limit", "Maximum length", sn["max_length"], "always",
-                "too long: long folder names become initials, then the top folder levels are left out, then the end is cut" },
-            new() { "Limit", "Forbidden characters", sn["invalid_chars"], "always", $"each becomes '{(rep == null ? "None" : Py.Str(rep))}'" },
-            new() { "Limit", "Prefix", Or(sn.Get("prefix"), "(none)"), "every Safe", "counts toward the maximum length" },
-            new() { "Limit", "Accounts per Safe", Or(cfg.Get("safe_max_accounts"), "(no limit)"), "always",
-                Py.Truthy(cfg.Get("safe_split_over_max"))
-                    ? "over the limit: split into numbered Safes (" + sepS + "01, " + sepS + "02...) by address"
-                    : "over the limit: flagged for a look" },
-            new() { "Limit", "Same name twice", $"{repOrDash}2, {repOrDash}3...", "two Safes end up with one name",
-                "the later Safe gets the suffix, still within the maximum length" },
-            new() { "Limit", "Repeated codes", "", "a code already appears earlier in the name", "it is left out the second time" },
-            new() { "Placeholder", "{folder}", "", "the account has folders",
-                "every folder level, in order, each abbreviated (see Abbreviation rows)" },
-            new() { "Placeholder", "{folder_leaf}", "", "the account has folders", "the last folder level only, abbreviated" },
-        };
-        var src = conv.Get("layers") is JObj lj && lj.Count > 0 ? lj : Naming.DefaultLayers();
-        var layers = src.Copy();
-        foreach (var kv in Naming.DefaultLayers()) layers.SetDefault(kv.Key, kv.Value);
-        foreach (var (name, lo) in layers)
-        {
-            var layer = lo as JObj ?? new JObj();
-            var label = Py.Truthy(layer.Get("label")) ? Py.Str(layer.Get("label")) : name;
-            foreach (var ro in layer.List("rules") ?? new List<object>())
-            {
-                if (ro is not JObj r) continue;
-                var when = $"{FieldWordsFor(r.Get("field"))} {PlainPattern(r.Get("pattern"))}";
-                if (Py.Truthy(r.Get("field2")))
-                    when += $" and {FieldWordsFor(r["field2"])} {PlainPattern(r.Get("pattern2"))}";
-                rows.Add(new() { "Placeholder", "{" + name + "}", Or(r.Get("code"), "(left out)"), when, label });
-            }
-            rows.Add(new() { "Placeholder", "{" + name + "}", Or(layer.Get("default"), "(left out)"), "no row above matches",
-                label + ": default" });
-        }
-        var ps = cfg.Obj("personal_safes");
-        foreach (var ro in ps?.List("folders") ?? new List<object>())
-        {
-            if (ro is not JObj r) continue;
-            var whose = Py.Truthy(r.Get("person")) ? $"{Py.Str(r["person"])}'s" : "each folder directly under it is one person's";
-            rows.Add(new() { "Personal Safe", r.Get("folder", ""), Or(ps.Get("template"), "P-{user}"),
-                $"the folder is {Py.Str(r.Get("folder", ""))} or under it ({whose})",
-                "{user} = username from the users list, {upn}, {first}, {last}, {name}" });
-        }
-        foreach (var ro in cfg.List("folder_rules") ?? new List<object>())
-        {
-            if (ro is not JObj r) continue;
-            rows.Add(new() { "Exception", "Folder \u2192 Safe", r.Get("safe", ""),
-                $"the folder is {Py.Str(r.Get("folder_prefix", ""))} or under it", "the most specific folder wins" });
-        }
-        foreach (var ro in cfg.List("group_rules") ?? new List<object>())
-        {
-            if (ro is not JObj r) continue;
-            var what = Py.Truthy(r.Get("group")) ? $"the access group is {Py.Str(r["group"])}"
-                : $"the access group {PlainPattern(r.Get("group_pattern"))}";
-            rows.Add(new() { "Exception", "Access group \u2192 Safe", r.Get("safe", ""), what, "first match wins" });
-        }
-        // Abbreviations: yours first, then the codes the loaded folders got, then the dictionary.
-        var namer = new Namer(cfg);
-        var userAbbr = conv.Get("abbreviations") as JObj ?? new JObj();
-        var yours = userAbbr.Keys.Select(Naming.Norm).ToHashSet(StringComparer.Ordinal);
-        foreach (var kv in Py.Sorted(userAbbr.ToList(), (a, b) => Py.Cmp(Py.Lower(a.Key), Py.Lower(b.Key))))
-            rows.Add(new() { "Abbreviation", kv.Key, kv.Value, "a folder name or word", "yours" });
-        var counts = new OrderedMap<string, long>(StringComparer.Ordinal);
-        foreach (var p in plan.Accounts)
-            foreach (var level in p.Rec.Folder)
-                counts[level] = counts.GetValueOrDefault(level) + 1;
-        foreach (var s in namer.Suggest(counts))
-        {
-            if (Py.Truthy(s["yours"])) continue;
-            rows.Add(new() { "Abbreviation", s["folder"], s["code"], "a folder name",
-                ((bool)s["automatic"] ? "automatic" : "built-in") + $", used by {N((long)s["accounts"], "account")}" });
-        }
-        foreach (var kv in Py.Sorted(Naming.DefaultAbbreviations.ToList(), (a, b) => Py.Cmp(a.Key, b.Key)))
-            if (!yours.Contains(Naming.Norm(kv.Key)) && kv.Value.Length > 0)
-                rows.Add(new() { "Abbreviation", kv.Key, kv.Value, "a folder name or word", "built-in" });
-        rows.Add(new() { "Abbreviation", "(any other word)", "", "no abbreviation above",
-            "automatic: up to 4 letters, CamelCase and compound words become initials (SharePoint \u2192 SP)" });
-        var std = cfg.Obj("standard_members") ?? new JObj();
-        if ((Py.Truthy(std.Get("apply_to")) ? Py.Str(std.Get("apply_to")) : "no_source_members") != "off")
-        {
-            var where = Py.Eq(std.Get("apply_to"), "all") ? "every Safe" : "Safes with no members from the source";
-            foreach (var ro in std.List("members") ?? new List<object>())
-            {
-                if (ro is not JObj r) continue;
-                rows.Add(new() { "Member group", r.Get("name", ""), r.Get("role", ""), where,
-                    $"{(Py.Truthy(r.Get("member_type")) ? Py.Str(r["member_type"]) : "Group")}; {{safe}} = the Safe's name"
-                    + (Py.Truthy(r.Get("search_in")) ? $"; searchIn {Py.Str(r["search_in"])}" : "") });
-            }
-        }
-        int shown = 0;
+        var sep = Py.Str(cfg.Obj("safe_convention")?.Get("separator", "-") ?? "-");
+        if (sep.Length == 0) sep = "-";
+        var parts = new List<HashSet<string>>();
         foreach (var (name, s) in plan.Safes)
         {
-            if (shown >= examples) break;
-            var folders = Py.Sorted(s.Folders.Where(f => !string.IsNullOrEmpty(f) && f != "\\"));
-            var shownFolders = string.Join("; ", folders.Take(2));
-            rows.Add(new() { "Example", name, "", shownFolders.Length > 0 ? shownFolders : "accounts without folders",
-                $"{Py.Len(name)} characters, {N(s.Accounts, "account")}" });
-            shown++;
+            if (s.Migrating == 0) continue;
+            if (s.Sources.Count > 0 && s.Sources.All(x => (x ?? "").StartsWith("personal:", StringComparison.Ordinal))) continue;
+            var split = name.Split(sep);
+            for (int i = 0; i < split.Length; i++)
+            {
+                while (parts.Count <= i) parts.Add(new HashSet<string>(StringComparer.Ordinal));
+                if (split[i].Length > 0) parts[i].Add(split[i]);
+            }
         }
-        return rows;
+        var cols = parts.Select(p => p.OrderBy(Py.Lower, StringComparer.Ordinal).ThenBy(v => v, StringComparer.Ordinal).ToList()).ToList();
+        var header = Enumerable.Range(1, Math.Max(cols.Count, 1)).Select(i => (object)$"var{i}").ToList();
+        var depth = cols.Count == 0 ? 0 : cols.Max(c => c.Count);
+        var rows = Enumerable.Range(0, depth).Select(r => cols.Select(c => (object)(r < c.Count ? c[r] : "")).ToList()).ToList();
+        return (header, rows);
     }
 
     public static string WriteConvention(Plan plan, JObj cfg, string outDir)
@@ -574,8 +403,9 @@ public static class Writers
         using (var fh = Open(path))
         {
             var w = new CsvSafe.SafeWriter(new Csv.Writer(fh));
-            w.WriteRow(ConventionHeader);
-            foreach (var row in ConventionRows(plan, cfg)) w.WriteRow(row);
+            var (header, rows) = ConventionRows(plan, cfg);
+            w.WriteRow(header);
+            foreach (var row in rows) w.WriteRow(row);
         }
         return path;
     }

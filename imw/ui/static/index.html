@@ -104,8 +104,7 @@ code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; font-si
 .hidden { display: none !important; }
 nav .sub { padding: 6px 10px 6px 42px; font-size: 13px; display: none; }
 /* Only the step you are in shows its pages. */
-nav[data-open="plat"] .sub[data-sub="plat"], nav[data-open="members"] .sub[data-sub="members"],
-nav[data-open="final"] .sub[data-sub="final"] { display: flex; }
+nav[data-open="rules"] .sub[data-sub="rules"], nav[data-open="review"] .sub[data-sub="review"] { display: flex; }
 button.btn.icon { width: 36px; padding: 7px 0; text-align: center; font-size: 15px; }
 /* Folded "How this page works" help */
 details.explain { padding: 6px 14px; }
@@ -118,6 +117,9 @@ details.card.fold > summary::-webkit-details-marker { display: none; }
 details.card.fold > summary::before { content: "▸ "; color: var(--muted); }
 details.card.fold[open] > summary::before { content: "▾ "; }
 details.card.fold[open] > summary { margin-bottom: 10px; }
+details.rec-src { border-top: 1px solid var(--line); padding: 8px 0; }
+details.rec-src > summary { cursor: pointer; }
+details.rec-src[open] > summary { margin-bottom: 8px; }
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 0 0 14px; }
 .tabs button { font: inherit; border: 0; background: none; color: var(--muted); padding: 8px 14px; cursor: pointer; border-bottom: 2px solid transparent; }
 .tabs button.on { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
@@ -294,19 +296,20 @@ input.chk-bad { border-color: var(--warn); background: var(--warn-bg); }
   <nav id="nav">
     <button data-page="overview"><span class="num">⌂</span>Overview</button>
     <hr>
-    <button data-page="load" title="Copy your exports and reports into the inbox and load them"><span class="num">1</span>Add files</button>
-    <button data-page="rules-platforms" data-group="plat" title="Which platform each secret template becomes, and how accounts are named"><span class="num">2</span>Platforms</button>
-    <button class="sub" data-sub="plat" data-page="rules-platforms">Templates to platforms</button>
-    <button class="sub" data-sub="plat" data-page="rules-accounts">Account names</button>
-    <button data-page="rules-safes" title="How folders become Safes, and the Safe settings"><span class="num">3</span>Safes</button>
-    <button data-page="rules-members" data-group="members" title="Who gets access to each Safe, with which role"><span class="num">4</span>Members</button>
-    <button class="sub" data-sub="members" data-page="rules-members">Roles</button>
-    <button class="sub" data-sub="members" data-page="rules-dir">Names (UPN, domains)</button>
-    <button class="sub" data-sub="members" data-page="members-decide">Users to decide</button>
-    <button data-page="review-safes" data-group="final" title="Check the result, change single Safes, members or accounts, and create the upload files"><span class="num">5</span>Review &amp; create</button>
-    <button class="sub" data-sub="final" data-page="review-safes">Safes &amp; members</button>
-    <button class="sub" data-sub="final" data-page="review">Accounts</button>
-    <button class="sub" data-sub="final" data-page="output">Create upload files</button>
+    <button data-page="load" title="Copy your exports and reports into the inbox and load them"><span class="num">1</span>Load exports</button>
+    <button data-page="rules-safes" data-group="rules" title="How folders become Safes, who gets which role, member names, platforms and account names"><span class="num">2</span>Mapping rules</button>
+    <button class="sub" data-sub="rules" data-page="rules-safes">A. Safes</button>
+    <button class="sub" data-sub="rules" data-page="rules-members">B. Safe permissions</button>
+    <button class="sub" data-sub="rules" data-page="rules-dir">C. Safe members</button>
+    <button class="sub" data-sub="rules" data-page="rules-platforms">D. Platforms</button>
+    <button class="sub" data-sub="rules" data-page="rules-accounts">E. Accounts</button>
+    <button data-page="review-safes" data-group="review" title="Check the result and change single Safes, members or accounts"><span class="num">3</span>Review &amp; change</button>
+    <button class="sub" data-sub="review" data-page="review-safes">A. Safes &amp; members</button>
+    <button class="sub" data-sub="review" data-page="review">B. Accounts &amp; platforms</button>
+    <button class="sub" data-sub="review" data-page="members-decide">C. Users to decide</button>
+    <button data-page="output" title="Create the files to upload to Privilege Cloud"><span class="num">4</span>Create upload files</button>
+    <hr>
+    <button data-page="activity"><span class="num">≡</span>Activity log</button>
   </nav>
   <main id="main"></main>
 </div>

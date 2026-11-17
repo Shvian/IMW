@@ -183,8 +183,6 @@ class PersonalSafes(Base):
         self.assertEqual(set(safes), {"P-jane.smith", "P-NobodyKnown", "P-bob.jones", "PRS-FLD", "IT-SVR"})
         self.assertEqual(safes["P-jane.smith"]["Accounts"], "3")
         self.assertIn("personal Safe of Jane Smith", safes["P-jane.smith"]["Safe_Name_Issues"])
-        conv = (self.tmp / "out" / "review" / "SafeNamingConvention.csv").read_text(encoding="utf-8-sig")
-        self.assertIn("Personal Safe,\\Personal Folders,P-{user}", conv)
 
 
     def test_owner_is_a_member(self):
@@ -199,6 +197,11 @@ class PersonalSafes(Base):
         self.assertIn("the folder report gives it Owner", jane["Notes"])
         self.assertIn("added by the Workbench", members[("P-bob.jones", "bob.jones@corp.example.com")]["Notes"])
         self.assertEqual(sum(1 for k in members if k[0] == "P-jane.smith"), 1)    # "Smith, Jane" merges into Jane
+        # The naming convention lists the parts of the other Safes; personal Safes have their own pattern
+        conv = (self.tmp / "out" / "review" / "SafeNamingConvention.csv").read_text(encoding="utf-8-sig")
+        self.assertTrue(conv.startswith("var1,var2"), conv)
+        self.assertIn("IT", conv)
+        self.assertNotIn("jane.smith", conv)
         # Bob's View on Jane's folder is still his to decide; the owner never is
         decide = read_csv(self.tmp / "out" / "review" / "Users_To_Decide.csv")
         self.assertNotIn("Jane Smith", {d["Source_Member"] for d in decide})
